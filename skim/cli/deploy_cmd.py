@@ -37,7 +37,7 @@ def deploy(
         "-o",
         help="Output directory for generated artifacts.",
     ),
-    catalog: Optional[Path] = typer.Option(
+    catalog: Path | None = typer.Option(
         None,
         "--catalog",
         help="Path to catalog TOML. Defaults to catalog/aws.toml.",

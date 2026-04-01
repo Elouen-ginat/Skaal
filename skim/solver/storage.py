@@ -16,13 +16,12 @@ class UnsatisfiableConstraints(Exception):
         )
 
 
-# VPC-bound backends — add penalty for aws-lambda target
-_VPC_PATTERNS = ("redis", "postgres", "memcached", "rds", "elasticache")
-
-
-def _requires_vpc(backend_name: str) -> bool:
+def _requires_vpc(backend_name: str, spec: dict) -> bool:
+    """True if this backend needs a VPC (bad for Lambda), from catalog flag or name heuristics."""
+    if spec.get("requires_vpc"):
+        return True
     name_lower = backend_name.lower()
-    return any(p in name_lower for p in _VPC_PATTERNS)
+    return any(p in name_lower for p in ("rds-", "rds_", "elasticache", "memcached"))
 
 
 def select_backend(
@@ -105,7 +104,7 @@ def select_backend(
         # Base cost: cost_per_gb_month * 100 as integer
         cost = int(spec.get("cost_per_gb_month", 0) * 100)
         # Add VPC penalty for aws-lambda target
-        if target == "aws-lambda" and _requires_vpc(name):
+        if target == "aws-lambda" and _requires_vpc(name, spec):
             cost += 1000
         cost_terms.append(If(var, cost, 0))
 
@@ -149,7 +148,7 @@ def select_backend(
     if durability is not None:
         dur_val = durability.value if hasattr(durability, "value") else str(durability)
         reason_parts.append(f"durability={dur_val}")
-    if target == "aws-lambda" and _requires_vpc(selected):
+    if target == "aws-lambda" and _requires_vpc(selected, spec):
         reason_parts.append("WARNING: requires VPC in Lambda context")
     elif target == "aws-lambda":
         reason_parts.append("serverless-compatible (no VPC)")
