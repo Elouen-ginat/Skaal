@@ -48,6 +48,13 @@ def storage(
         else:
             _wl = write_latency
 
+        # Collect schema hints from Map / Collection subclasses
+        try:
+            from skaal.storage import _schema_hints
+            schema = _schema_hints(cls)
+        except Exception:  # noqa: BLE001
+            schema = {}
+
         cls.__skim_storage__ = {
             "read_latency": _rl,
             "write_latency": _wl,
@@ -66,6 +73,7 @@ def storage(
             "auto_optimize": auto_optimize,
             "decommission_policy": decommission_policy,
             "collocate_with": collocate_with,
+            "schema": schema,  # empty dict for plain classes
         }
         return cls
 
