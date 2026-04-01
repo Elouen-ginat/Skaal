@@ -6,6 +6,7 @@ Write it once. Scale it with a word.
 
 from skaal.app import App
 from skaal.module import Module, ModuleExport
+from skaal.storage import Collection, Map
 from skaal.agent import Agent, agent
 from skaal.channel import Channel
 from skaal.decorators import (
@@ -39,6 +40,8 @@ __all__ = [
     "App",
     "Module",
     "ModuleExport",
+    "Map",
+    "Collection",
     "Agent",
     "Channel",
     # Decorators
