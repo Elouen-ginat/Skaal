@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
 
 
 class Durability(str, Enum):
@@ -22,6 +23,8 @@ class AccessPattern(str, Enum):
     BULK_READ = "bulk-read"
     TRANSACTIONAL = "transactional"
     PUB_SUB = "pub-sub"
+    EVENT_LOG = "event-log"   # immutable, ordered, replayable — solver maps to Kafka/Kinesis
+    WORM = "worm"             # write-once-read-many (audit logs, compliance archives)
 
 
 class ComputeType(str, Enum):
@@ -100,6 +103,45 @@ class Scale:
 
 
 @dataclass
+class RetryPolicy:
+    """Retry-with-backoff and optional idempotency for a function."""
+
+    max_attempts: int = 3
+    backoff: Literal["fixed", "linear", "exponential"] = "exponential"
+    base_delay_ms: int = 100
+    max_delay_ms: int = 30_000
+    idempotency_key: str | None = None  # name of the function arg carrying the key
+
+
+@dataclass
+class CircuitBreaker:
+    """Open the circuit after N failures; probe again after recovery_timeout_ms."""
+
+    failure_threshold: int = 5
+    recovery_timeout_ms: int = 10_000
+    fallback: str | None = None  # name of a registered fallback function
+
+
+@dataclass
+class RateLimitPolicy:
+    """Rate limiting, optionally scoped per-client or per-key argument."""
+
+    requests_per_second: float
+    burst: int = 1
+    # "global" | "per-client" | "per-key:<arg_name>"
+    # e.g. scope="per-key:customer_id" limits per unique customer_id value
+    scope: str = "global"
+
+
+@dataclass
+class Bulkhead:
+    """Limit concurrent calls into a function; callers block up to max_wait_ms."""
+
+    max_concurrent_calls: int
+    max_wait_ms: int = 0
+
+
+@dataclass
 class Compute:
     """Compute constraint parameters."""
 
@@ -108,6 +150,11 @@ class Compute:
     compute_type: ComputeType = ComputeType.CPU
     memory: str | None = None  # e.g. "~ 2GB"
     schedule: str = "realtime"  # "realtime", "batch", "streaming"
+    retry: RetryPolicy | None = None
+    circuit_breaker: CircuitBreaker | None = None
+    rate_limit: RateLimitPolicy | None = None
+    bulkhead: Bulkhead | None = None
+    collocate_with: str | None = None   # qualified resource name: "auth.Sessions"
 
     def __post_init__(self) -> None:
         if isinstance(self.latency, str):
