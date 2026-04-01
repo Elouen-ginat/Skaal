@@ -33,6 +33,7 @@ def storage(
     retention: str | None = None,
     auto_optimize: bool = False,
     decommission_policy: DecommissionPolicy | None = None,
+    collocate_with: str | None = None,
 ) -> Callable[[type], type]:
     """Declare infrastructure constraints for a storage variable or Map class."""
 
@@ -64,6 +65,7 @@ def storage(
             "retention": retention,
             "auto_optimize": auto_optimize,
             "decommission_policy": decommission_policy,
+            "collocate_with": collocate_with,
         }
         return cls
 
@@ -77,6 +79,7 @@ def compute(
     compute_type: ComputeType | str = ComputeType.CPU,
     memory: str | None = None,
     schedule: str = "realtime",
+    collocate_with: str | None = None,
 ) -> Callable[[F], F]:
     """Declare infrastructure constraints for a compute function."""
 
@@ -88,6 +91,7 @@ def compute(
             memory=memory,
             schedule=schedule,
         )
+        fn.__skim_compute__.collocate_with = collocate_with  # type: ignore[attr-defined]
         return fn
 
     return decorator

@@ -38,6 +38,19 @@ class ComputeSpec:
 
 
 @dataclass
+class ComponentSpec:
+    """Serializable spec for a provisioned or external component."""
+
+    component_name: str
+    kind: str               # "proxy" | "api-gateway" | "external-storage" | ...
+    implementation: str | None  # e.g. "traefik", "kong"; None if solver selects
+    provisioned: bool       # False for ExternalComponent subclasses
+    connection_env: str | None  # env var carrying the DSN (external only)
+    config: dict[str, Any] = field(default_factory=dict)
+    reason: str = ""
+
+
+@dataclass
 class PlanFile:
     """Serializable representation of a `skim plan` result."""
 
@@ -47,6 +60,7 @@ class PlanFile:
     deploy_target: str
     storage: dict[str, StorageSpec] = field(default_factory=dict)
     compute: dict[str, ComputeSpec] = field(default_factory=dict)
+    components: dict[str, ComponentSpec] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ── Serialisation ──────────────────────────────────────────────────────
@@ -72,6 +86,7 @@ class PlanFile:
             "deploy_target": self.deploy_target,
             "storage": {k: asdict(v) for k, v in self.storage.items()},
             "compute": {k: asdict(v) for k, v in self.compute.items()},
+            "components": {k: asdict(v) for k, v in self.components.items()},
             **self.extra,
         }
 
@@ -79,6 +94,7 @@ class PlanFile:
     def _from_dict(cls, raw: dict[str, Any]) -> "PlanFile":
         storage = {k: StorageSpec(**v) for k, v in raw.get("storage", {}).items()}
         compute = {k: ComputeSpec(**v) for k, v in raw.get("compute", {}).items()}
+        components = {k: ComponentSpec(**v) for k, v in raw.get("components", {}).items()}
         return cls(
             app_name=raw["app_name"],
             version=raw["version"],
@@ -86,6 +102,7 @@ class PlanFile:
             deploy_target=raw.get("deploy_target", "k8s"),
             storage=storage,
             compute=compute,
+            components=components,
         )
 
     # ── Utilities ──────────────────────────────────────────────────────────

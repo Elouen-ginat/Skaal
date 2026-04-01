@@ -1,40 +1,29 @@
-"""App — the central registry for a Skim application."""
+"""App — a deployable Skim application. Extends Module with a deploy target."""
 
 from __future__ import annotations
 
-import inspect
 from typing import Any, Callable, TypeVar
 
-from skim.types import (
-    AccessPattern,
-    Compute,
-    ComputeType,
-    Consistency,
-    DecommissionPolicy,
-    Durability,
-    Latency,
-    Scale,
-    ScaleStrategy,
-    Throughput,
-)
+from skim.module import Module, ModuleExport
 
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-class App:
+class App(Module):
     """
     Central registry for a Skim application.
 
-    Collects all annotated storage classes, agents, functions, and the deploy
-    configuration. The CLI commands (skim plan, skim deploy, …) operate on this
-    registry.
+    ``App`` extends ``Module`` with a deploy target (``deploy()``) and HTTP
+    mounting (``mount()``). All storage, agent, function, channel, pattern,
+    and attach methods are inherited from ``Module`` — the public API is
+    identical to before this refactor.
 
     Usage::
 
         app = App("my-service")
 
         @app.storage(read_latency="< 5ms", durability="persistent")
-        class Profiles(skim.Map[str, Profile]):
+        class Profiles(Map[str, Profile]):
             pass
 
         @app.agent(persistent=True)
@@ -44,85 +33,17 @@ class App:
         @app.function(compute=Compute(latency="< 200ms"))
         async def predict(customer_id: str) -> float:
             ...
+
+        @app.deploy(target="k8s", region="eu-west-1", min_instances=2)
+        def main():
+            app.serve_http(port=8080)
     """
 
     def __init__(self, name: str) -> None:
-        self.name = name
-        self._storage: dict[str, Any] = {}   # name → annotated class
-        self._agents: dict[str, Any] = {}    # name → annotated class
-        self._functions: dict[str, Any] = {} # name → annotated function
+        super().__init__(name)
         self._deploy_config: dict[str, Any] = {}
 
-    # ── Decorators ─────────────────────────────────────────────────────────
-
-    def storage(
-        self,
-        *,
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        access_pattern: AccessPattern | str = AccessPattern.RANDOM_READ,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        retention: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-    ) -> Callable[[type], type]:
-        """Register a storage class with infrastructure constraints."""
-        from skim.decorators import storage as _storage_dec
-
-        outer = _storage_dec(
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            access_pattern=access_pattern,
-            write_throughput=write_throughput,
-            residency=residency,
-            retention=retention,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-        )
-
-        def decorator(cls: type) -> type:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        return decorator
-
-    def agent(self, *, persistent: bool = True) -> Callable[[type], type]:
-        """Register an agent class."""
-        from skim.decorators import agent as _agent_dec
-
-        outer = _agent_dec(persistent=persistent)
-
-        def decorator(cls: type) -> type:
-            annotated = outer(cls)
-            self._agents[cls.__name__] = annotated
-            return annotated
-
-        return decorator
-
-    def function(
-        self,
-        *,
-        compute: Compute | None = None,
-        scale: Scale | None = None,
-    ) -> Callable[[F], F]:
-        """Register a compute function with optional constraints and scaling."""
-        from skim.decorators import compute as _compute_dec, scale as _scale_dec
-
-        def decorator(fn: F) -> F:
-            if compute is not None:
-                fn.__skim_compute__ = compute  # type: ignore[attr-defined]
-            if scale is not None:
-                fn.__skim_scale__ = scale  # type: ignore[attr-defined]
-            self._functions[fn.__name__] = fn
-            return fn
-
-        return decorator
+    # ── Deploy ─────────────────────────────────────────────────────────────
 
     def deploy(
         self,
@@ -153,17 +74,36 @@ class App:
 
         return decorator
 
-    # ── Introspection ───────────────────────────────────────────────────────
+    # ── HTTP mounting ──────────────────────────────────────────────────────
+
+    def mount(self, module: Module, *, prefix: str) -> ModuleExport:
+        """
+        Embed a Module AND map its HTTP-serving functions under a URL prefix.
+
+        Equivalent to ``app.use(module)`` but additionally registers route
+        prefix mappings so the deploy engine wires the proxy / API gateway
+        correctly.
+
+        Usage::
+
+            app.mount(auth, prefix="/auth")
+            # auth's functions are now accessible at /auth/*
+        """
+        exports = self.use(module)
+        # Record the prefix mapping for the deploy engine
+        ns = exports.namespace or module.name
+        if not hasattr(self, "_mounts"):
+            self._mounts: dict[str, str] = {}
+        self._mounts[ns] = prefix
+        return exports
+
+    # ── Introspection ──────────────────────────────────────────────────────
 
     def describe(self) -> dict[str, Any]:
-        """Return a structured description of the registered components."""
-        return {
-            "name": self.name,
-            "storage": list(self._storage.keys()),
-            "agents": list(self._agents.keys()),
-            "functions": list(self._functions.keys()),
-            "deploy": self._deploy_config,
-        }
+        base = super().describe()
+        base["deploy"] = self._deploy_config
+        base["mounts"] = getattr(self, "_mounts", {})
+        return base
 
     def __repr__(self) -> str:
         return (
