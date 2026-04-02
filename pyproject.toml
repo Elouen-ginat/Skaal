@@ -48,6 +48,10 @@ skaal = "skaal.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["skaal"]
+# Include non-Python template files (Dockerfile, Pulumi.yaml, etc.)
+artifacts = [
+    "skaal/deploy/templates/**",
+]
 
 [tool.ruff]
 line-length = 100
