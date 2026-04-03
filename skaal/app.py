@@ -39,26 +39,26 @@ class App(Module):
 
     # ── WSGI app mounting ──────────────────────────────────────────────────
 
-    def mount_wsgi(self, wsgi_attribute: str) -> None:
+    def mount_wsgi(self, wsgi_app: Any | None = None, *, attribute: str) -> None:
         """
         Register an external WSGI application to be served by this Skaal app.
 
-        This tells the deploy generators to produce entry points that serve the
-        WSGI app instead of Skaal's own JSON API.  Skaal storage is wired at
-        startup so WSGI callbacks can use the ``sync_get`` / ``sync_set``
-        methods on storage classes.
-
         Args:
-            wsgi_attribute: Dotted attribute path to the WSGI callable in the
-                            source module, e.g. ``"dash_app.server"`` or
-                            ``"flask_app"``.
+            wsgi_app:  The WSGI callable itself (e.g. ``dash_app.server``).
+                       Pass ``None`` if only generating deploy artifacts without
+                       a running Dash/Flask instance (e.g. Dash not installed).
+            attribute: Dotted attribute path in the source module used by the
+                       deploy generators to reference the WSGI app in generated
+                       entry-point files, e.g. ``"dash_app.server"``.
 
-        Generated entry points:
+        ``skaal run`` uses *wsgi_app* directly — it serves via uvicorn +
+        starlette ``WSGIMiddleware`` so the full Dash/Flask UI is available
+        at ``http://localhost:<port>``.
 
-        - **Cloud Run**: ``main.py`` with gunicorn serving the WSGI app.
-          Storage is wired before gunicorn starts.
-        - **Lambda**: ``handler.py`` with ``mangum`` wrapping the WSGI app
-          as a Lambda handler.
+        ``skaal deploy`` uses *attribute* to generate the correct entry point:
+
+        - **Cloud Run**: ``main.py`` with gunicorn serving ``application``
+        - **Lambda**: ``handler.py`` with ``Mangum`` wrapping the WSGI app
 
         Example::
 
@@ -72,16 +72,17 @@ class App(Module):
                 pass
 
             dash_app = dash.Dash(__name__)
-            app.mount_wsgi("dash_app.server")
+            app.mount_wsgi(dash_app.server, attribute="dash_app.server")
 
-            # In Dash callbacks — use sync wrappers:
+            # In Dash callbacks:
             @dash_app.callback(...)
-            def my_callback(session_id):
-                state = Sessions.sync_get(session_id)   # safe in sync context
-                Sessions.sync_set(session_id, new_state)
+            def update(session_id):
+                state = Sessions.sync_get(session_id)
+                Sessions.sync_set(session_id, state)
                 return result
         """
-        self._wsgi_attribute: str = wsgi_attribute
+        self._wsgi_app: Any | None = wsgi_app
+        self._wsgi_attribute: str = attribute
 
     # ── Module mounting ────────────────────────────────────────────────────
 

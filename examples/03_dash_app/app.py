@@ -121,25 +121,30 @@ except ImportError:
     dash_app = None  # type: ignore[assignment]
 
 
-# ── Tell Skaal which WSGI app to serve at deploy time ─────────────────────────
+# ── Tell Skaal which WSGI app to serve ────────────────────────────────────────
 
-# "dash_app.server" is the Flask app behind the Dash frontend.
-# The deploy generator uses this to produce the correct entry point:
-#   - Cloud Run → main.py exposing `application = _user_module.dash_app.server`
-#   - Lambda    → handler.py with `Mangum(_user_module.dash_app.server)`
-skaal_app.mount_wsgi("dash_app.server")
+# dash_app.server is the Flask app behind the Dash frontend.
+#
+# - wsgi_app=... gives LocalRuntime the real callable for `skaal run`
+#   (serves via uvicorn + WSGIMiddleware so the Dash UI loads in the browser).
+# - attribute=... gives deploy generators the Python path to use in the
+#   generated main.py / handler.py entry-point files.
+skaal_app.mount_wsgi(
+    dash_app.server if dash_app is not None else None,
+    attribute="dash_app.server",
+)
 
 
 # ── Local dev entry point ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import asyncio
     from skaal.runtime.local import LocalRuntime
 
-    # Wire Skaal storage with a local in-memory backend for dev
-    LocalRuntime(skaal_app)
-
-    if dash_app is not None:
-        # Run Dash's dev server (hot reload, debug toolbar)
-        dash_app.run(debug=True, port=8050)
+    if dash_app is None:
+        print("Install dash to run: pip install dash dash-bootstrap-components")
     else:
-        print("Install dash to run the dev server: pip install dash dash-bootstrap-components")
+        # LocalRuntime wires storage AND serves the Dash UI via uvicorn.
+        # Requires: pip install uvicorn starlette
+        runtime = LocalRuntime(skaal_app, port=8050)
+        asyncio.run(runtime.serve())

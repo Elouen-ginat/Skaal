@@ -303,7 +303,22 @@ class LocalRuntime:
                 pass
 
     async def serve(self) -> None:
-        """Start the HTTP server and run until cancelled."""
+        """
+        Start the HTTP server and run until cancelled.
+
+        When a WSGI app has been registered via ``app.mount_wsgi()``, delegates
+        to :meth:`_serve_wsgi` which runs the WSGI app under uvicorn + starlette
+        ``WSGIMiddleware``.  Otherwise falls back to the built-in asyncio TCP
+        server that exposes Skaal functions as ``POST /{name}`` endpoints.
+        """
+        wsgi_app = getattr(self.app, "_wsgi_app", None)
+        if wsgi_app is not None:
+            await self._serve_wsgi(wsgi_app)
+        else:
+            await self._serve_skaal()
+
+    async def _serve_skaal(self) -> None:
+        """Built-in server: expose @app.function() as POST /{name} endpoints."""
         server = await asyncio.start_server(self._handle_connection, self.host, self.port)
         funcs = self._collect_functions()
         print(f"\n  Skaal local runtime — {self.app.name}")
@@ -313,3 +328,54 @@ class LocalRuntime:
         print()
         async with server:
             await server.serve_forever()
+
+    async def _serve_wsgi(self, wsgi_app: Any) -> None:
+        """
+        Serve a WSGI app (Dash/Flask) via uvicorn + starlette WSGIMiddleware.
+
+        Skaal storage is already wired by ``__init__``; this method only
+        handles the HTTP layer.  A ``/health`` endpoint is grafted onto the
+        starlette router before the WSGI catch-all so that load-balancer
+        probes work without touching the Flask app.
+
+        Requires ``uvicorn`` and ``starlette`` — both are in ``skaal[gcp]``
+        and can be installed standalone with::
+
+            pip install uvicorn starlette
+        """
+        try:
+            import uvicorn
+            from starlette.applications import Starlette
+            from starlette.middleware.wsgi import WSGIMiddleware
+            from starlette.responses import JSONResponse
+            from starlette.routing import Mount, Route
+        except ImportError as exc:
+            raise RuntimeError(
+                "Serving a WSGI app locally requires uvicorn and starlette.\n"
+                "Install them with:  pip install uvicorn starlette\n"
+                f"Missing: {exc}"
+            ) from exc
+
+        async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
+            return JSONResponse({"status": "ok", "app": self.app.name})
+
+        asgi_app = Starlette(routes=[
+            Route("/health", _health),
+            Mount("/", WSGIMiddleware(wsgi_app)),
+        ])
+
+        attribute = getattr(self.app, "_wsgi_attribute", "wsgi_app")
+        print(f"\n  Skaal local runtime — {self.app.name}  [WSGI: {attribute}]")
+        print(f"  http://{self.host}:{self.port}\n")
+        print(f"    /health  → Skaal health check")
+        print(f"    /*       → {attribute}  (Dash / Flask)")
+        print()
+
+        config = uvicorn.Config(
+            asgi_app,
+            host=self.host,
+            port=self.port,
+            log_level="info",
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
