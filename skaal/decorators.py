@@ -1,4 +1,4 @@
-"""Core user-facing decorators: @storage, @compute, @scale, @deploy, @handler, @shared."""
+"""Core user-facing decorators: @storage, @compute, @scale, @handler, @shared."""
 
 from __future__ import annotations
 
@@ -114,31 +114,6 @@ def scale(
 
     def decorator(fn: F) -> F:
         fn.__skim_scale__ = Scale(instances=instances, strategy=strategy)  # type: ignore[attr-defined]
-        return fn
-
-    return decorator
-
-
-def deploy(
-    *,
-    target: str = "k8s",
-    region: str | None = None,
-    min_instances: int = 1,
-    max_instances: int = 10,
-    scale_on: str | None = None,
-    overflow: str | None = None,
-) -> Callable[[F], F]:
-    """Declare deployment target for the application entry point."""
-
-    def decorator(fn: F) -> F:
-        fn.__skim_deploy__ = {  # type: ignore[attr-defined]
-            "target": target,
-            "region": region,
-            "min_instances": min_instances,
-            "max_instances": max_instances,
-            "scale_on": scale_on,
-            "overflow": overflow,
-        }
         return fn
 
     return decorator

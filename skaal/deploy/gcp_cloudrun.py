@@ -6,6 +6,7 @@ import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from skaal.deploy._deps import collect_user_packages
 from skaal.deploy._render import render, to_pulumi_yaml
 from skaal.deploy.config import (
     CloudRunDeployConfig,
@@ -113,6 +114,8 @@ def _build_pulumi_stack(
         "cloudRunMemory": {"type": "string", "default": deploy.memory},
         "cloudRunCpu": {"type": "string", "default": deploy.cpu},
         "cloudRunConcurrency": {"type": "integer", "default": deploy.concurrency},
+        "cloudRunMinInstances": {"type": "integer", "default": deploy.min_instances},
+        "cloudRunMaxInstances": {"type": "integer", "default": deploy.max_instances},
     }
 
     # Per-storage overridable params — validated via the typed config model
@@ -223,7 +226,14 @@ def _build_pulumi_stack(
     image = (
         f"${{gcp:region}}-docker.pkg.dev/${{gcp:project}}/${{repo.name}}/{app.name}:latest"
     )
+    scaling_annotations = {
+        "autoscaling.knative.dev/minScale": "${cloudRunMinInstances}",
+        "autoscaling.knative.dev/maxScale": "${cloudRunMaxInstances}",
+    }
+    template_annotations = {**scaling_annotations, **service_annotations}
+
     template: dict[str, Any] = {
+        "metadata": {"annotations": template_annotations},
         "spec": {
             "containerConcurrency": "${cloudRunConcurrency}",
             "containers": [{
@@ -238,8 +248,6 @@ def _build_pulumi_stack(
             }],
         },
     }
-    if service_annotations:
-        template["metadata"] = {"annotations": service_annotations}
 
     resources["cloud-run-service"] = {
         "type": "gcp:cloudrun:Service",
@@ -339,12 +347,14 @@ def generate_artifacts(
     generated.append(dockerfile_path)
 
     # ── requirements.txt ──────────────────────────────────────────────────────
-    deps = ["skaal[gcp]", "uvicorn>=0.29"]
+    infra_deps = ["skaal[gcp]", "uvicorn>=0.29"]
     for spec in plan.storage.values():
         if spec.backend == "cloud-sql-postgres":
-            deps.append("cloud-sql-python-connector[asyncpg]>=1.9")
+            infra_deps.append("cloud-sql-python-connector[asyncpg]>=1.9")
+    user_pkgs = collect_user_packages(source_module)
+    deps = list(dict.fromkeys(infra_deps + user_pkgs))
     requirements_path = output_dir / "requirements.txt"
-    requirements_path.write_text("\n".join(dict.fromkeys(deps)) + "\n")
+    requirements_path.write_text("\n".join(deps) + "\n")
     generated.append(requirements_path)
 
     # ── Pulumi.yaml ───────────────────────────────────────────────────────────

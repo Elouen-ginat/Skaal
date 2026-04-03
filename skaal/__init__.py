@@ -11,7 +11,6 @@ from skaal.agent import Agent, agent
 from skaal.channel import Channel
 from skaal.decorators import (
     compute,
-    deploy,
     handler,
     scale,
     shared,
@@ -47,7 +46,6 @@ __all__ = [
     # Decorators
     "agent",
     "compute",
-    "deploy",
     "handler",
     "scale",
     "shared",

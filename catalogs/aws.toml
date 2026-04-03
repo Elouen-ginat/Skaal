@@ -139,9 +139,12 @@ cost_per_invocation = 0.0000002
 notes = "Preferred for bursty, low-frequency, stateless workloads"
 
 [compute.lambda.deploy]
-runtime    = "python3.11"
-timeout    = 30
-memory_mb  = 256
+runtime               = "python3.11"
+timeout               = 30
+memory_mb             = 256
+# -1 = unreserved (Lambda scales to account limit).
+# Set a positive value to cap concurrent executions.
+reserved_concurrency  = -1
 
 # ── Network ────────────────────────────────────────────────────────────────
 

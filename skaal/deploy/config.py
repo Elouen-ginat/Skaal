@@ -124,6 +124,15 @@ class LambdaDeployConfig(ComputeDeployConfig):
         default=256, ge=128, le=10240,
         description="Memory allocated to the function in MB. Must be a multiple of 64.",
     )
+    reserved_concurrency: int = Field(
+        default=-1, ge=-1,
+        description=(
+            "Maximum number of concurrent Lambda executions. "
+            "-1 means unreserved (AWS account limit). "
+            "0 throttles the function completely. "
+            "Any positive value caps parallel invocations."
+        ),
+    )
 
     @field_validator("runtime")
     @classmethod
@@ -159,6 +168,18 @@ class CloudRunDeployConfig(ComputeDeployConfig):
         default=80, ge=1, le=1000,
         description="Max concurrent requests per container instance.",
     )
+    min_instances: int = Field(
+        default=0, ge=0,
+        description=(
+            "Minimum number of container instances kept warm. "
+            "0 means scale to zero when idle (cold starts possible). "
+            "Set >= 1 to eliminate cold starts at the cost of always-on billing."
+        ),
+    )
+    max_instances: int = Field(
+        default=1000, ge=1, le=1000,
+        description="Maximum number of container instances Cloud Run may scale to.",
+    )
 
     @field_validator("memory")
     @classmethod
@@ -175,6 +196,16 @@ class CloudRunDeployConfig(ComputeDeployConfig):
         if not _CPU_RE.match(v):
             raise ValueError(
                 f"cpu must be like '1000m' or '2', got {v!r}."
+            )
+        return v
+
+    @field_validator("max_instances")
+    @classmethod
+    def _max_gte_min(cls, v: int, info: Any) -> int:
+        min_i = info.data.get("min_instances", 0)
+        if v < min_i:
+            raise ValueError(
+                f"max_instances ({v}) must be >= min_instances ({min_i})."
             )
         return v
 
