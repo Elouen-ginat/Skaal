@@ -114,6 +114,8 @@ def _build_pulumi_stack(
         "cloudRunMemory": {"type": "string", "default": deploy.memory},
         "cloudRunCpu": {"type": "string", "default": deploy.cpu},
         "cloudRunConcurrency": {"type": "integer", "default": deploy.concurrency},
+        "cloudRunMinInstances": {"type": "integer", "default": deploy.min_instances},
+        "cloudRunMaxInstances": {"type": "integer", "default": deploy.max_instances},
     }
 
     # Per-storage overridable params — validated via the typed config model
@@ -224,7 +226,14 @@ def _build_pulumi_stack(
     image = (
         f"${{gcp:region}}-docker.pkg.dev/${{gcp:project}}/${{repo.name}}/{app.name}:latest"
     )
+    scaling_annotations = {
+        "autoscaling.knative.dev/minScale": "${cloudRunMinInstances}",
+        "autoscaling.knative.dev/maxScale": "${cloudRunMaxInstances}",
+    }
+    template_annotations = {**scaling_annotations, **service_annotations}
+
     template: dict[str, Any] = {
+        "metadata": {"annotations": template_annotations},
         "spec": {
             "containerConcurrency": "${cloudRunConcurrency}",
             "containers": [{
@@ -239,8 +248,6 @@ def _build_pulumi_stack(
             }],
         },
     }
-    if service_annotations:
-        template["metadata"] = {"annotations": service_annotations}
 
     resources["cloud-run-service"] = {
         "type": "gcp:cloudrun:Service",

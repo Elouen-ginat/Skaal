@@ -123,9 +123,13 @@ cost_per_invocation = 0.00000024
 notes = "Preferred for bursty, stateless workloads"
 
 [compute.cloud-run.deploy]
-memory      = "512Mi"
-cpu         = "1000m"
-concurrency = 80
+memory        = "512Mi"
+cpu           = "1000m"
+concurrency   = 80
+# 0 = scale to zero when idle (cold starts possible).
+# Set >= 1 to keep instances warm at the cost of always-on billing.
+min_instances = 0
+max_instances = 1000
 
 # ── Network ────────────────────────────────────────────────────────────────
 

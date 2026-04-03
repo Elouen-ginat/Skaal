@@ -143,18 +143,28 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile") -> dict[str, Any]:
     }
 
     # ── Lambda function ───────────────────────────────────────────────────────
+    lambda_props: dict[str, Any] = {
+        "name": f"${{pulumi.stack}}-{app.name}",
+        "runtime": "${lambdaRuntime}",
+        "handler": "handler.handler",
+        "role": "${lambda-role.arn}",
+        "code": {"fn::fileArchive": "./lambda_package"},
+        "timeout": "${lambdaTimeout}",
+        "memorySize": "${lambdaMemoryMb}",
+        "environment": {"variables": env_vars},
+    }
+    # Only set reservedConcurrentExecutions when explicitly capped.
+    # Omitting the property lets Lambda scale to the account limit (default).
+    if deploy.reserved_concurrency >= 0:
+        lambda_props["reservedConcurrentExecutions"] = "${lambdaReservedConcurrency}"
+        config["lambdaReservedConcurrency"] = {
+            "type": "integer",
+            "default": deploy.reserved_concurrency,
+        }
+
     resources["lambda-fn"] = {
         "type": "aws:lambda:Function",
-        "properties": {
-            "name": f"${{pulumi.stack}}-{app.name}",
-            "runtime": "${lambdaRuntime}",
-            "handler": "handler.handler",
-            "role": "${lambda-role.arn}",
-            "code": {"fn::fileArchive": "./lambda_package"},
-            "timeout": "${lambdaTimeout}",
-            "memorySize": "${lambdaMemoryMb}",
-            "environment": {"variables": env_vars},
-        },
+        "properties": lambda_props,
     }
 
     # ── HTTP API Gateway v2 ───────────────────────────────────────────────────

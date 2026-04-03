@@ -1,4 +1,4 @@
-"""App — a deployable Skaal application. Extends Module with a deploy target."""
+"""App — the central registry for a Skaal application."""
 
 from __future__ import annotations
 
@@ -13,10 +13,16 @@ class App(Module):
     """
     Central registry for a Skaal application.
 
-    ``App`` extends ``Module`` with a deploy target (``deploy()``) and HTTP
-    mounting (``mount()``). All storage, agent, function, channel, pattern,
-    and attach methods are inherited from ``Module`` — the public API is
-    identical to before this refactor.
+    ``App`` extends ``Module`` with HTTP mounting (``mount()``).  All storage,
+    agent, function, channel, pattern, and attach methods are inherited from
+    ``Module``.
+
+    Deployment target and region are environment concerns — they are passed to
+    ``skaal deploy`` via CLI flags or environment variables (``SKAAL_TARGET``,
+    ``SKAAL_REGION``), not declared in application code.  Scaling policy
+    (min/max instances, concurrency) lives in the catalog's
+    ``[compute.X.deploy]`` section so it can be overridden per environment
+    without touching source code.
 
     Usage::
 
@@ -26,53 +32,10 @@ class App(Module):
         class Profiles(Map[str, Profile]):
             pass
 
-        @app.agent(persistent=True)
-        class Customer(Agent):
-            score: float = 0.0
-
-        @app.function(compute=Compute(latency="< 200ms"))
+        @app.function()
         async def predict(customer_id: str) -> float:
             ...
-
-        @app.deploy(target="k8s", region="eu-west-1", min_instances=2)
-        def main():
-            app.serve_http(port=8080)
     """
-
-    def __init__(self, name: str) -> None:
-        super().__init__(name)
-        self._deploy_config: dict[str, Any] = {}
-
-    # ── Deploy ─────────────────────────────────────────────────────────────
-
-    def deploy(
-        self,
-        *,
-        target: str = "k8s",
-        region: str | None = None,
-        min_instances: int = 1,
-        max_instances: int = 10,
-        scale_on: str | None = None,
-        overflow: str | None = None,
-    ) -> Callable[[F], F]:
-        """Register the deploy target for this application."""
-        from skaal.decorators import deploy as _deploy_dec
-
-        outer = _deploy_dec(
-            target=target,
-            region=region,
-            min_instances=min_instances,
-            max_instances=max_instances,
-            scale_on=scale_on,
-            overflow=overflow,
-        )
-
-        def decorator(fn: F) -> F:
-            annotated = outer(fn)
-            self._deploy_config = annotated.__skim_deploy__  # type: ignore[attr-defined]
-            return annotated
-
-        return decorator
 
     # ── HTTP mounting ──────────────────────────────────────────────────────
 
@@ -101,7 +64,6 @@ class App(Module):
 
     def describe(self) -> dict[str, Any]:
         base = super().describe()
-        base["deploy"] = self._deploy_config
         base["mounts"] = getattr(self, "_mounts", {})
         return base
 
