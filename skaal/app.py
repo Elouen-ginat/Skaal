@@ -37,7 +37,54 @@ class App(Module):
             ...
     """
 
-    # ── HTTP mounting ──────────────────────────────────────────────────────
+    # ── WSGI app mounting ──────────────────────────────────────────────────
+
+    def mount_wsgi(self, wsgi_app: Any | None = None, *, attribute: str) -> None:
+        """
+        Register an external WSGI application to be served by this Skaal app.
+
+        Args:
+            wsgi_app:  The WSGI callable itself (e.g. ``dash_app.server``).
+                       Pass ``None`` if only generating deploy artifacts without
+                       a running Dash/Flask instance (e.g. Dash not installed).
+            attribute: Dotted attribute path in the source module used by the
+                       deploy generators to reference the WSGI app in generated
+                       entry-point files, e.g. ``"dash_app.server"``.
+
+        ``skaal run`` uses *wsgi_app* directly — it serves via uvicorn +
+        starlette ``WSGIMiddleware`` so the full Dash/Flask UI is available
+        at ``http://localhost:<port>``.
+
+        ``skaal deploy`` uses *attribute* to generate the correct entry point:
+
+        - **Cloud Run**: ``main.py`` with gunicorn serving ``application``
+        - **Lambda**: ``handler.py`` with ``Mangum`` wrapping the WSGI app
+
+        Example::
+
+            import dash
+            from skaal import App, Map
+
+            app = App("dashboard")
+
+            @app.storage(read_latency="< 5ms", durability="ephemeral", retention="30m")
+            class Sessions(Map[str, dict]):
+                pass
+
+            dash_app = dash.Dash(__name__)
+            app.mount_wsgi(dash_app.server, attribute="dash_app.server")
+
+            # In Dash callbacks:
+            @dash_app.callback(...)
+            def update(session_id):
+                state = Sessions.sync_get(session_id)
+                Sessions.sync_set(session_id, state)
+                return result
+        """
+        self._wsgi_app: Any | None = wsgi_app
+        self._wsgi_attribute: str = attribute
+
+    # ── Module mounting ────────────────────────────────────────────────────
 
     def mount(self, module: Module, *, prefix: str) -> ModuleExport:
         """
