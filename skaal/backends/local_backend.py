@@ -120,6 +120,9 @@ class LocalMap:
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+        import asyncio
+
+        self._lock = asyncio.Lock()
 
     async def get(self, key: str) -> Any | None:
         return self._data.get(key)
@@ -135,6 +138,14 @@ class LocalMap:
 
     async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
         return [(k, v) for k, v in self._data.items() if k.startswith(prefix)]
+
+    async def increment_counter(self, key: str, delta: int = 1) -> int:
+        """Atomically increment a counter using a lock."""
+        async with self._lock:
+            current = int(self._data.get(key, 0))
+            new_value = current + delta
+            self._data[key] = new_value
+            return new_value
 
     async def close(self) -> None:
         pass
