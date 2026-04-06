@@ -13,10 +13,14 @@ Two categories:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from skaal.types import AccessPattern, Durability, Latency, RateLimitPolicy, Throughput
+
+if TYPE_CHECKING:
+    from skaal.schedule import Cron, Every
 
 # ── Base classes ──────────────────────────────────────────────────────────
 
@@ -363,3 +367,127 @@ class ExternalObservability(ExternalComponent):
         )
         self.provider = provider
         self.__skim_component__.update({"provider": provider})
+
+
+# ── Schedule trigger ──────────────────────────────────────────────────────────
+
+
+class ScheduleTrigger(ProvisionedComponent):
+    """
+    A cloud-native schedule trigger provisioned by Skaal.
+
+    Maps to **AWS EventBridge** (rule + Lambda permission), **GCP Cloud
+    Scheduler** (job → Cloud Run), or **APScheduler** for local development.
+
+    Created automatically by ``@app.schedule()``; attach manually only for
+    advanced configuration.
+
+    Usage (manual)::
+
+        trigger = ScheduleTrigger(
+            "daily-report",
+            trigger=Cron(expression="0 8 * * *"),
+            target_function="generate_report",
+            timezone="America/New_York",
+        )
+        app.attach(trigger)
+    """
+
+    _skim_component_kind = "schedule-trigger"
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        trigger: "Every | Cron",
+        target_function: str,
+        timezone: str = "UTC",
+        emit_to: str | None = None,
+    ) -> None:
+        super().__init__(name)
+        self.trigger = trigger
+        self.target_function = target_function
+        self.timezone = timezone
+        self.emit_to = emit_to
+        self.__skim_component__.update(
+            {
+                "trigger": trigger.model_dump(),
+                "trigger_type": type(trigger).__name__.lower(),  # "every" | "cron"
+                "target_function": target_function,
+                "timezone": timezone,
+                "emit_to": emit_to,
+            }
+        )
+
+
+# ── App reference ─────────────────────────────────────────────────────────────
+
+
+class AppRef(ExternalComponent):
+    """
+    Reference to another deployed Skaal app.
+
+    Calls functions on a remote Skaal app via HTTP/HTTPS POST using
+    ``httpx``.  The base URL is resolved from ``base_url`` (literal) or
+    ``base_url_env`` (name of the environment variable that holds the URL at
+    runtime).
+
+    Usage::
+
+        payments = AppRef("payments", base_url_env="PAYMENTS_SERVICE_URL")
+        app.attach(payments)
+
+        result = await payments.charge(amount=100, currency="USD")
+        # or explicitly:
+        result = await payments.call("charge", amount=100, currency="USD")
+    """
+
+    _skim_component_kind = "app-ref"
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        base_url: str | None = None,
+        base_url_env: str | None = None,
+        timeout_ms: int = 30_000,
+    ) -> None:
+        super().__init__(name, connection_string=base_url, connection_env=base_url_env)
+        self.timeout_ms = timeout_ms
+        self.__skim_component__["timeout_ms"] = timeout_ms
+
+    def _resolve_base_url(self) -> str:
+        if self.connection_string:
+            return self.connection_string.rstrip("/")
+        if self.connection_env:
+            url = os.environ.get(self.connection_env)
+            if url:
+                return url.rstrip("/")
+        raise RuntimeError(
+            f"AppRef {self.name!r}: set base_url= or the {self.connection_env!r} env var."
+        )
+
+    async def call(self, fn_name: str, **kwargs: Any) -> Any:
+        """Call a function on the remote Skaal app via ``POST /{fn_name}``."""
+        import httpx
+
+        url = f"{self._resolve_base_url()}/{fn_name}"
+        timeout = httpx.Timeout(self.timeout_ms / 1000)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=kwargs)
+        if resp.status_code >= 400:
+            data = resp.json()
+            raise RuntimeError(
+                f"AppRef {self.name!r} → {fn_name!r} [{resp.status_code}]: "
+                f"{data.get('error', data)}"
+            )
+        return resp.json()
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        async def _proxy(**kwargs: Any) -> Any:
+            return await self.call(name, **kwargs)
+
+        return _proxy

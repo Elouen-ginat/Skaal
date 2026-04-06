@@ -32,6 +32,16 @@ _GATEWAY_DEFAULTS: dict[str, str] = {
     "generic": "kong",
 }
 
+#: Schedule trigger implementations per deploy target
+_SCHEDULE_IMPL: dict[str, str] = {
+    "aws-lambda": "eventbridge",
+    "ecs": "eventbridge",
+    "gcp": "cloud-scheduler",
+    "k8s": "apscheduler",
+    "local": "apscheduler",
+    "generic": "apscheduler",
+}
+
 
 def _select_proxy_impl(component: Any, target: str) -> str:
     """Select proxy implementation, respecting explicit pinning."""
@@ -102,6 +112,9 @@ def encode_component(
     elif kind == "api-gateway":
         impl = _select_gateway_impl(component, target)
         reason = f"api-gateway implementation={impl} for target={target}"
+    elif kind == "schedule-trigger":
+        impl = _SCHEDULE_IMPL.get(target, "apscheduler")
+        reason = f"schedule-trigger → {impl} for target {target!r}"
     else:
         # Generic provisioned component — check catalog first
         comp_catalog = catalog.get("components", {})

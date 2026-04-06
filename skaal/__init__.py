@@ -10,13 +10,16 @@ from skaal.app import App
 from skaal.channel import Channel
 from skaal.components import (
     APIGateway,
+    AppRef,
     AuthConfig,
     ExternalObservability,
     ExternalQueue,
     ExternalStorage,
     Proxy,
     Route,
+    ScheduleTrigger,
 )
+from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.decorators import (
     compute,
     handler,
@@ -58,12 +61,19 @@ __all__ = [
     "SagaStep",
     # Components
     "APIGateway",
+    "AppRef",
     "AuthConfig",
     "ExternalObservability",
     "ExternalQueue",
     "ExternalStorage",
     "Proxy",
     "Route",
+    "ScheduleTrigger",
+    # Schedule
+    "Cron",
+    "Every",
+    "Schedule",
+    "ScheduleContext",
     # Resilience types
     "Bulkhead",
     "CircuitBreaker",

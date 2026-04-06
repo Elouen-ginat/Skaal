@@ -4,9 +4,11 @@ App: $app_name  Target: aws-lambda
 """
 import asyncio
 import base64
+import inspect
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -24,6 +26,33 @@ $backend_overrides
 
 
 def handler(event, context):
+    # ── EventBridge schedule trigger ──────────────────────────────────────────
+    # EventBridge sets a custom input JSON, not an HTTP event, so there is no
+    # requestContext / rawPath.  Detect by the _skaal_trigger sentinel key.
+    if "_skaal_trigger" in event:
+        from skaal.schedule import ScheduleContext
+
+        target_fn_name = event.get("target_function", "")
+        fn = getattr(_runtime.app, "_schedules", {}).get(target_fn_name)
+        if fn is None:
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps(
+                    {"error": f"Scheduled function {target_fn_name!r} not found"}
+                ),
+            }
+        ctx = ScheduleContext(fired_at=datetime.now(timezone.utc))
+        sig = inspect.signature(fn)
+        coro_or_result = fn(ctx=ctx) if "ctx" in sig.parameters else fn()
+        result = asyncio.run(coro_or_result) if asyncio.iscoroutine(coro_or_result) else coro_or_result
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(result, default=str),
+        }
+
+    # ── Normal HTTP invocation via API Gateway ────────────────────────────────
     method = event.get("requestContext", {}).get("http", {}).get("method", "POST")
     path = event.get("rawPath", "/")
     raw_body = event.get("body") or ""
