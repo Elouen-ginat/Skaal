@@ -83,6 +83,15 @@ def build(
         "--catalog",
         help="Path to catalog TOML. Env: SKAAL_CATALOG.",
     ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help=(
+            "Bundle the local skaal source into the artifact so the Docker image "
+            "uses your working copy instead of the PyPI release. "
+            "Useful when developing skaal itself."
+        ),
+    ),
 ) -> None:
     """
     Solve constraints and generate deployable artifacts.
@@ -192,6 +201,7 @@ def build(
             output_dir=resolved_out,
             source_module=module_path,
             app_var=var_name,
+            dev=dev,
         )
 
     typer.echo(f"\nGenerated {len(generated)} files:")
