@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -192,6 +193,84 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile") -> dict[str, Any]:
         },
         "options": {"dependsOn": ["${default-route}"]},
     }
+
+    # ── EventBridge rules for schedule triggers ───────────────────────────────
+    for comp_name, comp in plan.components.items():
+        if comp.kind != "schedule-trigger":
+            continue
+        cfg = comp.config
+        trigger_type = cfg.get("trigger_type", "cron")
+        target_fn = cfg.get("target_function", comp_name)
+
+        if trigger_type == "cron":
+            from skaal.schedule import Cron
+
+            schedule_expr = Cron(expression=cfg["trigger"]["expression"]).as_aws_expression()
+        else:
+            from skaal.schedule import Every
+
+            schedule_expr = Every(interval=cfg["trigger"]["interval"]).as_rate_expression()
+
+        rule_key = f"{comp_name}-rule"
+        target_key = f"{comp_name}-target"
+        permission_key = f"{comp_name}-permission"
+
+        resources[rule_key] = {
+            "type": "aws:events:Rule",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{comp_name}",
+                "scheduleExpression": schedule_expr,
+                "isEnabled": True,
+            },
+            "options": {"dependsOn": ["${lambda-fn}"]},
+        }
+        resources[target_key] = {
+            "type": "aws:events:Target",
+            "properties": {
+                "rule": f"${{{rule_key}.name}}",
+                "arn": "${lambda-fn.arn}",
+                "input": json.dumps(
+                    {"_skaal_trigger": comp_name, "target_function": target_fn}
+                ),
+            },
+        }
+        resources[permission_key] = {
+            "type": "aws:lambda:Permission",
+            "properties": {
+                "action": "lambda:InvokeFunction",
+                "function": "${lambda-fn.name}",
+                "principal": "events.amazonaws.com",
+                "sourceArn": f"${{{rule_key}.arn}}",
+            },
+        }
+
+    # Also grant EventBridge the necessary IAM action on the Lambda role
+    if any(c.kind == "schedule-trigger" for c in plan.components.values()):
+        resources["events-invoke-policy"] = {
+            "type": "aws:iam:Policy",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-events-invoke",
+                "policy": {
+                    "fn::toJSON": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": ["lambda:InvokeFunction"],
+                                "Resource": "${lambda-fn.arn}",
+                            }
+                        ],
+                    }
+                },
+            },
+        }
+        resources["events-invoke-attach"] = {
+            "type": "aws:iam:RolePolicyAttachment",
+            "properties": {
+                "role": "${lambda-role.name}",
+                "policyArn": "${events-invoke-policy.arn}",
+            },
+        }
 
     outputs: dict[str, str] = {
         "apiUrl": "${default-stage.invokeUrl}",

@@ -209,7 +209,13 @@ class LocalRuntime:
     # ── HTTP dispatch ──────────────────────────────────────────────────────────
 
     def _collect_functions(self) -> dict[str, Any]:
-        """Flat map of qualified_name → callable for all registered functions."""
+        """Flat map of qualified_name → callable for all HTTP-invocable functions.
+
+        Includes:
+        - ``@app.function()`` decorated callables (have ``__skim_compute__``)
+        - ``@app.schedule()`` decorated callables (invocable by Cloud Scheduler /
+          EventBridge; excluded from the public ``GET /`` index)
+        """
         funcs: dict[str, Any] = {
             qname: obj
             for qname, obj in self.app._collect_all().items()
@@ -218,16 +224,26 @@ class LocalRuntime:
         # Also expose top-level functions by short name for convenience.
         for name, fn in self.app._functions.items():
             funcs.setdefault(name, fn)
+        # Include scheduled functions so Cloud Scheduler / EventBridge can invoke
+        # them via HTTP POST.  They are excluded from the GET / listing.
+        for name, fn in getattr(self.app, "_schedules", {}).items():
+            funcs.setdefault(name, fn)
         return funcs
+
+    def _collect_schedules(self) -> dict[str, Any]:
+        """Flat map of name → callable for all ``@app.schedule()`` functions."""
+        return dict(getattr(self.app, "_schedules", {}))
 
     async def _dispatch(self, method: str, path: str, body: bytes) -> tuple[Any, int]:
         """Route an HTTP request to a registered function."""
         funcs = self._function_cache
 
         if method == "GET" and path in ("/", ""):
+            # Only expose @app.function() endpoints in the public index.
+            public = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skim_schedule__")]
             return {
                 "app": self.app.name,
-                "endpoints": [{"path": f"/{n}", "function": n} for n in sorted(funcs)],
+                "endpoints": [{"path": f"/{n}", "function": n} for n in public],
                 "storage": list(self._backends.keys()),
             }, 200
 
@@ -248,6 +264,19 @@ class LocalRuntime:
                         return {"error": "Request body must be a JSON object"}, 400
                 except json.JSONDecodeError as exc:
                     return {"error": f"Invalid JSON: {exc}"}, 400
+
+            # Strip the internal schedule-trigger marker and inject ScheduleContext
+            # when Cloud Scheduler / EventBridge includes it in the request body.
+            is_schedule_invocation = kwargs.pop("_skaal_trigger", None) is not None
+            if is_schedule_invocation:
+                sig = inspect.signature(fn)
+                if "ctx" in sig.parameters:
+                    from datetime import timezone
+                    from skaal.schedule import ScheduleContext
+
+                    kwargs["ctx"] = ScheduleContext(
+                        fired_at=__import__("datetime").datetime.now(timezone.utc)
+                    )
 
             try:
                 result = await fn(**kwargs) if inspect.iscoroutinefunction(fn) else fn(**kwargs)
@@ -372,16 +401,101 @@ class LocalRuntime:
                 await backend.close()
 
     async def _serve_skaal(self) -> None:
-        """Built-in server: expose @app.function() as POST /{name} endpoints."""
+        """Built-in server: expose @app.function() as POST /{name} endpoints.
+
+        Also starts an APScheduler ``AsyncIOScheduler`` for any functions
+        registered with ``@app.schedule()``.
+        """
+        from datetime import timezone
+
         server = await asyncio.start_server(self._handle_connection, self.host, self.port)
+
+        # ── Print startup banner ───────────────────────────────────────────────
         funcs = self._function_cache
+        public_fns = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skim_schedule__")]
+        scheduled = self._collect_schedules()
+
         print(f"\n  Skaal local runtime — {self.app.name}")
         print(f"  http://{self.host}:{self.port}\n")
-        for name in sorted(funcs):
+        for name in public_fns:
             print(f"    POST /{name}")
+        if scheduled:
+            print()
+            for name, fn in sorted(scheduled.items()):
+                meta = fn.__skim_schedule__
+                trigger = meta["trigger"]
+                print(f"    schedule /{name}  [{trigger!r}]")
         print()
-        async with server:
-            await server.serve_forever()
+
+        # ── Start APScheduler for scheduled functions ──────────────────────────
+        scheduler = None
+        if scheduled:
+            try:
+                from apscheduler.schedulers.asyncio import AsyncIOScheduler
+                from apscheduler.triggers.cron import CronTrigger
+                from apscheduler.triggers.interval import IntervalTrigger
+
+                from skaal.schedule import Cron, Every, ScheduleContext
+
+                scheduler = AsyncIOScheduler()
+
+                for name, fn in scheduled.items():
+                    meta = fn.__skim_schedule__
+                    trigger = meta["trigger"]
+                    emit_to = meta.get("emit_to")
+                    tz = meta.get("timezone", "UTC")
+
+                    if isinstance(trigger, Every):
+                        ap_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=tz)
+                    else:
+                        ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
+
+                    # Capture loop variables explicitly to avoid closure issues.
+                    def _make_job(
+                        _fn: Any = fn,
+                        _emit_to: Any = emit_to,
+                        _name: str = name,
+                    ) -> Any:
+                        async def _job() -> None:
+                            sig = inspect.signature(_fn)
+                            ctx = ScheduleContext(
+                                fired_at=__import__("datetime").datetime.now(timezone.utc)
+                            )
+                            try:
+                                if "ctx" in sig.parameters:
+                                    result = (
+                                        await _fn(ctx=ctx)
+                                        if inspect.iscoroutinefunction(_fn)
+                                        else _fn(ctx=ctx)
+                                    )
+                                else:
+                                    result = (
+                                        await _fn()
+                                        if inspect.iscoroutinefunction(_fn)
+                                        else _fn()
+                                    )
+                                if _emit_to is not None and result is not None:
+                                    await _emit_to.send(result)
+                            except Exception as exc:  # noqa: BLE001
+                                print(f"  [schedule/{_name}] ERROR: {exc}")
+
+                        return _job
+
+                    scheduler.add_job(_make_job(), ap_trigger)
+
+                scheduler.start()
+            except ImportError:
+                print(
+                    "  WARNING: apscheduler not installed — scheduled functions will not run.\n"
+                    "           Install with: pip install apscheduler\n"
+                )
+
+        try:
+            async with server:
+                await server.serve_forever()
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
 
     async def _serve_wsgi(self, wsgi_app: Any) -> None:
         """

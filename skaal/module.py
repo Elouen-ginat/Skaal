@@ -18,6 +18,12 @@ from skaal.types import (
     Throughput,
 )
 
+# TYPE_CHECKING import to avoid circular deps at runtime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from skaal.schedule import Cron, Every
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -93,6 +99,7 @@ class Module:
         self._channels: dict[str, Any] = {}
         self._patterns: dict[str, Any] = {}
         self._components: dict[str, Any] = {}
+        self._schedules: dict[str, Any] = {}
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}  # namespace → mounted module
 
@@ -264,6 +271,60 @@ class Module:
         self._components[component.name] = component
         return component
 
+    def schedule(
+        self,
+        fn_to_decorate: F | None = None,
+        *,
+        trigger: "Every | Cron",
+        emit_to: Any | None = None,
+        timezone: str = "UTC",
+    ) -> "Callable[[F], F] | F":
+        """Register a background function triggered on a time-based schedule.
+
+        The appropriate cloud scheduler is provisioned automatically:
+        - **AWS**: EventBridge rule + Lambda permission
+        - **GCP**: Cloud Scheduler job → Cloud Run
+        - **Local**: APScheduler ``AsyncIOScheduler``
+
+        Can be used as::
+
+            @app.schedule(trigger=Every(interval="5m"))
+            async def cleanup(): ...
+
+            @app.schedule(trigger=Cron(expression="0 8 * * *"), timezone="US/Eastern")
+            async def daily_report(ctx: ScheduleContext) -> None:
+                print(f"Fired at {ctx.fired_at}")
+
+        Args:
+            trigger:   :class:`~skaal.schedule.Every` or :class:`~skaal.schedule.Cron`.
+            emit_to:   Optional Channel / EventLog to publish non-``None`` results to.
+            timezone:  IANA timezone string (default: ``"UTC"``).
+        """
+        from skaal.components import ScheduleTrigger
+
+        def decorator(fn: F) -> F:
+            fn.__skim_schedule__ = {  # type: ignore[attr-defined]
+                "trigger": trigger,
+                "emit_to": emit_to,
+                "timezone": timezone,
+            }
+            self._schedules[fn.__name__] = fn
+            # Auto-create and attach a ScheduleTrigger component so the solver
+            # and deploy engine can provision the right cloud resource.
+            st = ScheduleTrigger(
+                f"{fn.__name__}-schedule",
+                trigger=trigger,
+                target_function=fn.__name__,
+                timezone=timezone,
+                emit_to=emit_to.name if emit_to is not None else None,
+            )
+            self._components[st.name] = st
+            return fn
+
+        if fn_to_decorate is None:
+            return decorator
+        return decorator(fn_to_decorate)
+
     def pattern(self, p: Any) -> Any:
         """
         Register a pattern (EventLog, Projection, Saga, Outbox) with this module.
@@ -419,6 +480,8 @@ class Module:
             result[f"{prefix}{name}"] = obj
         for name, obj in self._patterns.items():
             result[f"{prefix}{name}"] = obj
+        for name, obj in self._schedules.items():
+            result[f"{prefix}{name}"] = obj
 
         for ns, sub in self._submodules.items():
             sub_prefix = f"{prefix}{ns}." if ns else prefix
@@ -447,6 +510,7 @@ class Module:
             "functions": list(self._functions.keys()),
             "channels": list(self._channels.keys()),
             "patterns": list(self._patterns.keys()),
+            "schedules": list(self._schedules.keys()),
             "components": list(self._components.keys()),
             "submodules": {k: v.describe() for k, v in self._submodules.items()},
             "exports": list(self._exports),

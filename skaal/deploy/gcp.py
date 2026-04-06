@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -193,6 +195,61 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
             "member": "allUsers",
         },
     }
+
+    # ── Cloud Scheduler jobs for schedule triggers ────────────────────────────
+    for comp_name, comp in plan.components.items():
+        if comp.kind != "schedule-trigger":
+            continue
+        cfg = comp.config
+        trigger_type = cfg.get("trigger_type", "cron")
+        target_fn = cfg.get("target_function", comp_name)
+        tz = cfg.get("timezone", "UTC")
+
+        if trigger_type == "cron":
+            cron_expr = cfg["trigger"]["expression"]
+        else:
+            from skaal.schedule import Every
+
+            cron_expr = Every(interval=cfg["trigger"]["interval"]).as_cron_expression()
+
+        # Cloud Scheduler POSTs to /<target_function_name> on the Cloud Run URL.
+        # We embed a _skaal_trigger marker so LocalRuntime._dispatch knows to
+        # handle ScheduleContext injection.
+        body_bytes = json.dumps(
+            {"_skaal_trigger": comp_name}
+        ).encode()
+
+        resources[f"{comp_name}-scheduler"] = {
+            "type": "gcp:cloudscheduler:Job",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{comp_name}",
+                "schedule": cron_expr,
+                "timeZone": tz,
+                "region": "${gcp:region}",
+                "httpTarget": {
+                    "uri": (
+                        "${"
+                        "cloud-run-service.statuses[0].url"
+                        "}" + f"/{target_fn}"
+                    ),
+                    "httpMethod": "POST",
+                    "headers": {"Content-Type": "application/json"},
+                    "body": base64.b64encode(body_bytes).decode(),
+                    "oidcToken": {
+                        "serviceAccountEmail": (
+                            "${cloud-run-service.template[0].spec[0]"
+                            ".serviceAccountName}"
+                        ),
+                        "audience": (
+                            "${"
+                            "cloud-run-service.statuses[0].url"
+                            "}"
+                        ),
+                    },
+                },
+            },
+            "options": {"dependsOn": ["${cloud-run-service}"]},
+        }
 
     return {
         "name": f"skaal-{app.name}",
