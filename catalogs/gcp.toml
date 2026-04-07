@@ -9,6 +9,7 @@ durability    = ["ephemeral", "persistent"]
 max_size_gb   = 300
 access_patterns = ["random-read", "random-write", "pub-sub"]
 cost_per_gb_month = 3.20
+requires_vpc  = true
 regions = ["all"]
 
 [storage.memorystore-redis.deploy]
@@ -34,6 +35,7 @@ durability    = ["persistent", "durable"]
 max_size_gb   = 30_720
 access_patterns = ["random-read", "sequential", "transactional"]
 cost_per_gb_month = 0.17
+requires_vpc  = true
 regions = ["all"]
 
 [storage.cloud-sql-postgres.deploy]

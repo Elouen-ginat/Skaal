@@ -22,8 +22,9 @@ durability    = ["persistent", "durable"]
 max_size_gb   = 16_000
 access_patterns = ["random-read", "sequential", "transactional"]
 cost_per_gb_month = 0.12
+requires_vpc  = true
 regions = ["all"]
-notes = "Default for strong-consistency relational workloads"
+notes = "Default for strong-consistency relational workloads; always runs inside a VPC"
 
 [storage.s3]
 display_name = "Amazon S3"

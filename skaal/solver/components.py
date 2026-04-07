@@ -1,62 +1,116 @@
 """Component constraint encoding and resolution for the Z3 solver.
 
-Resolves ``ProvisionedComponent`` instances to concrete implementations and
-passes ``ExternalComponent`` instances through as-is.  Both are written into
-``PlanFile.components`` so the deploy engine can provision or configure them.
+Resolves :class:`~skaal.components.ProvisionedComponent` instances to concrete
+implementations and passes :class:`~skaal.components.ExternalComponent`
+instances through as-is.  Both are written into ``PlanFile.components`` so the
+deploy engine can provision or configure them.
+
+Adding support for a new component kind
+----------------------------------------
+1. Add a ``"<kind>": { ... }`` entry to :data:`_COMPONENT_DEFAULTS` mapping
+   each :class:`~skaal.solver.targets.TargetFamily` value to a default
+   implementation name.
+2. Add a fallback string to :data:`_COMPONENT_FALLBACKS`.
+No other changes are required.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from skaal.solver.targets import TargetFamily, resolve_family
+
 if TYPE_CHECKING:
     from skaal.components import ComponentBase
     from skaal.plan import ComponentSpec
 
 
-# ── Implementation selection heuristics ──────────────────────────────────────
+# ── Implementation selection tables ──────────────────────────────────────────
+#
+# Keyed by component kind → target family value → default implementation.
+# Family values (TargetFamily.value) are used as keys so the table is readable
+# without importing the enum at every call site.
 
-#: Default proxy implementations per deploy target
-_PROXY_DEFAULTS: dict[str, str] = {
-    "k8s": "traefik",
-    "ecs": "alb",
-    "aws-lambda": "api-gateway",
-    "generic": "traefik",
+_COMPONENT_DEFAULTS: dict[str, dict[str, str]] = {
+    "proxy": {
+        TargetFamily.AWS.value:     "api-gateway",
+        TargetFamily.GCP.value:     "cloud-endpoints",
+        TargetFamily.LOCAL.value:   "traefik",
+        TargetFamily.GENERIC.value: "traefik",
+        # Container-orchestration overrides within GENERIC family
+        "k8s": "traefik",
+        "ecs": "alb",
+    },
+    "api-gateway": {
+        TargetFamily.AWS.value:     "api-gateway",
+        TargetFamily.GCP.value:     "cloud-endpoints",
+        TargetFamily.LOCAL.value:   "kong",
+        TargetFamily.GENERIC.value: "kong",
+        "k8s": "kong",
+        "ecs": "api-gateway",
+    },
+    "schedule-trigger": {
+        TargetFamily.AWS.value:     "eventbridge",
+        TargetFamily.GCP.value:     "cloud-scheduler",
+        TargetFamily.LOCAL.value:   "apscheduler",
+        TargetFamily.GENERIC.value: "apscheduler",
+        "k8s": "apscheduler",
+        "ecs": "eventbridge",
+    },
 }
 
-#: Default API gateway implementations per deploy target
-_GATEWAY_DEFAULTS: dict[str, str] = {
-    "k8s": "kong",
-    "ecs": "api-gateway",
-    "aws-lambda": "api-gateway",
-    "generic": "kong",
-}
-
-#: Schedule trigger implementations per deploy target
-_SCHEDULE_IMPL: dict[str, str] = {
-    "aws-lambda": "eventbridge",
-    "ecs": "eventbridge",
-    "gcp": "cloud-scheduler",
-    "k8s": "apscheduler",
-    "local": "apscheduler",
-    "generic": "apscheduler",
+#: Fallback implementation when neither the target nor its family has an entry.
+_COMPONENT_FALLBACKS: dict[str, str] = {
+    "proxy":            "traefik",
+    "api-gateway":      "kong",
+    "schedule-trigger": "apscheduler",
 }
 
 
-def _select_proxy_impl(component: Any, target: str) -> str:
-    """Select proxy implementation, respecting explicit pinning."""
+# ── Resolution logic ──────────────────────────────────────────────────────────
+
+
+def _resolve_provisioned_impl(
+    name: str,
+    kind: str,
+    component: Any,
+    target: str,
+    catalog: dict[str, Any],
+) -> tuple[str, str]:
+    """Return ``(implementation, reason)`` for a :class:`ProvisionedComponent`.
+
+    Resolution order:
+    1. Explicit ``implementation`` pin on the component instance.
+    2. Exact target match in :data:`_COMPONENT_DEFAULTS` (e.g. ``"ecs"``).
+    3. Target-family match in :data:`_COMPONENT_DEFAULTS` (e.g. ``"aws"``).
+    4. Catalog ``[components.<name>]`` entry.
+    5. The *kind* string itself as a last resort.
+    """
+    # 1. Explicit pin takes absolute precedence
     pinned = getattr(component, "implementation", None)
     if pinned:
-        return pinned
-    return _PROXY_DEFAULTS.get(target, "traefik")
+        return pinned, f"{kind} implementation={pinned!r} (explicitly pinned)"
 
+    defaults = _COMPONENT_DEFAULTS.get(kind)
+    if defaults is not None:
+        # 2. Exact target string (handles special cases like "ecs" inside GENERIC)
+        impl = defaults.get(target)
+        if impl is not None:
+            return impl, f"{kind} implementation={impl!r} for target={target!r}"
 
-def _select_gateway_impl(component: Any, target: str) -> str:
-    """Select API gateway implementation, respecting explicit pinning."""
-    pinned = getattr(component, "implementation", None)
-    if pinned:
-        return pinned
-    return _GATEWAY_DEFAULTS.get(target, "kong")
+        # 3. Target family
+        family_key = resolve_family(target).value
+        impl = defaults.get(family_key, _COMPONENT_FALLBACKS.get(kind, kind))
+        return impl, f"{kind} implementation={impl!r} for target={target!r}"
+
+    # 4. Catalog lookup for unknown / custom kinds
+    comp_catalog = catalog.get("components", {})
+    if name in comp_catalog:
+        impl = comp_catalog[name].get("implementation", kind)
+        return impl, f"implementation {impl!r} from catalog for {kind}"
+
+    # 5. Bare kind name — the deploy engine is expected to recognise it
+    return kind, f"default implementation for kind={kind!r}"
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -68,22 +122,19 @@ def encode_component(
     catalog: dict[str, Any],
     target: str = "generic",
 ) -> "ComponentSpec":
-    """
-    Resolve a component to a concrete :class:`~skaal.plan.ComponentSpec`.
+    """Resolve a component to a concrete :class:`~skaal.plan.ComponentSpec`.
 
-    - **ProvisionedComponent** (Proxy, APIGateway): selects an implementation
-      from the catalog ``[components.*]`` section (if present) or from
-      built-in defaults keyed by *target*.  Returns ``provisioned=True``.
-
+    - **ProvisionedComponent** (Proxy, APIGateway, ScheduleTrigger): selects
+      an implementation via :func:`_resolve_provisioned_impl` and returns a
+      spec with ``provisioned=True``.
     - **ExternalComponent**: returns a pass-through spec with
       ``provisioned=False`` and the ``connection_env`` forwarded as-is.
 
     Args:
         name:      The component's ``.name`` attribute.
-        component: The ComponentBase instance.
+        component: The :class:`~skaal.components.ComponentBase` instance.
         catalog:   Parsed TOML catalog dict (may include ``[components]``).
-        target:    Deploy target: ``"generic"`` | ``"aws-lambda"`` | ``"k8s"``
-                   | ``"ecs"``.
+        target:    Deploy target, e.g. ``"generic"`` | ``"aws"`` | ``"k8s"``.
 
     Returns:
         A resolved :class:`~skaal.plan.ComponentSpec`.
@@ -93,6 +144,7 @@ def encode_component(
 
     kind = component._skim_component_kind
     comp_meta = component.__skim_component__
+    extra_config = {k: v for k, v in comp_meta.items() if k not in ("kind", "name")}
 
     if isinstance(component, ExternalComponent):
         return ComponentSpec(
@@ -101,36 +153,17 @@ def encode_component(
             implementation=None,
             provisioned=False,
             connection_env=comp_meta.get("connection_env"),
-            config={k: v for k, v in comp_meta.items() if k not in ("kind", "name")},
+            config=extra_config,
             reason="external component — not provisioned by Skaal",
         )
 
-    # ProvisionedComponent — select implementation
-    if kind == "proxy":
-        impl = _select_proxy_impl(component, target)
-        reason = f"proxy implementation={impl} for target={target}"
-    elif kind == "api-gateway":
-        impl = _select_gateway_impl(component, target)
-        reason = f"api-gateway implementation={impl} for target={target}"
-    elif kind == "schedule-trigger":
-        impl = _SCHEDULE_IMPL.get(target, "apscheduler")
-        reason = f"schedule-trigger → {impl} for target {target!r}"
-    else:
-        # Generic provisioned component — check catalog first
-        comp_catalog = catalog.get("components", {})
-        if name in comp_catalog:
-            impl = comp_catalog[name].get("implementation", kind)
-            reason = f"implementation from catalog: {impl}"
-        else:
-            impl = kind
-            reason = f"default implementation for {kind}"
-
+    impl, reason = _resolve_provisioned_impl(name, kind, component, target, catalog)
     return ComponentSpec(
         component_name=name,
         kind=kind,
         implementation=impl,
         provisioned=True,
         connection_env=None,
-        config={k: v for k, v in comp_meta.items() if k not in ("kind", "name")},
+        config=extra_config,
         reason=reason,
     )
