@@ -1,13 +1,16 @@
 """Compute constraint encoding for the Z3 solver.
 
-Mirrors the storage solver in skaal/solver/storage.py but selects
-compute instance types from the catalog's ``[compute.*]`` section based on
-declared Compute constraints (latency, throughput, compute_type, memory).
+Mirrors the storage solver in :mod:`skaal.solver.storage` but selects compute
+instance types from the catalog's ``[compute.*]`` section based on declared
+:class:`~skaal.types.Compute` constraints (latency, throughput, compute_type,
+memory).
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from skaal.solver.targets import catalog_compute_key
 
 
 class UnsatisfiableComputeConstraints(Exception):
@@ -25,19 +28,22 @@ def encode_compute(
     instance_types: dict[str, Any],
     target: str = "generic",
 ) -> tuple[str, str]:
-    """
-    Select a compute instance type using Z3 optimization.
+    """Select a compute instance type using Z3 optimization.
 
     Encodes compute constraints (latency, throughput, compute_type, memory)
     as Z3 Boolean decision variables.  Hard constraints eliminate incompatible
     instances; a cost minimization objective picks the cheapest survivor.
+
+    For serverless targets (AWS Lambda, GCP Cloud Run) no persistent compute
+    is provisioned, so the function returns the catalog key immediately without
+    running the solver.
 
     Args:
         function_name:  Qualified function name, e.g. ``"counter.increment"``.
         constraints:    A :class:`~skaal.types.Compute` instance (or any object
                         with ``compute_type``, ``latency``, ``memory`` attrs).
         instance_types: ``catalog["compute"]`` dict — backend name → spec dict.
-        target:         Deploy target: ``"generic"`` | ``"aws-lambda"`` | ``"k8s"``
+        target:         Deploy target: ``"generic"`` | ``"aws"`` | ``"k8s"``
                         | ``"ecs"``.
 
     Returns:
@@ -46,9 +52,12 @@ def encode_compute(
     Raises:
         :class:`UnsatisfiableComputeConstraints` if no instance qualifies.
     """
-    # ── Fast-path for serverless target ──────────────────────────────────────
-    if target == "aws-lambda":
-        return "lambda", "serverless Lambda — no persistent compute provisioned"
+    # ── Fast-path for serverless targets ─────────────────────────────────────
+    # Lambda and Cloud Run manage compute themselves; the solver just records
+    # the catalog key so deploy generators can read their deploy config.
+    compute_key = catalog_compute_key(target)
+    if compute_key is not None:
+        return compute_key, f"serverless target={target!r} — no persistent compute provisioned"
 
     # ── Extract constraint values ─────────────────────────────────────────────
     compute_type = "cpu"
@@ -62,7 +71,6 @@ def encode_compute(
 
     memory_gb: float | None = None
     if hasattr(constraints, "memory") and constraints.memory is not None:
-        # memory may be "16GB" string or float
         mem = constraints.memory
         if isinstance(mem, str):
             import re
@@ -99,28 +107,23 @@ def encode_compute(
 
         # Memory filter
         if memory_gb is not None:
-            spec_mem = spec.get("memory_gb", 0)
-            if spec_mem < memory_gb:
+            if spec.get("memory_gb", 0) < memory_gb:
                 compatible = False
 
-        # Latency filter: use cost-weighted heuristic (faster = more expensive)
-        # Reject instances that have zero vcpus (can't serve latency-sensitive work)
+        # Latency filter: use vCPU-count heuristic (faster = more cores)
+        # Reject instances where the rough headroom is an order of magnitude
+        # below the requested latency bound.
         if latency_ms is not None:
             vcpus = spec.get("vcpus", 1)
-            # Very rough heuristic: each vCPU contributes ~50ms of headroom
             estimated_max_ms = 5000.0 / max(vcpus, 1)
             if estimated_max_ms > latency_ms * 10:
-                # Instance too slow to plausibly meet the latency
                 compatible = False
 
         if not compatible:
             opt.add(sel[name] == False)  # noqa: E712
 
-    # Minimize cost
-    cost_terms = []
-    for name, spec in instance_types.items():
-        cost = int(spec.get("cost_per_hour", 0) * 1000)
-        cost_terms.append(If(sel[name], cost, 0))
+    # Minimise cost
+    cost_terms = [If(sel[n], int(spec.get("cost_per_hour", 0) * 1000), 0) for n, spec in instance_types.items()]
     opt.minimize(Sum(cost_terms))
 
     result = opt.check()

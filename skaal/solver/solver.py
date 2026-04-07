@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from skaal.plan import ComponentSpec, ComputeSpec, PlanFile, StorageSpec
 from skaal.solver.storage import select_backend
+from skaal.solver.targets import catalog_compute_key
 
 if TYPE_CHECKING:
     from skaal.app import App
@@ -165,14 +166,8 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
     # ── Target-level deploy config ─────────────────────────────────────────
     # Read the deploy params for the target compute backend (e.g. Lambda,
     # Cloud Run) from the catalog.  The solver doesn't use these; deploy
-    # generators do.  We map well-known target names to their catalog keys.
-    _TARGET_COMPUTE_KEY = {
-        "aws-lambda": "lambda",
-        "aws": "lambda",
-        "gcp-cloudrun": "cloud-run",
-        "gcp": "cloud-run",
-    }
-    target_compute_key = _TARGET_COMPUTE_KEY.get(target)
+    # generators do.
+    target_compute_key = catalog_compute_key(target)
     deploy_config: dict[str, Any] = {}
     if target_compute_key:
         deploy_config = compute_backends.get(target_compute_key, {}).get("deploy", {})
