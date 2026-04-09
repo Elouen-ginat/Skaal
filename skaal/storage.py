@@ -118,6 +118,10 @@ class Map(Generic[K, V]):
         @app.storage(read_latency="< 5ms", durability="persistent")
         class Sessions(Map[str, SessionToken]):
             pass
+
+    Methods below are **type stubs** for IDE autocomplete.  The runtime
+    (:func:`~skaal.backends.local_backend.patch_storage_class`) replaces them
+    with real implementations backed by the selected storage backend.
     """
 
     __skaal_key_type__: type = str
@@ -134,6 +138,63 @@ class Map(Generic[K, V]):
                 if len(args) >= 2:
                     cls.__skaal_value_type__ = args[1]
                 break
+
+    # ── Type stubs (replaced at runtime by patch_storage_class) ───────────
+
+    @staticmethod
+    async def get(key: str) -> Any | None:
+        """Return the value for *key*, or ``None`` if not found."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def set(key: str, value: Any) -> None:
+        """Store *value* under *key*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def delete(key: str) -> None:
+        """Remove *key* (no-op if not present)."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def list() -> list[tuple[str, Any]]:
+        """Return all ``(key, value)`` pairs."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def scan(prefix: str = "") -> list[tuple[str, Any]]:
+        """Return all ``(key, value)`` pairs where key starts with *prefix*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def close() -> None:
+        """Release any resources held by the backend."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_get(key: str) -> Any | None:
+        """Synchronous wrapper for :meth:`get`. Safe in Dash / Flask callbacks."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_set(key: str, value: Any) -> None:
+        """Synchronous wrapper for :meth:`set`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_delete(key: str) -> None:
+        """Synchronous wrapper for :meth:`delete`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_list() -> list[tuple[str, Any]]:
+        """Synchronous wrapper for :meth:`list`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_scan(prefix: str = "") -> list[tuple[str, Any]]:
+        """Synchronous wrapper for :meth:`scan`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
 
 
 class Collection(Generic[T]):
@@ -183,3 +244,102 @@ class Collection(Generic[T]):
                     if not cls.__dict__.get("__skaal_key_field__"):
                         cls.__skaal_key_field__ = _primary_key_field(args[0])
                 break
+
+    # ── Type stubs (replaced at runtime by patch_storage_class) ───────────
+    # Collection inherits get/set/delete/list/scan/close from Map via
+    # patch_storage_class.  The additional methods below are Collection-only.
+
+    @staticmethod
+    async def get(key: str) -> Any | None:
+        """Return the item for *key*, or ``None``."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def set(key: str, value: Any) -> None:
+        """Store *value* under *key*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def delete(key: str) -> None:
+        """Remove *key*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def list() -> list[tuple[str, Any]]:
+        """Return all ``(key, value)`` pairs."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def scan(prefix: str = "") -> list[tuple[str, Any]]:
+        """Return all ``(key, value)`` pairs matching *prefix*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def close() -> None:
+        """Release backend resources."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def add(item: Any) -> None:
+        """Store *item* using its auto-extracted primary key."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def remove(key: str) -> None:
+        """Remove the item with *key*. Alias for ``delete``."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def update(key: str, item: Any) -> None:
+        """Replace the value at *key* with *item*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def all() -> list[Any]:
+        """Return all items as a flat list."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    async def find(prefix: str = "") -> list[Any]:
+        """Return items whose key starts with *prefix*."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_get(key: str) -> Any | None:
+        """Synchronous wrapper for :meth:`get`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_set(key: str, value: Any) -> None:
+        """Synchronous wrapper for :meth:`set`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_delete(key: str) -> None:
+        """Synchronous wrapper for :meth:`delete`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_list() -> list[tuple[str, Any]]:
+        """Synchronous wrapper for :meth:`list`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_scan(prefix: str = "") -> list[tuple[str, Any]]:
+        """Synchronous wrapper for :meth:`scan`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_add(item: Any) -> None:
+        """Synchronous wrapper for :meth:`add`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_all() -> list[Any]:
+        """Synchronous wrapper for :meth:`all`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
+
+    @staticmethod
+    def sync_find(prefix: str = "") -> list[Any]:
+        """Synchronous wrapper for :meth:`find`."""
+        raise NotImplementedError("Storage not wired. Use LocalRuntime or deploy first.")
