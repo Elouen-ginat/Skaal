@@ -82,6 +82,7 @@ packages = ["skaal"]
 # Include non-Python template files (Dockerfile, Pulumi.yaml, etc.)
 artifacts = [
     "skaal/deploy/templates/**",
+    "skaal/catalog/data/**",
 ]
 
 [tool.ruff]

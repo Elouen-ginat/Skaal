@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -18,14 +19,29 @@ _DEFAULT_PATHS: list[str] = [
     "catalog/aws.toml",  # legacy path
 ]
 
+# Catalog names bundled with the package (in skaal/catalog/data/).
+_BUNDLED_CATALOGS: list[str] = ["aws.toml", "gcp.toml", "local.toml"]
+
+
+def _load_bundled(name: str) -> dict[str, Any]:
+    """Load a catalog TOML bundled inside the skaal package."""
+    data_pkg = importlib.resources.files("skaal.catalog.data")
+    content = (data_pkg / name).read_bytes()
+    return tomllib.loads(content.decode())
+
 
 def load_catalog(path: Path | str | None = None, target: str | None = None) -> dict[str, Any]:
     """
     Load a catalog TOML and return the raw dict.
 
-    Searches ``CWD/catalogs/<target>.toml`` (or catalogs/aws.toml if target is
-    not given) when *path* is not given.  Raises ``FileNotFoundError`` if nothing
-    is found.
+    Search order:
+    1. Explicit *path* (if given).
+    2. ``CWD/catalogs/<target>.toml`` (and other CWD candidates).
+    3. Bundled catalog shipped with the skaal package (``skaal/catalog/data/``).
+
+    This means ``skaal catalog`` works out-of-the-box after installation even
+    without any local catalog files.  A project-local catalog always takes
+    precedence over the bundled defaults.
 
     Args:
         path: Explicit path to catalog file. If given, target is ignored.
@@ -52,11 +68,32 @@ def load_catalog(path: Path | str | None = None, target: str | None = None) -> d
             search_order.remove(target_catalog)
         search_order.insert(0, target_catalog)
 
+    # 1. Try CWD-relative paths first (project-local catalog overrides bundled)
     for candidate in search_order:
         p = Path.cwd() / candidate
         if p.exists():
             with open(p, "rb") as f:
                 return tomllib.load(f)
+
+    # 2. Fall back to catalog bundled with the package
+    bundled_name: str | None = None
+    if target and target not in ("generic",):
+        base_target = target.split("-")[0]
+        candidate_name = f"{base_target}.toml"
+        if candidate_name in _BUNDLED_CATALOGS:
+            bundled_name = candidate_name
+    if bundled_name is None:
+        # Default to aws, then local as final fallback
+        for name in ("aws.toml", "local.toml"):
+            if name in _BUNDLED_CATALOGS:
+                bundled_name = name
+                break
+
+    if bundled_name is not None:
+        try:
+            return _load_bundled(bundled_name)
+        except (FileNotFoundError, ModuleNotFoundError):
+            pass
 
     raise FileNotFoundError(
         "No catalog found. Tried: "
