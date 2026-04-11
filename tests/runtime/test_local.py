@@ -177,6 +177,7 @@ async def test_end_to_end_tcp():
             f"Host: localhost\r\n"
             f"Content-Type: application/json\r\n"
             f"Content-Length: {len(body)}\r\n"
+            f"Connection: close\r\n"
             f"\r\n"
         ).encode() + body
 

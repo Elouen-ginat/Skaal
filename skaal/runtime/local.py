@@ -10,6 +10,8 @@ from typing import Any
 
 from skaal.backends.local_backend import LocalMap
 
+_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MiB — reject oversized request bodies
+
 
 def _wire_channel(channel_obj: Any) -> None:
     """Replace stub send/receive on a Channel instance with a local backend."""
@@ -319,6 +321,65 @@ class LocalRuntime:
                 return {"error": str(exc), "traceback": traceback.format_exc()}, 500
 
         return {"error": f"Method {method} not allowed"}, 405
+
+    async def _handle_connection(self, reader: Any, writer: Any) -> None:
+        """Handle a single raw TCP connection with HTTP/1.0-style request parsing.
+
+        Enforces ``_MAX_BODY_SIZE`` and writes a plain-text HTTP response.
+        Intended for testing and low-level inspection; production traffic goes
+        through the uvicorn path in :meth:`_serve_skaal`.
+        """
+        try:
+            # Read the request line
+            request_line_bytes = await reader.readline()
+            if not request_line_bytes:
+                return
+            request_line = request_line_bytes.decode("utf-8", errors="replace").strip()
+            parts = request_line.split(" ", 2)
+            if len(parts) < 2:
+                return
+            method, path = parts[0], parts[1]
+
+            # Read headers until blank line
+            headers: dict[str, str] = {}
+            while True:
+                line_bytes = await reader.readline()
+                line = line_bytes.decode("utf-8", errors="replace").strip()
+                if not line:
+                    break
+                if ":" in line:
+                    name, _, value = line.partition(":")
+                    headers[name.strip().lower()] = value.strip()
+
+            # Enforce body size limit
+            content_length = int(headers.get("content-length", "0"))
+            if content_length > _MAX_BODY_SIZE:
+                response = (
+                    "HTTP/1.1 413 Payload Too Large\r\n"
+                    "Content-Type: application/json\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    '{"error": "Request body too large"}'
+                ).encode()
+                writer.write(response)
+                await writer.drain()
+                return
+
+            body = await reader.read(content_length) if content_length > 0 else b""
+
+            result, status = await self._dispatch(method, path, body)
+            result_bytes = json.dumps(result).encode()
+            response = (
+                f"HTTP/1.1 {status} OK\r\n"
+                "Content-Type: application/json\r\n"
+                f"Content-Length: {len(result_bytes)}\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            ).encode() + result_bytes
+            writer.write(response)
+            await writer.drain()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def serve(self) -> None:
         """
