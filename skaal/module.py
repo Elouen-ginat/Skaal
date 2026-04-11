@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+# TYPE_CHECKING import to avoid circular deps at runtime
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from skaal.types import (
     AccessPattern,
@@ -17,9 +18,6 @@ from skaal.types import (
     Scale,
     Throughput,
 )
-
-# TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from skaal.schedule import Cron, Every
@@ -221,9 +219,9 @@ class Module:
                 _compute.rate_limit = rate_limit
             if bulkhead is not None:
                 _compute.bulkhead = bulkhead
-            fn.__skim_compute__ = _compute  # type: ignore[attr-defined]
+            fn.__skaal_compute__ = _compute  # type: ignore[attr-defined]
             if scale is not None:
-                fn.__skim_scale__ = scale  # type: ignore[attr-defined]
+                fn.__skaal_scale__ = scale  # type: ignore[attr-defined]
             self._functions[fn.__name__] = fn
             return fn
 
@@ -256,7 +254,7 @@ class Module:
             durability = Durability(durability)
 
         def decorator(cls: type) -> type:
-            cls.__skim_channel__ = {  # type: ignore[attr-defined]
+            cls.__skaal_channel__ = {  # type: ignore[attr-defined]
                 "buffer": buffer,
                 "throughput": throughput,
                 "durability": durability,
@@ -303,7 +301,7 @@ class Module:
         from skaal.components import ScheduleTrigger
 
         def decorator(fn: F) -> F:
-            fn.__skim_schedule__ = {  # type: ignore[attr-defined]
+            fn.__skaal_schedule__ = {  # type: ignore[attr-defined]
                 "trigger": trigger,
                 "emit_to": emit_to,
                 "timezone": timezone,

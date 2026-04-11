@@ -10,7 +10,7 @@ class RedisBackend:
     """
     Redis storage backend using redis.asyncio.
 
-    Keys are stored as: skim:{namespace}:{key}
+    Keys are stored as: skaal:{namespace}:{key}
     Values are JSON-serialized.
 
     scan(prefix) uses SCAN with MATCH pattern.

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-
-# Re-export for backward compatibility — canonical location is now skaal.storage.
-from skaal.storage import _deserialize, _serialize  # noqa: F401
 import concurrent.futures
 import threading
 from typing import Any, List
+
+# Re-export for backward compatibility — canonical location is now skaal.storage.
+from skaal.storage import _deserialize, _serialize  # noqa: F401
 
 # ── Sync/async bridge ─────────────────────────────────────────────────────────
 
@@ -115,6 +115,14 @@ class LocalMap:
             new_value = current + delta
             self._data[key] = new_value
             return new_value
+
+    async def atomic_update(self, key: str, fn: Any) -> Any:
+        """Atomically read, apply fn to the raw value, write back, and return the result."""
+        async with self._lock:
+            current = self._data.get(key)
+            updated = fn(current)
+            self._data[key] = updated
+            return updated
 
     async def close(self) -> None:
         pass

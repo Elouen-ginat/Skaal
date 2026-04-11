@@ -59,7 +59,7 @@ class LocalRuntime:
     def _patch_storage(self) -> None:
         """Patch all registered storage classes with appropriate backends."""
         for qname, obj in self.app._collect_all().items():
-            if isinstance(obj, type) and hasattr(obj, "__skim_storage__"):
+            if isinstance(obj, type) and hasattr(obj, "__skaal_storage__"):
                 backend = (
                     self._backend_overrides.get(qname)
                     or self._backend_overrides.get(obj.__name__)
@@ -93,7 +93,7 @@ class LocalRuntime:
         return {
             qname: backend_factory(qname, obj)
             for qname, obj in app._collect_all().items()
-            if isinstance(obj, type) and hasattr(obj, "__skim_storage__")
+            if isinstance(obj, type) and hasattr(obj, "__skaal_storage__")
         }
 
     @classmethod
@@ -204,7 +204,9 @@ class LocalRuntime:
         from skaal.backends.dynamodb_backend import DynamoBackend
 
         def _make_backend(qname: str, obj: Any) -> DynamoBackend:
-            return DynamoBackend(table_name=f"{table_name}_{qname.replace('.', '_').lower()}", region=region)
+            return DynamoBackend(
+                table_name=f"{table_name}_{qname.replace('.', '_').lower()}", region=region
+            )
 
         backends = cls._build_backends(app, _make_backend)
         return cls(app, host=host, port=port, backend_overrides=backends)
@@ -235,14 +237,14 @@ class LocalRuntime:
         """Flat map of qualified_name → callable for all HTTP-invocable functions.
 
         Includes:
-        - ``@app.function()`` decorated callables (have ``__skim_compute__``)
+        - ``@app.function()`` decorated callables (have ``__skaal_compute__``)
         - ``@app.schedule()`` decorated callables (invocable by Cloud Scheduler /
           EventBridge; excluded from the public ``GET /`` index)
         """
         funcs: dict[str, Any] = {
             qname: obj
             for qname, obj in self.app._collect_all().items()
-            if callable(obj) and hasattr(obj, "__skim_compute__")
+            if callable(obj) and hasattr(obj, "__skaal_compute__")
         }
         # Also expose top-level functions by short name for convenience.
         for name, fn in self.app._functions.items():
@@ -263,7 +265,7 @@ class LocalRuntime:
 
         if method == "GET" and path in ("/", ""):
             # Only expose @app.function() endpoints in the public index.
-            public = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skim_schedule__")]
+            public = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
             return {
                 "app": self.app.name,
                 "endpoints": [{"path": f"/{n}", "function": n} for n in public],
@@ -295,6 +297,7 @@ class LocalRuntime:
                 sig = inspect.signature(fn)
                 if "ctx" in sig.parameters:
                     from datetime import timezone
+
                     from skaal.schedule import ScheduleContext
 
                     kwargs["ctx"] = ScheduleContext(
@@ -368,7 +371,7 @@ class LocalRuntime:
 
         # ── Print startup banner ───────────────────────────────────────────────
         funcs = self._function_cache
-        public_fns = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skim_schedule__")]
+        public_fns = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
         scheduled = self._collect_schedules()
 
         print(f"\n  Skaal local runtime — {self.app.name}")
@@ -378,7 +381,7 @@ class LocalRuntime:
         if scheduled:
             print()
             for name, fn in sorted(scheduled.items()):
-                meta = fn.__skim_schedule__
+                meta = fn.__skaal_schedule__
                 trigger = meta["trigger"]
                 print(f"    schedule /{name}  [{trigger!r}]")
         print()
@@ -405,12 +408,12 @@ class LocalRuntime:
                 from apscheduler.triggers.cron import CronTrigger
                 from apscheduler.triggers.interval import IntervalTrigger
 
-                from skaal.schedule import Cron, Every, ScheduleContext
+                from skaal.schedule import Every, ScheduleContext
 
                 scheduler = AsyncIOScheduler()
 
                 for name, fn in scheduled.items():
-                    meta = fn.__skim_schedule__
+                    meta = fn.__skaal_schedule__
                     trigger = meta["trigger"]
                     emit_to = meta.get("emit_to")
                     tz = meta.get("timezone", "UTC")
@@ -440,9 +443,7 @@ class LocalRuntime:
                                     )
                                 else:
                                     result = (
-                                        await _fn()
-                                        if inspect.iscoroutinefunction(_fn)
-                                        else _fn()
+                                        await _fn() if inspect.iscoroutinefunction(_fn) else _fn()
                                     )
                                 if _emit_to is not None and result is not None:
                                     await _emit_to.send(result)

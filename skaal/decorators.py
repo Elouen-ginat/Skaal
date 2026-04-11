@@ -57,7 +57,7 @@ def storage(
         except Exception:  # noqa: BLE001
             schema = {}
 
-        cls.__skim_storage__ = {  # type: ignore[attr-defined]
+        cls.__skaal_storage__ = {  # type: ignore[attr-defined]
             "read_latency": _rl,
             "write_latency": _wl,
             "durability": Durability(durability) if isinstance(durability, str) else durability,
@@ -94,7 +94,7 @@ def compute(
     """Declare infrastructure constraints for a compute function."""
 
     def decorator(fn: F) -> F:
-        fn.__skim_compute__ = Compute(  # type: ignore[attr-defined]
+        fn.__skaal_compute__ = Compute(  # type: ignore[attr-defined]
             latency=latency,
             throughput=throughput,
             compute_type=ComputeType(compute_type)
@@ -103,7 +103,7 @@ def compute(
             memory=memory,
             schedule=schedule,
         )
-        fn.__skim_compute__.collocate_with = collocate_with  # type: ignore[attr-defined]
+        fn.__skaal_compute__.collocate_with = collocate_with  # type: ignore[attr-defined]
         return fn
 
     return decorator
@@ -117,7 +117,7 @@ def scale(
     """Declare scaling policy for a function."""
 
     def decorator(fn: F) -> F:
-        fn.__skim_scale__ = Scale(  # type: ignore[attr-defined]
+        fn.__skaal_scale__ = Scale(  # type: ignore[attr-defined]
             instances=instances,
             strategy=ScaleStrategy(strategy) if isinstance(strategy, str) else strategy,
         )
@@ -133,7 +133,7 @@ def shared(
     """Mark a variable or Channel as distributed across all instances."""
 
     def decorator(fn: F) -> F:
-        fn.__skim_shared__ = {  # type: ignore[attr-defined]
+        fn.__skaal_shared__ = {  # type: ignore[attr-defined]
             "consistency": (
                 Consistency(consistency) if isinstance(consistency, str) else consistency
             ),
@@ -145,5 +145,5 @@ def shared(
 
 def handler(fn: F) -> F:
     """Mark a method on an Agent as a message handler."""
-    fn.__skim_handler__ = True  # type: ignore[attr-defined]
+    fn.__skaal_handler__ = True  # type: ignore[attr-defined]
     return fn

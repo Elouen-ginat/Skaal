@@ -135,7 +135,7 @@ def _schema_hints(cls: type) -> dict[str, Any]:
     """
     Extract solver-visible hints from a Map or Collection subclass.
 
-    These are stored in ``__skim_storage__["schema_hints"]`` and surfaced
+    These are stored in ``__skaal_storage__["schema_hints"]`` and surfaced
     in ``skaal plan`` output.  They do not yet change backend selection —
     that is reserved for a future solver pass.
     """
@@ -159,6 +159,12 @@ def _schema_hints(cls: type) -> dict[str, Any]:
 
 
 # ── Map ──────────────────────────────────────────────────────────────────────
+
+
+# Preserve the builtin `list` reference before Map/Collection define a
+# classmethod also called `list`.  mypy resolves annotations inside those
+# classes using the class namespace, which shadows the builtin.
+_List = list
 
 
 class Map(Generic[K, V]):
@@ -248,7 +254,7 @@ class Map(Generic[K, V]):
         return entries
 
     @classmethod
-    async def scan(cls, prefix: str = "") -> list[tuple[str, Any]]:
+    async def scan(cls, prefix: str = "") -> _List[tuple[str, Any]]:
         """Return all ``(key, value)`` pairs where key starts with *prefix*."""
         cls._ensure_wired()
         entries = await cls._backend.scan(prefix)
@@ -286,18 +292,57 @@ class Map(Generic[K, V]):
         _sync_run(cls.delete(key))
 
     @classmethod
-    def sync_list(cls) -> list[tuple[str, Any]]:
+    def sync_list(cls) -> _List[tuple[str, Any]]:
         """Synchronous wrapper for :meth:`list`."""
         from skaal.backends.local_backend import _sync_run
 
         return _sync_run(cls.list())
 
     @classmethod
-    def sync_scan(cls, prefix: str = "") -> list[tuple[str, Any]]:
+    def sync_scan(cls, prefix: str = "") -> _List[tuple[str, Any]]:
         """Synchronous wrapper for :meth:`scan`."""
         from skaal.backends.local_backend import _sync_run
 
         return _sync_run(cls.scan(prefix))
+
+    @classmethod
+    async def update(cls, key: str, fn: Any) -> Any:
+        """
+        Atomically read, transform, and write back the value at *key*.
+
+        *fn* receives the current value (deserialized, or ``None`` if absent)
+        and must return the new value.  The read and write are performed inside
+        the backend's lock so concurrent callbacks cannot interleave.
+
+        Returns the new deserialized value.
+
+        Example::
+
+            def increment(state):
+                if state is None:
+                    state = UserState(session_id=sid)
+                state.click_count += 1
+                return state
+
+            new_state = await Sessions.update(sid, increment)
+        """
+        cls._ensure_wired()
+        value_type = cls.__skaal_value_type__
+
+        def _wrapped(raw: Any) -> Any:
+            current = _deserialize(raw, value_type)
+            updated = fn(current)
+            return _serialize(updated, value_type)
+
+        raw_result = await cls._backend.atomic_update(key, _wrapped)
+        return _deserialize(raw_result, value_type)
+
+    @classmethod
+    def sync_update(cls, key: str, fn: Any) -> Any:
+        """Synchronous wrapper for :meth:`update`. Safe in Dash / Flask callbacks."""
+        from skaal.backends.local_backend import _sync_run
+
+        return _sync_run(cls.update(key, fn))
 
 
 # ── Collection ───────────────────────────────────────────────────────────────
@@ -410,7 +455,7 @@ class Collection(Generic[T]):
         return entries
 
     @classmethod
-    async def scan(cls, prefix: str = "") -> list[tuple[str, Any]]:
+    async def scan(cls, prefix: str = "") -> _List[tuple[str, Any]]:
         """Return all ``(key, value)`` pairs matching *prefix*."""
         cls._ensure_wired()
         entries = await cls._backend.scan(prefix)
@@ -442,12 +487,12 @@ class Collection(Generic[T]):
         await cls.set(key, item)
 
     @classmethod
-    async def all(cls) -> list[Any]:
+    async def all(cls) -> _List[Any]:
         """Return all items as a flat list."""
         return [v for _, v in await cls.list()]
 
     @classmethod
-    async def find(cls, prefix: str = "") -> list[Any]:
+    async def find(cls, prefix: str = "") -> _List[Any]:
         """Return items whose key starts with *prefix*."""
         return [v for _, v in await cls.scan(prefix)]
 
@@ -475,14 +520,14 @@ class Collection(Generic[T]):
         _sync_run(cls.delete(key))
 
     @classmethod
-    def sync_list(cls) -> list[tuple[str, Any]]:
+    def sync_list(cls) -> _List[tuple[str, Any]]:
         """Synchronous wrapper for :meth:`list`."""
         from skaal.backends.local_backend import _sync_run
 
         return _sync_run(cls.list())
 
     @classmethod
-    def sync_scan(cls, prefix: str = "") -> list[tuple[str, Any]]:
+    def sync_scan(cls, prefix: str = "") -> _List[tuple[str, Any]]:
         """Synchronous wrapper for :meth:`scan`."""
         from skaal.backends.local_backend import _sync_run
 
@@ -496,14 +541,14 @@ class Collection(Generic[T]):
         _sync_run(cls.add(item))
 
     @classmethod
-    def sync_all(cls) -> list[Any]:
+    def sync_all(cls) -> _List[Any]:
         """Synchronous wrapper for :meth:`all`."""
         from skaal.backends.local_backend import _sync_run
 
         return _sync_run(cls.all())
 
     @classmethod
-    def sync_find(cls, prefix: str = "") -> list[Any]:
+    def sync_find(cls, prefix: str = "") -> _List[Any]:
         """Synchronous wrapper for :meth:`find`."""
         from skaal.backends.local_backend import _sync_run
 
