@@ -39,7 +39,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Union
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Union
 
 from skaal.plan import PLAN_FILE_NAME, ComputeSpec, PlanFile, StorageSpec
 from skaal.settings import SkaalSettings
@@ -47,7 +47,7 @@ from skaal.settings import SkaalSettings
 if TYPE_CHECKING:
     from skaal.app import App
     from skaal.catalog.models import Catalog
-    from skaal.migrate.engine import MigrationState
+    from skaal.migrate.engine import MigrationStage, MigrationState
     from skaal.runtime.local import LocalRuntime
 
 __all__ = [
@@ -90,7 +90,7 @@ class PlanDiffEntry:
     """One line of a :class:`PlanDiff`."""
 
     name: str
-    change: str  # "added" | "removed" | "modified"
+    change: Literal["added", "removed", "modified"]
     before: str | None
     after: str | None
 
@@ -103,10 +103,14 @@ class PlanDiff:
     new: PlanFile
     storage: list[PlanDiffEntry] = field(default_factory=list)
     compute: list[PlanDiffEntry] = field(default_factory=list)
+    components: list[PlanDiffEntry] = field(default_factory=list)
+    patterns: list[PlanDiffEntry] = field(default_factory=list)
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.storage) or bool(self.compute)
+        return (
+            bool(self.storage) or bool(self.compute) or bool(self.components) or bool(self.patterns)
+        )
 
 
 @dataclass(frozen=True)
@@ -116,7 +120,7 @@ class MigrationInfo:
     variable_name: str
     source_backend: str
     target_backend: str
-    stage: int
+    stage: MigrationStage
     stage_name: str
 
 
@@ -615,6 +619,8 @@ def diff(
         new=new,
         storage=_diff_specs(old.storage, new.storage, "backend"),
         compute=_diff_specs(old.compute, new.compute, "instance_type"),
+        components=_diff_specs(old.components, new.components, "implementation"),
+        patterns=_diff_specs(old.patterns, new.patterns, "backend"),
     )
 
 
@@ -623,7 +629,7 @@ def diff(
 
 def _collect_migrations(plan_file: PlanFile) -> dict[str, MigrationInfo]:
     """Scan ``.skaal/migrations/<app>`` for in-progress migrations."""
-    from skaal.migrate.engine import STAGE_NAMES, MigrationEngine
+    from skaal.migrate.engine import MigrationEngine
 
     migrations: dict[str, MigrationInfo] = {}
     for name, spec in plan_file.storage.items():
@@ -641,7 +647,7 @@ def _collect_migrations(plan_file: PlanFile) -> dict[str, MigrationInfo]:
             source_backend=state.source_backend,
             target_backend=state.target_backend,
             stage=state.stage,
-            stage_name=STAGE_NAMES.get(state.stage, "unknown"),
+            stage_name=state.stage.name.lower(),
         )
     return migrations
 
@@ -701,15 +707,15 @@ def migrate_start(
     Raises:
         RuntimeError: If a migration is already in progress for *variable*.
     """
-    from skaal.migrate.engine import STAGE_NAMES, MigrationEngine
+    from skaal.migrate.engine import MigrationEngine, MigrationStage
 
     resolved_app = app_name or _current_app_name()
     engine = MigrationEngine(resolved_app, variable)
     existing = engine.load_state()
-    if existing is not None and existing.stage < 6:
+    if existing is not None and existing.stage != MigrationStage.DONE:
         raise RuntimeError(
             f"Migration for {variable!r} already in progress "
-            f"(stage {existing.stage}: {STAGE_NAMES.get(existing.stage, '?')})."
+            f"(stage {existing.stage}: {existing.stage.name.lower()})."
         )
     return engine.start(from_backend, to_backend)
 

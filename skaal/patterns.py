@@ -125,15 +125,18 @@ class EventLog(Generic[T]):
         raw = await self._backend.get(f"consumer:{consumer_group}:offset")
         offset = 0 if from_beginning else (int(raw) if raw is not None else 0)
         while True:
-            # Scan all events with full prefix (not offset-prefixed), then filter by range
-            entries = await self._backend.scan("event:")
-            sorted_entries = sorted((e for e in entries if e[0] >= f"event:{offset:020d}"))
-            for key, value in sorted_entries:
-                current_offset = int(key.split(":")[-1])
-                await self._backend.set(f"consumer:{consumer_group}:offset", current_offset + 1)
-                offset = current_offset + 1
-                yield current_offset, value
-            if not sorted_entries:
+            raw_next = await self._backend.get("meta:next_offset")
+            next_offset = int(raw_next) if raw_next is not None else 0
+            if offset < next_offset:
+                for current_offset in range(offset, next_offset):
+                    value = await self._backend.get(f"event:{current_offset:020d}")
+                    if value is not None:
+                        await self._backend.set(
+                            f"consumer:{consumer_group}:offset", current_offset + 1
+                        )
+                        offset = current_offset + 1
+                        yield current_offset, value
+            else:
                 await asyncio.sleep(poll_interval)
 
     def __repr__(self) -> str:
