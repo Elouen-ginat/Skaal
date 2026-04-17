@@ -55,6 +55,14 @@ gcp = [
     "pulumi>=3.0",
     "pulumi-gcp>=7.0",
 ]
+mesh = [
+    # The skaal_mesh extension module is built from mesh/ via maturin:
+    #   maturin build --manifest-path mesh/Cargo.toml --release
+    #   pip install target/wheels/skaal-*.whl
+    # This extra exists so `pip install skaal[mesh]` documents the intent;
+    # the wheel must be pre-built since maturin isn't a PEP 517 build dep
+    # of the pure-Python skaal package.
+]
 
 [dependency-groups]
 dev = [

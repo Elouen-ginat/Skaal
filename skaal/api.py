@@ -48,7 +48,6 @@ if TYPE_CHECKING:
     from skaal.app import App
     from skaal.catalog.models import Catalog
     from skaal.migrate.engine import MigrationState
-    from skaal.runtime.local import LocalRuntime
 
 __all__ = [
     # Types
@@ -456,16 +455,27 @@ def build_runtime(
     redis: str | None = None,
     persist: bool = False,
     db: str | Path = "skaal_local.db",
-) -> "LocalRuntime":
-    """Construct a :class:`~skaal.runtime.local.LocalRuntime` for *app*.
+    distributed: bool = False,
+    node_id: str = "node-0",
+) -> Any:
+    """Construct a runtime for *app*.
+
+    Returns a :class:`~skaal.runtime.local.LocalRuntime` by default, or a
+    :class:`~skaal.runtime.mesh_runtime.MeshRuntime` when *distributed* is
+    ``True`` (requires ``skaal[mesh]``).
 
     Mirrors the options of :func:`run` but does not start the HTTP server,
     so callers can attach middleware, inspect the backends dict, or invoke
     ``serve()`` / ``shutdown()`` themselves.
     """
-    from skaal.runtime.local import LocalRuntime
-
     skaal_app = resolve_app(app)
+
+    if distributed:
+        from skaal.runtime.mesh_runtime import MeshRuntime
+
+        return MeshRuntime(skaal_app, host=host, port=port, node_id=node_id)
+
+    from skaal.runtime.local import LocalRuntime
 
     if redis:
         return LocalRuntime.from_redis(skaal_app, redis_url=redis, host=host, port=port)
@@ -482,9 +492,20 @@ async def serve_async(
     redis: str | None = None,
     persist: bool = False,
     db: str | Path = "skaal_local.db",
+    distributed: bool = False,
+    node_id: str = "node-0",
 ) -> None:
     """Async variant of :func:`run` — await inside an existing event loop."""
-    runtime = build_runtime(app, host=host, port=port, redis=redis, persist=persist, db=db)
+    runtime = build_runtime(
+        app,
+        host=host,
+        port=port,
+        redis=redis,
+        persist=persist,
+        db=db,
+        distributed=distributed,
+        node_id=node_id,
+    )
     await runtime.serve()
 
 
@@ -496,6 +517,8 @@ def run(
     redis: str | None = None,
     persist: bool = False,
     db: str | Path = "skaal_local.db",
+    distributed: bool = False,
+    node_id: str = "node-0",
 ) -> None:
     """Run a Skaal app locally, blocking until the server is stopped.
 
@@ -514,6 +537,8 @@ def run(
                 redis=redis,
                 persist=persist,
                 db=db,
+                distributed=distributed,
+                node_id=node_id,
             )
         )
     except KeyboardInterrupt:
