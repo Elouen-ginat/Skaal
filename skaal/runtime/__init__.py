@@ -1,8 +1,8 @@
 """skaal.runtime — runtime implementations.
 
-Distributed execution will be provided by the Rust mesh (``mesh/``) integration
-that replaces the old Python-only ``DistributedRuntime`` stub.  Until that
-lands, :class:`LocalRuntime` is the only built-in runtime; third parties can
+:class:`LocalRuntime` runs a Skaal app in a single process with in-memory or
+pluggable backends.  :class:`MeshRuntime` adds distributed routing via the
+Rust ``skaal_mesh`` extension (``pip install skaal[mesh]``).  Third parties can
 register their own runtime implementations via ``skaal.plugins``.
 """
 
@@ -19,5 +19,14 @@ __all__ = [
     "InMemoryStateStore",
     "LocalChannel",
     "LocalRuntime",
+    "MeshRuntime",
     "StateStore",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    if name == "MeshRuntime":
+        from skaal.runtime.mesh_runtime import MeshRuntime
+
+        return MeshRuntime
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
