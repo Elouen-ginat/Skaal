@@ -178,7 +178,18 @@ def test_build_delegates_to_target(
         name = "local"
         default_region = ""
 
-        def generate_artifacts(self, *, app, plan, output_dir, source_module, app_var, region, dev):
+        def generate_artifacts(
+            self,
+            *,
+            app,
+            plan,
+            output_dir,
+            source_module,
+            app_var,
+            region,
+            dev,
+            stack_profile=None,
+        ):
             assert plan.app_name == plan_file.app_name
             return expected_paths
 

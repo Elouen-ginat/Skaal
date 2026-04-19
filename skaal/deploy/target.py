@@ -53,6 +53,7 @@ class DeployTarget(Protocol):
         *,
         region: str | None = None,
         dev: bool = False,
+        stack_profile: dict[str, Any] | None = None,
     ) -> list[Path]:
         """Generate all deployment artifacts into *output_dir*.
 
@@ -66,6 +67,12 @@ class DeployTarget(Protocol):
                            :attr:`default_region` when None.
             dev:           Bundle local skaal source into the artifact
                            (local target only).
+            stack_profile: Optional dict of stack-specific knobs baked into
+                           the Pulumi artifact.  Recognised keys include
+                           ``env`` (``dict[str, str]``), ``invokers``
+                           (``list[str]``), and ``labels`` (``dict[str, str]``).
+                           Unknown keys are ignored so targets can add more
+                           over time without breaking callers.
 
         Returns:
             List of generated :class:`~pathlib.Path` objects.

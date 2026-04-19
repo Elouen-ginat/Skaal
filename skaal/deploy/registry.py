@@ -49,6 +49,7 @@ class AWSLambdaTarget:
         *,
         region: str | None = None,
         dev: bool = False,
+        stack_profile: dict[str, Any] | None = None,
     ) -> list[Path]:
         from skaal.deploy.aws import generate_artifacts
 
@@ -118,6 +119,7 @@ class GCPCloudRunTarget:
         *,
         region: str | None = None,
         dev: bool = False,
+        stack_profile: dict[str, Any] | None = None,
     ) -> list[Path]:
         from skaal.deploy.gcp import generate_artifacts
 
@@ -128,6 +130,7 @@ class GCPCloudRunTarget:
             source_module=source_module,
             app_var=app_var,
             region=region or self.default_region,
+            stack_profile=stack_profile,
         )
 
     def package_and_push(
@@ -200,6 +203,7 @@ class LocalDockerComposeTarget:
         *,
         region: str | None = None,
         dev: bool = False,
+        stack_profile: dict[str, Any] | None = None,
     ) -> list[Path]:
         from skaal.deploy.local import generate_artifacts
 

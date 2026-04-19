@@ -176,7 +176,12 @@ def _add_gcp_api_gateway(
 # ── Pulumi YAML stack builder ─────────────────────────────────────────────────
 
 
-def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, Any]:
+def _build_pulumi_stack(
+    app: Any,
+    plan: "PlanFile",
+    region: str,
+    stack_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return the Pulumi stack as a plain Python dict.
 
     All provisioning parameters come from ``plan.storage[qname].deploy_params``
@@ -188,6 +193,10 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
     """
     deploy = CloudRunDeployConfig.model_validate(plan.deploy_config)
     needs_vpc = any(get_handler(s).requires_vpc for s in plan.storage.values())
+
+    profile_env: dict[str, str] = (stack_profile or {}).get("env") or {}
+    profile_invokers: list[str] = (stack_profile or {}).get("invokers") or []
+    profile_labels: dict[str, str] = (stack_profile or {}).get("labels") or {}
 
     # ── Pulumi config (user-overridable) ──────────────────────────────────────
     config: dict[str, Any] = {
@@ -296,6 +305,16 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
         if name not in existing:
             container_envs.append({"name": name, "value": source})
 
+    # ── Stack-profile env vars (user-supplied; override everything above) ─────
+    if profile_env:
+        existing_idx = {e["name"]: i for i, e in enumerate(container_envs)}
+        for name, value in profile_env.items():
+            entry = {"name": name, "value": value}
+            if name in existing_idx:
+                container_envs[existing_idx[name]] = entry
+            else:
+                container_envs.append(entry)
+
     # ── VPC connector (required by Cloud SQL and Memorystore) ─────────────────
     service_annotations: dict[str, str] = {}
     if needs_vpc:
@@ -321,8 +340,12 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
     }
     template_annotations = {**scaling_annotations, **service_annotations}
 
+    template_metadata: dict[str, Any] = {"annotations": template_annotations}
+    if profile_labels:
+        template_metadata["labels"] = dict(profile_labels)
+
     template: dict[str, Any] = {
-        "metadata": {"annotations": template_annotations},
+        "metadata": template_metadata,
         "spec": {
             "containerConcurrency": "${cloudRunConcurrency}",
             "containers": [
@@ -350,15 +373,18 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
         },
     }
 
-    resources["public-invoker"] = {
-        "type": "gcp:cloudrun:IamMember",
-        "properties": {
-            "service": "${cloud-run-service.name}",
-            "location": "${gcp:region}",
-            "role": "roles/run.invoker",
-            "member": "allUsers",
-        },
-    }
+    invoker_members = profile_invokers or ["allUsers"]
+    for idx, member in enumerate(invoker_members):
+        suffix = "" if idx == 0 else f"-{idx}"
+        resources[f"invoker{suffix}"] = {
+            "type": "gcp:cloudrun:IamMember",
+            "properties": {
+                "service": "${cloud-run-service.name}",
+                "location": "${gcp:region}",
+                "role": "roles/run.invoker",
+                "member": member,
+            },
+        }
 
     # ── Cloud Scheduler jobs for schedule triggers ────────────────────────────
     for comp_name, comp in plan.components.items():
@@ -431,6 +457,7 @@ def generate_artifacts(
     source_module: str,
     app_var: str = "app",
     region: str = "us-central1",
+    stack_profile: dict[str, Any] | None = None,
 ) -> list[Path]:
     """Generate Cloud Run + Pulumi YAML deployment artifacts.
 
@@ -552,7 +579,9 @@ def generate_artifacts(
 
     # ── Pulumi.yaml ───────────────────────────────────────────────────────────
     pulumi_yaml_path = output_dir / "Pulumi.yaml"
-    pulumi_yaml_path.write_text(to_pulumi_yaml(_build_pulumi_stack(app, plan, region)))
+    pulumi_yaml_path.write_text(
+        to_pulumi_yaml(_build_pulumi_stack(app, plan, region, stack_profile))
+    )
     generated.append(pulumi_yaml_path)
 
     # ── skaal-meta.json ───────────────────────────────────────────────────────

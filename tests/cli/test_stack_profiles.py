@@ -229,3 +229,158 @@ def test_build_config_overrides_explicit_wins_over_shortcut(tmp_path: Path) -> N
 
     overrides = _build_config_overrides(cfg, artifacts_dir)
     assert overrides == {"sqlDeletionProtectionItems": "false"}
+
+
+# ── Phase 3 — env / invokers / labels / hooks / stacks cmd ──────────────────
+
+
+def test_build_stack_profile_only_includes_nonempty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_build_stack_profile omits keys whose profile value is empty so
+    generators can truthiness-check before emitting stack-specific YAML."""
+    from skaal.api import _build_stack_profile
+
+    _write_pyproject(
+        tmp_path,
+        """
+        [tool.skaal]
+        target = "gcp"
+
+        [tool.skaal.stacks.p-prd]
+        invokers = ["serviceAccount:svc@example.com"]
+
+        [tool.skaal.stacks.p-prd.env]
+        FEATURE_X = "on"
+
+        [tool.skaal.stacks.p-prd.labels]
+        env = "prd"
+
+        [tool.skaal.stacks.p-dev]
+        """,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    prd = _build_stack_profile(SkaalSettings().for_stack("p-prd"))
+    assert prd == {
+        "env": {"FEATURE_X": "on"},
+        "invokers": ["serviceAccount:svc@example.com"],
+        "labels": {"env": "prd"},
+    }
+
+    dev = _build_stack_profile(SkaalSettings().for_stack("p-dev"))
+    assert dev == {}
+
+
+def test_gcp_pulumi_stack_applies_profile() -> None:
+    """env / invokers / labels from the profile land in the right places
+    inside the generated Pulumi stack dict."""
+    from skaal.app import App
+    from skaal.deploy.gcp import _build_pulumi_stack
+    from skaal.plan import PlanFile
+
+    app = App(name="demo")
+    plan = PlanFile(app_name="demo", deploy_target="gcp")
+    profile = {
+        "env": {"FEATURE_X": "on", "FEATURE_Y": "off"},
+        "invokers": [
+            "serviceAccount:alice@example.com",
+            "serviceAccount:bob@example.com",
+        ],
+        "labels": {"env": "prd", "team": "infra"},
+    }
+
+    stack = _build_pulumi_stack(app, plan, region="europe-west1", stack_profile=profile)
+    resources = stack["resources"]
+
+    envs = resources["cloud-run-service"]["properties"]["template"]["spec"]["containers"][0]["envs"]
+    env_map = {e["name"]: e["value"] for e in envs}
+    assert env_map == {"FEATURE_X": "on", "FEATURE_Y": "off"}
+
+    labels = resources["cloud-run-service"]["properties"]["template"]["metadata"]["labels"]
+    assert labels == {"env": "prd", "team": "infra"}
+
+    # One IamMember per invoker; the first keeps the canonical key, subsequent
+    # entries get a numeric suffix.
+    assert resources["invoker"]["properties"]["member"] == ("serviceAccount:alice@example.com")
+    assert resources["invoker-1"]["properties"]["member"] == ("serviceAccount:bob@example.com")
+
+
+def test_gcp_pulumi_stack_defaults_to_public_invoker() -> None:
+    """With no invokers profile key, the invoker resource stays public."""
+    from skaal.app import App
+    from skaal.deploy.gcp import _build_pulumi_stack
+    from skaal.plan import PlanFile
+
+    app = App(name="demo")
+    plan = PlanFile(app_name="demo", deploy_target="gcp")
+
+    stack = _build_pulumi_stack(app, plan, region="us-central1")
+    assert stack["resources"]["invoker"]["properties"]["member"] == "allUsers"
+    assert "invoker-1" not in stack["resources"]
+
+
+def test_run_hooks_sets_output_env(tmp_path: Path) -> None:
+    """post_deploy hooks receive Pulumi outputs as SKAAL_OUTPUT_* env vars."""
+    import sys
+
+    from skaal.api import _run_hooks
+
+    marker = tmp_path / "captured.txt"
+    # Use the current Python interpreter to avoid Windows PATH issues.
+    cmd = [
+        sys.executable,
+        "-c",
+        "import os, pathlib; "
+        f"pathlib.Path(r'{marker}').write_text(os.environ['SKAAL_OUTPUT_SERVICE_URL'])",
+    ]
+
+    _run_hooks([cmd], cwd=tmp_path, extra_env={"SKAAL_OUTPUT_SERVICE_URL": "https://x"})
+    assert marker.read_text() == "https://x"
+
+
+def test_run_hooks_propagates_failure(tmp_path: Path) -> None:
+    """A non-zero exit aborts the hook sequence with CalledProcessError."""
+    import subprocess
+    import sys
+
+    from skaal.api import _run_hooks
+
+    bad = [sys.executable, "-c", "import sys; sys.exit(7)"]
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_hooks([bad], cwd=tmp_path)
+
+
+def test_stacks_cli_lists_profiles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`skaal stacks` prints one row per declared profile."""
+    from typer.testing import CliRunner
+
+    from skaal.cli.stacks_cmd import app as stacks_app
+
+    _write_pyproject(
+        tmp_path,
+        """
+        [tool.skaal]
+        target = "gcp"
+        region = "europe-west1"
+        stack  = "p-dev"
+
+        [tool.skaal.stacks.p-dev]
+        gcp_project = "dev-proj"
+
+        [tool.skaal.stacks.p-prd]
+        gcp_project         = "prd-proj"
+        region              = "europe-west4"
+        deletion_protection = true
+        pre_deploy          = [["echo", "hi"]]
+        """,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(stacks_app, [])
+    assert result.exit_code == 0, result.stdout
+    assert "p-dev" in result.stdout
+    assert "p-prd" in result.stdout
+    assert "dev-proj" in result.stdout
+    assert "prd-proj" in result.stdout
+    assert "europe-west4" in result.stdout

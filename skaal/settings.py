@@ -116,6 +116,35 @@ class StackProfile(BaseModel):
     gcp_project: str | None = None
     overrides: dict[str, str | int | bool] = Field(default_factory=dict)
     deletion_protection: bool | None = None
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Literal environment variables baked into the compute container.",
+    )
+    invokers: list[str] = Field(
+        default_factory=list,
+        description=(
+            "IAM members allowed to invoke the service. "
+            "Defaults to ``['allUsers']`` (public) when the list is empty."
+        ),
+    )
+    labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Labels applied to supporting resources (Cloud Run, SQL, Redis).",
+    )
+    pre_deploy: list[list[str]] = Field(
+        default_factory=list,
+        description=(
+            "Commands to run before ``pulumi up``. Each entry is an argv list, "
+            'e.g. [["skaal", "migrate", "advance", "cache"]].'
+        ),
+    )
+    post_deploy: list[list[str]] = Field(
+        default_factory=list,
+        description=(
+            "Commands to run after a successful deploy. Each entry is an argv "
+            "list; Pulumi outputs are exported as SKAAL_OUTPUT_<KEY> env vars."
+        ),
+    )
 
 
 # ── Unified settings model ────────────────────────────────────────────────────
@@ -185,6 +214,11 @@ class SkaalSettings(BaseSettings):
             "for every cloud-sql-postgres storage in the plan at deploy time."
         ),
     )
+    env: dict[str, str] = Field(default_factory=dict)
+    invokers: list[str] = Field(default_factory=list)
+    labels: dict[str, str] = Field(default_factory=dict)
+    pre_deploy: list[list[str]] = Field(default_factory=list)
+    post_deploy: list[list[str]] = Field(default_factory=list)
 
     # ── Stack profiles ────────────────────────────────────────────────────────
     stacks: dict[str, StackProfile] = Field(

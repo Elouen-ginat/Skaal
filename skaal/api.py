@@ -372,6 +372,7 @@ def build(
     cfg = SkaalSettings().for_stack(stack)
     resolved_out = Path(output_dir) if output_dir is not None else cfg.out
     resolved_region = region or cfg.region
+    stack_profile = _build_stack_profile(cfg)
 
     plan_file = _coerce_plan(plan)
 
@@ -399,7 +400,24 @@ def build(
         app_var=plan_file.app_var,
         region=resolved_region or None,
         dev=dev,
+        stack_profile=stack_profile or None,
     )
+
+
+def _build_stack_profile(cfg: SkaalSettings) -> dict[str, Any]:
+    """Extract the stack-profile fields that build generators consume.
+
+    Returns only the non-empty fields so tests and generators can use the
+    truthiness of the dict to decide whether to emit stack-specific config.
+    """
+    profile: dict[str, Any] = {}
+    if cfg.env:
+        profile["env"] = dict(cfg.env)
+    if cfg.invokers:
+        profile["invokers"] = list(cfg.invokers)
+    if cfg.labels:
+        profile["labels"] = dict(cfg.labels)
+    return profile
 
 
 # ── deploy ────────────────────────────────────────────────────────────────────
@@ -463,7 +481,9 @@ def deploy(
 
     config_overrides = _build_config_overrides(cfg, resolved_dir)
 
-    return package_and_push(
+    _run_hooks(cfg.pre_deploy, cwd=resolved_dir.parent)
+
+    outputs = package_and_push(
         artifacts_dir=resolved_dir,
         stack=resolved_stack,
         region=resolved_region,
@@ -471,6 +491,42 @@ def deploy(
         yes=yes,
         config_overrides=config_overrides or None,
     )
+
+    _run_hooks(
+        cfg.post_deploy,
+        cwd=resolved_dir.parent,
+        extra_env={f"SKAAL_OUTPUT_{k.upper()}": v for k, v in outputs.items()},
+    )
+
+    return outputs
+
+
+def _run_hooks(
+    commands: list[list[str]],
+    *,
+    cwd: Path,
+    extra_env: dict[str, str] | None = None,
+) -> None:
+    """Run each argv in *commands* sequentially with :mod:`subprocess`.
+
+    Raises :class:`subprocess.CalledProcessError` on the first failure so a
+    failing pre-deploy hook aborts the deploy before it touches Pulumi, and a
+    failing post-deploy hook surfaces as a non-zero exit from ``skaal deploy``.
+    """
+    import os
+    import subprocess
+
+    if not commands:
+        return
+
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+
+    for argv in commands:
+        if not argv:
+            continue
+        subprocess.run(argv, cwd=cwd, env=env, check=True)
 
 
 def _build_config_overrides(

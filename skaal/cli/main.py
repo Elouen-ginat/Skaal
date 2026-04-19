@@ -10,6 +10,7 @@ from skaal.cli.infra_cmd import app as infra_app
 from skaal.cli.migrate_cmd import app as migrate_app
 from skaal.cli.plan_cmd import app as plan_app
 from skaal.cli.run_cmd import app as run_app
+from skaal.cli.stacks_cmd import app as stacks_app
 
 app = typer.Typer(
     name="skaal",
@@ -25,6 +26,7 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(diff_app, name="diff")
 app.add_typer(infra_app, name="infra")
 app.add_typer(migrate_app, name="migrate")
+app.add_typer(stacks_app, name="stacks")
 
 
 if __name__ == "__main__":
