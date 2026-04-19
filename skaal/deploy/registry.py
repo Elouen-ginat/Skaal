@@ -72,6 +72,7 @@ class AWSLambdaTarget:
         project_root: Path,
         source_module: str,
         app_name: str,
+        config_overrides: dict[str, str] | None = None,
     ) -> dict[str, str]:
         from skaal.deploy.push import (
             _package_aws,
@@ -84,6 +85,8 @@ class AWSLambdaTarget:
         resolved_region = region or self.default_region
         _pulumi_stack_select_or_init(artifacts_dir, stack)
         _pulumi_config_set(artifacts_dir, {"aws:region": resolved_region})
+        if config_overrides:
+            _pulumi_config_set(artifacts_dir, config_overrides)
 
         typer.echo("==> Packaging Lambda ...")
         _package_aws(artifacts_dir, project_root, source_module)
@@ -138,6 +141,7 @@ class GCPCloudRunTarget:
         project_root: Path,
         source_module: str,
         app_name: str,
+        config_overrides: dict[str, str] | None = None,
     ) -> dict[str, str]:
         from skaal.deploy.push import (
             _build_push_image,
@@ -159,6 +163,8 @@ class GCPCloudRunTarget:
             artifacts_dir,
             {"gcp:project": gcp_project, "gcp:region": resolved_region},
         )
+        if config_overrides:
+            _pulumi_config_set(artifacts_dir, config_overrides)
 
         typer.echo("==> Provisioning infrastructure (pulumi up) ...")
         _pulumi_up(artifacts_dir, yes=yes)
@@ -217,6 +223,7 @@ class LocalDockerComposeTarget:
         project_root: Path,
         source_module: str,
         app_name: str,
+        config_overrides: dict[str, str] | None = None,
     ) -> dict[str, str]:
         from skaal.deploy.push import _run
 

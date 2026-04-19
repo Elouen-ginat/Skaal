@@ -83,19 +83,23 @@ class DeployTarget(Protocol):
         project_root: Path,
         source_module: str,
         app_name: str,
+        config_overrides: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Package and deploy the artifacts; return Pulumi stack outputs.
 
         Args:
-            artifacts_dir: Path to the directory produced by
-                           :meth:`generate_artifacts`.
-            stack:         Pulumi stack name (default: ``"dev"``).
-            region:        Cloud region override.
-            gcp_project:   GCP project ID (required for GCP target).
-            yes:           Pass ``--yes`` to ``pulumi up`` (non-interactive).
-            project_root:  Root of the user's project (parent of artifacts_dir).
-            source_module: Dotted Python module path of the app.
-            app_name:      App name (from ``skaal-meta.json``).
+            artifacts_dir:    Path to the directory produced by
+                              :meth:`generate_artifacts`.
+            stack:            Pulumi stack name (default: ``"dev"``).
+            region:           Cloud region override.
+            gcp_project:      GCP project ID (required for GCP target).
+            yes:              Pass ``--yes`` to ``pulumi up`` (non-interactive).
+            project_root:     Root of the user's project (parent of artifacts_dir).
+            source_module:    Dotted Python module path of the app.
+            app_name:         App name (from ``skaal-meta.json``).
+            config_overrides: Extra ``pulumi config set`` key/value pairs
+                              applied after the core project/region config,
+                              e.g. ``{"cloudRunMemory": "1Gi"}``.
 
         Returns:
             Dict of Pulumi stack outputs, e.g. ``{"apiUrl": "https://..."}``.

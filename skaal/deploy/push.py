@@ -180,6 +180,7 @@ def package_and_push(
     region: str | None = None,
     gcp_project: str | None = None,
     yes: bool = True,
+    config_overrides: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Package the app and deploy it using Pulumi.
 
@@ -188,11 +189,13 @@ def package_and_push(
     :class:`~skaal.deploy.target.DeployTarget` adapter.
 
     Args:
-        artifacts_dir: Path to the artifacts directory produced by ``skaal build``.
-        stack:         Pulumi stack name (default: ``"dev"``).
-        region:        Cloud region override.
-        gcp_project:   GCP project ID (required for GCP target).
-        yes:           Pass ``--yes`` to ``pulumi up`` (non-interactive).
+        artifacts_dir:    Path to the artifacts directory produced by ``skaal build``.
+        stack:            Pulumi stack name (default: ``"dev"``).
+        region:           Cloud region override.
+        gcp_project:      GCP project ID (required for GCP target).
+        yes:              Pass ``--yes`` to ``pulumi up`` (non-interactive).
+        config_overrides: Extra ``pulumi config set`` key/value pairs applied
+                          after the core project/region config.
 
     Returns:
         Dict of Pulumi stack outputs (e.g. ``{"apiUrl": "https://..."}``)
@@ -212,4 +215,5 @@ def package_and_push(
         project_root=artifacts_dir.parent,
         source_module=meta["source_module"],
         app_name=meta["app_name"],
+        config_overrides=config_overrides,
     )

@@ -96,6 +96,16 @@ class StackProfile(BaseModel):
 
     Only the fields that may legitimately differ between stacks are exposed
     here.  Everything left as ``None`` falls through to the base value.
+
+    ``overrides`` is a free-form dict of Pulumi config keys applied after
+    the core project/region on every deploy — e.g.
+    ``{"cloudRunMemory": "1Gi", "cloudRunMinInstances": 2}``.  Values are
+    stringified before being passed to ``pulumi config set``.
+
+    ``deletion_protection`` is a shortcut that expands at deploy time into
+    ``sqlDeletionProtection<ClassName>`` overrides for every
+    ``cloud-sql-postgres`` storage in the plan.  Set ``True`` on production
+    stacks to make Cloud SQL instances undeletable.
     """
 
     model_config = {"extra": "forbid"}
@@ -104,6 +114,8 @@ class StackProfile(BaseModel):
     region: str | None = None
     catalog: Path | None = None
     gcp_project: str | None = None
+    overrides: dict[str, str | int | bool] = Field(default_factory=dict)
+    deletion_protection: bool | None = None
 
 
 # ── Unified settings model ────────────────────────────────────────────────────
@@ -158,6 +170,20 @@ class SkaalSettings(BaseSettings):
     gcp_project: str | None = Field(
         default=None,
         description="GCP project ID (required for GCP target).",
+    )
+    overrides: dict[str, str | int | bool] = Field(
+        default_factory=dict,
+        description=(
+            "Raw Pulumi config overrides applied on every deploy. "
+            "Usually populated from a stack profile rather than the top level."
+        ),
+    )
+    deletion_protection: bool | None = Field(
+        default=None,
+        description=(
+            "Shortcut that expands into sqlDeletionProtection<Class> overrides "
+            "for every cloud-sql-postgres storage in the plan at deploy time."
+        ),
     )
 
     # ── Stack profiles ────────────────────────────────────────────────────────

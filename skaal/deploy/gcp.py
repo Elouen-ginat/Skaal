@@ -206,6 +206,10 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
         if spec.backend == "cloud-sql-postgres":
             sql_cfg = CloudSQLDeployConfig.model_validate(spec.deploy_params)
             config[f"sqlTier{class_name}"] = {"type": "string", "default": sql_cfg.tier}
+            config[f"sqlDeletionProtection{class_name}"] = {
+                "type": "boolean",
+                "default": sql_cfg.deletion_protection,
+            }
         elif spec.backend == "memorystore-redis":
             redis_cfg = MemorystoreRedisDeployConfig.model_validate(spec.deploy_params)
             config[f"redisSizeGb{class_name}"] = {
@@ -249,7 +253,7 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str) -> dict[str, An
                         "tier": f"${{{f'sqlTier{class_name}'}}}",
                         "backupConfiguration": {"enabled": sql_cfg.backup_enabled},
                     },
-                    "deletionProtection": sql_cfg.deletion_protection,
+                    "deletionProtection": f"${{sqlDeletionProtection{class_name}}}",
                 },
             }
             resources[f"{class_name.lower()}-db"] = {

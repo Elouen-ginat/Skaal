@@ -461,13 +461,49 @@ def deploy(
                 f'`gcp_project = "..."` under [tool.skaal.stacks.{resolved_stack}].{hint}'
             )
 
+    config_overrides = _build_config_overrides(cfg, resolved_dir)
+
     return package_and_push(
         artifacts_dir=resolved_dir,
         stack=resolved_stack,
         region=resolved_region,
         gcp_project=resolved_gcp_project,
         yes=yes,
+        config_overrides=config_overrides or None,
     )
+
+
+def _build_config_overrides(
+    cfg: SkaalSettings,
+    artifacts_dir: Path,
+) -> dict[str, str]:
+    """Merge raw ``overrides`` with the ``deletion_protection`` shortcut.
+
+    The shortcut expands to ``sqlDeletionProtection<Class>`` for every
+    ``cloud-sql-postgres`` storage in the plan, skipping any key already
+    present in ``overrides`` so explicit entries win.
+    """
+    merged: dict[str, str] = {
+        k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in cfg.overrides.items()
+    }
+
+    if cfg.deletion_protection is not None:
+        plan_path = artifacts_dir.parent / PLAN_FILE_NAME
+        if plan_path.exists():
+            try:
+                plan_file = PlanFile.read(plan_path)
+            except Exception:  # noqa: BLE001 — a broken plan shouldn't block deploy
+                plan_file = None
+            if plan_file is not None:
+                flag = "true" if cfg.deletion_protection else "false"
+                for qname, spec in plan_file.storage.items():
+                    if spec.backend != "cloud-sql-postgres":
+                        continue
+                    class_name = qname.split(".")[-1]
+                    key = f"sqlDeletionProtection{class_name}"
+                    merged.setdefault(key, flag)
+
+    return merged
 
 
 # ── run / serve ───────────────────────────────────────────────────────────────

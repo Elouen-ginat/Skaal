@@ -112,3 +112,120 @@ def test_env_var_beats_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     resolved = SkaalSettings().for_stack("p-dev")
     assert resolved.region == "from-env"
     assert resolved.gcp_project == "from-profile"
+
+
+# ── Phase 2 — overrides + deletion_protection ────────────────────────────────
+
+
+def test_profile_overrides_are_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Raw Pulumi overrides declared under [tool.skaal.stacks.X.overrides]
+    are loaded and surface on the resolved settings."""
+    _write_pyproject(
+        tmp_path,
+        """
+        [tool.skaal]
+        target = "gcp"
+
+        [tool.skaal.stacks.p-prd.overrides]
+        cloudRunMemory       = "1Gi"
+        cloudRunMinInstances = 2
+        """,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    prd = SkaalSettings().for_stack("p-prd")
+    assert prd.overrides == {"cloudRunMemory": "1Gi", "cloudRunMinInstances": 2}
+
+
+def test_deletion_protection_shortcut_on_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """deletion_protection on the profile propagates as a bool setting."""
+    _write_pyproject(
+        tmp_path,
+        """
+        [tool.skaal]
+        target = "gcp"
+
+        [tool.skaal.stacks.p-prd]
+        deletion_protection = true
+        """,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    prd = SkaalSettings().for_stack("p-prd")
+    dev = SkaalSettings().for_stack("does-not-exist")
+    assert prd.deletion_protection is True
+    assert dev.deletion_protection is None
+
+
+def test_build_config_overrides_expands_deletion_protection(tmp_path: Path) -> None:
+    """_build_config_overrides() expands deletion_protection into one
+    sqlDeletionProtection<Class> key per cloud-sql-postgres storage and
+    leaves raw override values stringified."""
+    from skaal.api import _build_config_overrides
+    from skaal.plan import PlanFile, StorageSpec
+    from skaal.settings import SkaalSettings
+
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    plan = PlanFile(
+        app_name="demo",
+        deploy_target="gcp",
+        storage={
+            "demo.Items": StorageSpec(
+                variable_name="Items",
+                backend="cloud-sql-postgres",
+                deploy_params={},
+            ),
+            "demo.Cache": StorageSpec(
+                variable_name="Cache",
+                backend="firestore",
+                deploy_params={},
+            ),
+        },
+    )
+    plan.write(tmp_path / "plan.skaal.lock")
+
+    cfg = SkaalSettings(
+        overrides={"cloudRunMemory": "1Gi", "cloudRunMinInstances": 2},
+        deletion_protection=True,
+    )
+
+    overrides = _build_config_overrides(cfg, artifacts_dir)
+    assert overrides == {
+        "cloudRunMemory": "1Gi",
+        "cloudRunMinInstances": "2",
+        "sqlDeletionProtectionItems": "true",
+    }
+
+
+def test_build_config_overrides_explicit_wins_over_shortcut(tmp_path: Path) -> None:
+    """An explicit sqlDeletionProtection<Class> in overrides beats the
+    deletion_protection shortcut."""
+    from skaal.api import _build_config_overrides
+    from skaal.plan import PlanFile, StorageSpec
+    from skaal.settings import SkaalSettings
+
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    plan = PlanFile(
+        app_name="demo",
+        deploy_target="gcp",
+        storage={
+            "demo.Items": StorageSpec(
+                variable_name="Items",
+                backend="cloud-sql-postgres",
+                deploy_params={},
+            ),
+        },
+    )
+    plan.write(tmp_path / "plan.skaal.lock")
+
+    cfg = SkaalSettings(
+        overrides={"sqlDeletionProtectionItems": "false"},
+        deletion_protection=True,
+    )
+
+    overrides = _build_config_overrides(cfg, artifacts_dir)
+    assert overrides == {"sqlDeletionProtectionItems": "false"}
