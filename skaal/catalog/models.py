@@ -21,6 +21,7 @@ class StorageBackendSpec(BaseModel):
     write_latency: LatencyRange
     durability: list[str]
     max_size_gb: int = 0  # 0 = unlimited
+    storage_kinds: list[str] = Field(default_factory=lambda: ["kv"])
     access_patterns: list[str] = Field(default_factory=list)
     cost_per_gb_month: float = 0.0
     requires_vpc: bool = False

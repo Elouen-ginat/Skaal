@@ -154,11 +154,12 @@ _COMPOSE_SERVICES: dict[str, dict[str, Any]] = {
 
 # Maps cloud backend names to their local Docker Compose equivalents.
 # Only used when a cloud plan is built with the local generator (edge case).
-_LOCAL_FALLBACK: dict[str, str] = {
-    "dynamodb": "local-map",
-    "firestore": "local-map",
-    "cloud-sql-postgres": "local-redis",
-    "memorystore-redis": "local-redis",
+_LOCAL_FALLBACK: dict[tuple[str, str], str] = {
+    ("dynamodb", "kv"): "local-map",
+    ("firestore", "kv"): "local-map",
+    ("cloud-sql-postgres", "kv"): "local-redis",
+    ("cloud-sql-postgres", "relational"): "sqlite",
+    ("memorystore-redis", "kv"): "local-redis",
 }
 
 
@@ -186,7 +187,7 @@ def get_handler(spec: "StorageSpec", *, local: bool = False) -> BackendHandler:
         # Always apply the local fallback for cloud backends so that a plan
         # solved for GCP/AWS doesn't leak cloud-specific wire params (and their
         # local_service sidecars) into the local docker-compose.
-        fallback_key = _LOCAL_FALLBACK.get(spec.backend)
+        fallback_key = _LOCAL_FALLBACK.get((spec.backend, spec.kind))
         if fallback_key:
             _fallback = _FALLBACK_WIRE.get(fallback_key)
             if _fallback:
@@ -271,24 +272,24 @@ def build_wiring(plan: Any, *, local: bool = False) -> tuple[str, str]:
 def build_wiring_aws(plan: Any) -> tuple[str, str]:
     """Return ``(backend_imports, backend_overrides)`` for an AWS Lambda entry point.
 
-    Lambda always maps every storage class to DynamoDB regardless of what the
-    solver chose.  Table names are injected at runtime via
-    ``SKAAL_TABLE_<CLASSNAME>`` env vars set by the Pulumi stack.
+    AWS entry points use the backend selected in the plan for each storage
+    class. Connection details are injected at runtime via the env var prefix
+    declared in the backend's catalog ``[wire]`` section.
     """
+    seen: set[str] = set()
     import_lines: list[str] = []
     override_lines: list[str] = []
 
-    if plan.storage:
-        # Use the wire data from the first spec — all will be dynamodb on AWS.
-        first_spec = next(iter(plan.storage.values()))
-        handler = get_handler(first_spec)
-        import_lines.append(handler.import_stmt)
+    for qname, spec in plan.storage.items():
+        class_name = qname.split(".")[-1]
+        handler = get_handler(spec)
+        env_var = f"{handler.env_prefix}_{class_name.upper()}" if handler.env_prefix else ""
 
-        for qname in plan.storage:
-            class_name = qname.split(".")[-1]
-            env_var = f"{handler.env_prefix}_{class_name.upper()}"
-            override_lines.append(
-                f'        "{class_name}": {handler.class_name}(os.environ["{env_var}"]),',
-            )
+        if handler.import_stmt not in seen:
+            seen.add(handler.import_stmt)
+            import_lines.append(handler.import_stmt)
+
+        ctor = _make_constructor(handler, class_name, env_var)
+        override_lines.append(f'        "{class_name}": {ctor},')
 
     return "\n".join(import_lines), "\n".join(override_lines)

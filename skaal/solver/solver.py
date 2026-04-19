@@ -78,6 +78,7 @@ def _storage_constraints_from_pattern(pattern_meta: dict[str, Any]) -> dict[str,
     # The source may lack throughput/size_hint/etc. — fill with the few keys
     # the checker registry understands.
     return {
+        "kind": "kv",
         "access_pattern": src.get("access_pattern"),
         "durability": src.get("durability"),
         "write_throughput": src.get("throughput"),
@@ -233,6 +234,7 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
         storage_specs[qname] = StorageSpec(
             variable_name=qname,
             backend=backend_name,
+            kind=constraints.get("kind", "kv"),
             previous_backend=None,
             migration_plan=None,
             migration_stage=0,

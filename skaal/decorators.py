@@ -1,4 +1,4 @@
-"""Core user-facing decorators: @storage, @compute, @scale, @handler, @shared."""
+"""Core user-facing decorators: @storage, @relational, @compute, @scale, @handler, @shared."""
 
 from __future__ import annotations
 
@@ -83,6 +83,67 @@ def storage(
                 "decommission_policy": decommission_policy,
                 "collocate_with": collocate_with,
                 "schema": schema,  # empty dict for plain classes
+            },
+        )
+        return cls
+
+    return decorator
+
+
+def relational(
+    *,
+    read_latency: Latency | str | None = None,
+    write_latency: Latency | str | None = None,
+    durability: Durability | str = Durability.PERSISTENT,
+    size_hint: str | None = None,
+    write_throughput: Throughput | str | None = None,
+    residency: str | None = None,
+    auto_optimize: bool = False,
+    decommission_policy: DecommissionPolicy | None = None,
+    collocate_with: str | None = None,
+) -> Callable[[C], C]:
+    """Declare infrastructure constraints for a SQLModel relational table."""
+
+    def decorator(cls: C) -> C:
+        from skaal.relational import _schema_hints, validate_relational_model
+
+        validate_relational_model(cls)
+
+        _rl: Latency | None
+        if isinstance(read_latency, str):
+            _rl = Latency(read_latency)
+        else:
+            _rl = read_latency
+
+        _wl: Latency | None
+        if isinstance(write_latency, str):
+            _wl = Latency(write_latency)
+        else:
+            _wl = write_latency
+
+        schema = _schema_hints(cls)
+
+        setattr(
+            cls,
+            "__skaal_storage__",
+            {
+                "kind": "relational",
+                "read_latency": _rl,
+                "write_latency": _wl,
+                "durability": Durability(durability) if isinstance(durability, str) else durability,
+                "size_hint": size_hint,
+                "access_pattern": AccessPattern.TRANSACTIONAL,
+                "write_throughput": (
+                    Throughput(write_throughput)
+                    if isinstance(write_throughput, str)
+                    else write_throughput
+                ),
+                "residency": residency,
+                "retention": None,
+                "auto_optimize": auto_optimize,
+                "decommission_policy": decommission_policy,
+                "collocate_with": collocate_with,
+                "schema": schema,
             },
         )
         return cls

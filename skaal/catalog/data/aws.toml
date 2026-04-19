@@ -8,6 +8,7 @@ read_latency  = { min = 0.1, max = 2.0, unit = "ms" }
 write_latency = { min = 0.1, max = 5.0, unit = "ms" }
 durability    = ["ephemeral", "persistent"]   # persistent = AOF or RDB
 max_size_gb   = 500
+storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub"]
 cost_per_gb_month = 3.50   # USD, approximate cache.r6g.large
 requires_vpc  = true
@@ -20,11 +21,33 @@ read_latency  = { min = 1.0, max = 50.0, unit = "ms" }
 write_latency = { min = 2.0, max = 100.0, unit = "ms" }
 durability    = ["persistent", "durable"]
 max_size_gb   = 16_000
+storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "sequential", "transactional"]
 cost_per_gb_month = 0.12
 requires_vpc  = true
 regions = ["all"]
 notes = "Default for strong-consistency relational workloads; always runs inside a VPC"
+
+[storage.rds-postgres.deploy]
+engine_version            = "16.3"
+instance_class            = "db.t4g.micro"
+allocated_storage_gb      = 20
+max_allocated_storage_gb  = 100
+storage_type              = "gp3"
+username                  = "skaal"
+port                      = 5432
+backup_retention_days     = 7
+deletion_protection       = false
+
+[storage.rds-postgres.wire]
+class_name      = "PostgresBackend"
+module          = "postgres_backend"
+env_prefix      = "SKAAL_DB_DSN"
+uses_namespace  = true
+requires_vpc    = true
+local_service   = "postgres"
+local_env_value = "postgresql://skaal_user:skaal_pass@postgres/skaal_db"
+extra_deps      = ["asyncpg>=0.29"]
 
 [storage.s3]
 display_name = "Amazon S3"
@@ -32,6 +55,7 @@ read_latency  = { min = 50, max = 500, unit = "ms" }
 write_latency = { min = 100, max = 2000, unit = "ms" }
 durability    = ["durable"]   # 11 nines
 max_size_gb   = 0             # unlimited (0 = no limit)
+storage_kinds = ["kv"]
 access_patterns = ["append-only", "bulk-read", "worm", "event-log"]
 cost_per_gb_month = 0.023
 regions = ["all"]
@@ -43,6 +67,7 @@ read_latency  = { min = 0.1, max = 1.0, unit = "ms" }
 write_latency = { min = 0.1, max = 2.0, unit = "ms" }
 durability    = ["ephemeral"]
 max_size_gb   = 300
+storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write"]
 cost_per_gb_month = 2.80
 requires_vpc  = true
@@ -55,6 +80,7 @@ read_latency  = { min = 1.0, max = 10.0, unit = "ms" }
 write_latency = { min = 1.0, max = 10.0, unit = "ms" }
 durability    = ["persistent", "durable"]
 max_size_gb   = 0
+storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write"]
 cost_per_gb_month = 0.25
 serverless    = true
@@ -77,6 +103,7 @@ read_latency  = { min = 2.0, max = 20.0, unit = "ms" }
 write_latency = { min = 2.0, max = 20.0, unit = "ms" }
 durability    = ["durable"]
 max_size_gb   = 10_000
+storage_kinds = ["kv"]
 access_patterns = ["append-only", "pub-sub", "event-log"]
 cost_per_gb_month = 0.10
 regions = ["all"]

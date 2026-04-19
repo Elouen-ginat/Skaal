@@ -56,6 +56,54 @@ class DynamoDBDeployConfig(StorageDeployConfig):
         return v
 
 
+class RDSPostgresDeployConfig(StorageDeployConfig):
+    engine_version: str = "16.3"
+    instance_class: str = "db.t4g.micro"
+    allocated_storage_gb: int = Field(default=20, ge=20)
+    max_allocated_storage_gb: int = Field(default=100, ge=0)
+    storage_type: Literal["standard", "gp2", "gp3", "io1", "io2"] = "gp3"
+    username: str = "skaal"
+    port: int = Field(default=5432, ge=1, le=65535)
+    backup_retention_days: int = Field(default=7, ge=0, le=35)
+    deletion_protection: bool = False
+
+    @field_validator("engine_version")
+    @classmethod
+    def _engine_version_nonempty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("engine_version must not be empty")
+        return v
+
+    @field_validator("instance_class")
+    @classmethod
+    def _instance_class_format(cls, v: str) -> str:
+        if not v.startswith("db."):
+            raise ValueError(
+                f"RDS instance_class must start with 'db.', got {v!r}. " "Example: 'db.t4g.micro'."
+            )
+        return v
+
+    @field_validator("username")
+    @classmethod
+    def _username_format(cls, v: str) -> str:
+        if not re.match(r"^[A-Za-z][A-Za-z0-9_]{0,62}$", v):
+            raise ValueError(
+                "RDS username must start with a letter and contain only letters, "
+                "digits, or underscores."
+            )
+        return v
+
+    @field_validator("max_allocated_storage_gb")
+    @classmethod
+    def _max_storage_gte_allocated(cls, v: int, info: Any) -> int:
+        allocated = info.data.get("allocated_storage_gb", 20)
+        if v != 0 and v < allocated:
+            raise ValueError(
+                "max_allocated_storage_gb must be 0 or >= allocated_storage_gb " f"({allocated})."
+            )
+        return v
+
+
 # ── GCP storage ───────────────────────────────────────────────────────────────
 
 
@@ -248,6 +296,7 @@ class LocalStackDeployConfig(ComputeDeployConfig):
 
 _STORAGE_CONFIGS: dict[str, type[StorageDeployConfig]] = {
     "dynamodb": DynamoDBDeployConfig,
+    "rds-postgres": RDSPostgresDeployConfig,
     "firestore": FirestoreDeployConfig,
     "cloud-sql-postgres": CloudSQLDeployConfig,
     "memorystore-redis": MemorystoreRedisDeployConfig,

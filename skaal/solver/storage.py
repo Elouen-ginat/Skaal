@@ -37,6 +37,11 @@ def _check_access_pattern(value: Any, spec: dict[str, Any]) -> bool:
     return _enum_value(value) in spec.get("access_patterns", [])
 
 
+def _check_kind(value: Any, spec: dict[str, Any]) -> bool:
+    supported = spec.get("storage_kinds", ["kv"])
+    return _enum_value(value) in supported
+
+
 def _check_durability(value: Any, spec: dict[str, Any]) -> bool:
     return _enum_value(value) in spec.get("durability", [])
 
@@ -75,6 +80,7 @@ def _check_retention(value: Any, spec: dict[str, Any]) -> bool:
 
 
 _CONSTRAINT_CHECKERS: dict[str, ConstraintChecker] = {
+    "kind": _check_kind,
     "access_pattern": _check_access_pattern,
     "durability": _check_durability,
     "read_latency": _check_read_latency,
@@ -95,6 +101,7 @@ _CONSTRAINT_CHECKERS: dict[str, ConstraintChecker] = {
 ConstraintFormatter = Callable[[Any], str]
 
 _CONSTRAINT_FORMATTERS: dict[str, ConstraintFormatter] = {
+    "kind": lambda v: f"kind={_enum_value(v)}",
     "access_pattern": lambda v: f"access_pattern={_enum_value(v)}",
     "durability": lambda v: f"durability={_enum_value(v)}",
     "read_latency": lambda v: f"read_latency {v.expr}",
@@ -139,6 +146,10 @@ def _build_selection_reason(
     if read_latency is not None:
         lat_max = spec.get("read_latency", {}).get("max", "?")
         parts.append(f"read_latency max={lat_max}ms satisfies {read_latency.expr}")
+
+    kind = constraints.get("kind")
+    if kind is not None:
+        parts.append(f"kind={_enum_value(kind)}")
 
     write_latency = constraints.get("write_latency")
     if write_latency is not None:

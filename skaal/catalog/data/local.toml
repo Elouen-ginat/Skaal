@@ -16,6 +16,7 @@ read_latency  = { min = 0.001, max = 0.1, unit = "ms" }
 write_latency = { min = 0.001, max = 0.1, unit = "ms" }
 durability    = ["ephemeral"]
 max_size_gb   = 0   # unlimited (bounded by process memory)
+storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub", "event-log",
                    "append-only", "bulk-read", "transactional", "sequential",
                    "write-heavy", "worm"]
@@ -34,6 +35,7 @@ read_latency  = { min = 0.1, max = 10.0, unit = "ms" }
 write_latency = { min = 0.5, max = 20.0, unit = "ms" }
 durability    = ["persistent"]
 max_size_gb   = 500
+storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "random-write", "transactional", "sequential"]
 cost_per_gb_month = 0.0
 notes = "Persistent local storage via aiosqlite. Use `skaal run --persist`."
@@ -53,6 +55,7 @@ read_latency  = { min = 0.1, max = 2.0, unit = "ms" }
 write_latency = { min = 0.1, max = 5.0, unit = "ms" }
 durability    = ["ephemeral", "persistent"]
 max_size_gb   = 0
+storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub", "event-log"]
 cost_per_gb_month = 0.0
 notes = "Local Redis instance. Use `skaal run --redis redis://localhost:6379`."

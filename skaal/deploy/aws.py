@@ -7,11 +7,11 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from skaal.deploy._backends import build_wiring_aws
+from skaal.deploy._backends import build_wiring_aws, get_handler
 from skaal.deploy._deps import collect_user_packages
 from skaal.deploy._external import DefaultExternalProvisioner
 from skaal.deploy._render import render, to_pulumi_yaml, to_pyproject_toml
-from skaal.deploy.config import DynamoDBDeployConfig, LambdaDeployConfig
+from skaal.deploy.config import DynamoDBDeployConfig, LambdaDeployConfig, RDSPostgresDeployConfig
 from skaal.deploy.push import write_meta
 
 if TYPE_CHECKING:
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 # IAM managed policy ARN — stable AWS value, never changes.
 _LAMBDA_BASIC_EXEC_POLICY = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+_LAMBDA_VPC_EXEC_POLICY = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 
 # DynamoDB actions granted to the Lambda execution role.
 _DYNAMODB_ACTIONS = [
@@ -28,6 +29,24 @@ _DYNAMODB_ACTIONS = [
     "dynamodb:Scan",
     "dynamodb:Query",
 ]
+
+
+def _resource_slug(name: str, *, max_len: int = 40) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        slug = "skaal"
+    if not slug[0].isalpha():
+        slug = f"skaal-{slug}"
+    return slug[:max_len].rstrip("-") or "skaal"
+
+
+def _database_name(app_name: str) -> str:
+    name = re.sub(r"[^a-z0-9]+", "_", app_name.lower()).strip("_")
+    if not name:
+        name = "skaal"
+    if not name[0].isalpha():
+        name = f"skaal_{name}"
+    return name[:63]
 
 
 # ── API Gateway helpers ───────────────────────────────────────────────────────
@@ -221,28 +240,169 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
         "lambdaRuntime": {"type": "string", "default": deploy.runtime},
     }
 
+    variables: dict[str, Any] = {}
     resources: dict[str, Any] = {}
     env_vars: dict[str, str] = {}
     table_outputs: dict[str, str] = {}
+    db_outputs: dict[str, str] = {}
+    has_dynamodb = any(spec.backend == "dynamodb" for spec in plan.storage.values())
+    needs_vpc = any(get_handler(spec).requires_vpc for spec in plan.storage.values())
 
-    # ── DynamoDB tables — one per storage class ───────────────────────────────
-    for qname, spec in plan.storage.items():
-        class_name = qname.split(".")[-1]
-        resource_key = f"{class_name.lower()}-table"
-        d = DynamoDBDeployConfig.model_validate(spec.deploy_params)
-
-        resources[resource_key] = {
-            "type": "aws:dynamodb:Table",
+    if needs_vpc:
+        variables["defaultVpcId"] = {
+            "fn::invoke": {
+                "function": "aws:ec2:getVpc",
+                "arguments": {"default": True},
+                "return": "id",
+            }
+        }
+        variables["defaultSubnetIds"] = {
+            "fn::invoke": {
+                "function": "aws:ec2:getSubnets",
+                "arguments": {
+                    "filters": [{"name": "vpc-id", "values": ["${defaultVpcId}"]}],
+                },
+                "return": "ids",
+            }
+        }
+        resources["lambda-sg"] = {
+            "type": "aws:ec2:SecurityGroup",
             "properties": {
-                "name": f"${{pulumi.stack}}-{class_name.lower()}",
-                "hashKey": d.hash_key,
-                "billingMode": d.billing_mode,
-                "attributes": [{"name": d.hash_key, "type": d.hash_key_type}],
-                "tags": {"skaal-app": app.name, "skaal-storage": qname},
+                "name": f"${{pulumi.stack}}-{app.name}-lambda",
+                "description": "Lambda security group for Skaal app access to VPC resources",
+                "vpcId": "${defaultVpcId}",
+                "egress": [
+                    {
+                        "protocol": "-1",
+                        "fromPort": 0,
+                        "toPort": 0,
+                        "cidrBlocks": ["0.0.0.0/0"],
+                    }
+                ],
+                "tags": {"skaal-app": app.name},
             },
         }
-        env_vars[f"SKAAL_TABLE_{class_name.upper()}"] = f"${{{resource_key}.name}}"
-        table_outputs[class_name.lower()] = f"${{{resource_key}.name}}"
+
+    # ── Per-storage resources ────────────────────────────────────────────────
+    for qname, spec in plan.storage.items():
+        class_name = qname.split(".")[-1]
+        handler = get_handler(spec)
+        env_var = f"{handler.env_prefix}_{class_name.upper()}" if handler.env_prefix else ""
+        resource_slug = _resource_slug(class_name)
+
+        if spec.backend == "dynamodb":
+            resource_key = f"{resource_slug}-table"
+            d = DynamoDBDeployConfig.model_validate(spec.deploy_params)
+
+            resources[resource_key] = {
+                "type": "aws:dynamodb:Table",
+                "properties": {
+                    "name": f"${{pulumi.stack}}-{resource_slug}",
+                    "hashKey": d.hash_key,
+                    "billingMode": d.billing_mode,
+                    "attributes": [{"name": d.hash_key, "type": d.hash_key_type}],
+                    "tags": {"skaal-app": app.name, "skaal-storage": qname},
+                },
+            }
+            env_vars[env_var] = f"${{{resource_key}.name}}"
+            table_outputs[class_name.lower()] = f"${{{resource_key}.name}}"
+            continue
+
+        if spec.backend == "rds-postgres":
+            rds = RDSPostgresDeployConfig.model_validate(spec.deploy_params)
+            config[f"dbInstanceClass{class_name}"] = {
+                "type": "string",
+                "default": rds.instance_class,
+            }
+            config[f"dbAllocatedStorageGb{class_name}"] = {
+                "type": "integer",
+                "default": rds.allocated_storage_gb,
+            }
+            config[f"dbMaxAllocatedStorageGb{class_name}"] = {
+                "type": "integer",
+                "default": rds.max_allocated_storage_gb,
+            }
+            config[f"dbDeletionProtection{class_name}"] = {
+                "type": "boolean",
+                "default": rds.deletion_protection,
+            }
+
+            password_key = f"{resource_slug}-db-password"
+            db_sg_key = f"{resource_slug}-db-sg"
+            db_key = f"{resource_slug}-db"
+            database_name = _database_name(app.name)
+
+            resources[password_key] = {
+                "type": "random:index:RandomPassword",
+                "properties": {
+                    "length": 24,
+                    "special": False,
+                    "upper": True,
+                    "lower": True,
+                    "numeric": True,
+                },
+            }
+            resources[db_sg_key] = {
+                "type": "aws:ec2:SecurityGroup",
+                "properties": {
+                    "name": f"${{pulumi.stack}}-{resource_slug}-db",
+                    "description": f"Postgres access for {class_name}",
+                    "vpcId": "${defaultVpcId}",
+                    "ingress": [
+                        {
+                            "protocol": "tcp",
+                            "fromPort": rds.port,
+                            "toPort": rds.port,
+                            "securityGroups": ["${lambda-sg.id}"],
+                        }
+                    ],
+                    "egress": [
+                        {
+                            "protocol": "-1",
+                            "fromPort": 0,
+                            "toPort": 0,
+                            "cidrBlocks": ["0.0.0.0/0"],
+                        }
+                    ],
+                    "tags": {"skaal-app": app.name, "skaal-storage": qname},
+                },
+            }
+            resources[db_key] = {
+                "type": "aws:rds:Instance",
+                "properties": {
+                    "identifier": f"${{pulumi.stack}}-{resource_slug}",
+                    "dbName": database_name,
+                    "engine": "postgres",
+                    "engineVersion": rds.engine_version,
+                    "instanceClass": f"${{{f'dbInstanceClass{class_name}'}}}",
+                    "allocatedStorage": f"${{{f'dbAllocatedStorageGb{class_name}'}}}",
+                    "maxAllocatedStorage": f"${{{f'dbMaxAllocatedStorageGb{class_name}'}}}",
+                    "storageType": rds.storage_type,
+                    "backupRetentionPeriod": rds.backup_retention_days,
+                    "deletionProtection": f"${{{f'dbDeletionProtection{class_name}'}}}",
+                    "username": rds.username,
+                    "password": f"${{{password_key}.result}}",
+                    "port": rds.port,
+                    "manageMasterUserPassword": False,
+                    "publiclyAccessible": False,
+                    "skipFinalSnapshot": True,
+                    "storageEncrypted": True,
+                    "applyImmediately": True,
+                    "vpcSecurityGroupIds": [f"${{{db_sg_key}.id}}"],
+                    "tags": {"skaal-app": app.name, "skaal-storage": qname},
+                },
+            }
+            env_vars[env_var] = (
+                f"postgresql://{rds.username}:${{{password_key}.result}}"
+                f"@${{{db_key}.address}}:{rds.port}/{database_name}"
+            )
+            db_outputs[class_name.lower()] = f"${{{db_key}.address}}"
+            continue
+
+        raise ValueError(
+            f"AWS deploy target does not yet support provisioning backend {spec.backend!r} "
+            f"for {qname!r}."
+        )
 
     # ── External components → env-var passthrough ──────────────────────────────
     for name, source in DefaultExternalProvisioner().env_vars(plan).items():
@@ -274,31 +434,44 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
             "policyArn": _LAMBDA_BASIC_EXEC_POLICY,
         },
     }
-    resources["dynamodb-policy"] = {
-        "type": "aws:iam:Policy",
-        "properties": {
-            "name": f"${{pulumi.stack}}-{app.name}-dynamodb",
-            "policy": {
-                "fn::toJSON": {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Action": _DYNAMODB_ACTIONS,
-                            "Resource": "*",
-                        }
-                    ],
-                }
+    lambda_depends_on = ["${lambda-basic-exec}"]
+    if has_dynamodb:
+        resources["dynamodb-policy"] = {
+            "type": "aws:iam:Policy",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-dynamodb",
+                "policy": {
+                    "fn::toJSON": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": _DYNAMODB_ACTIONS,
+                                "Resource": "*",
+                            }
+                        ],
+                    }
+                },
             },
-        },
-    }
-    resources["lambda-dynamodb-attach"] = {
-        "type": "aws:iam:RolePolicyAttachment",
-        "properties": {
-            "role": "${lambda-role.name}",
-            "policyArn": "${dynamodb-policy.arn}",
-        },
-    }
+        }
+        resources["lambda-dynamodb-attach"] = {
+            "type": "aws:iam:RolePolicyAttachment",
+            "properties": {
+                "role": "${lambda-role.name}",
+                "policyArn": "${dynamodb-policy.arn}",
+            },
+        }
+        lambda_depends_on.append("${lambda-dynamodb-attach}")
+
+    if needs_vpc:
+        resources["lambda-vpc-access-attach"] = {
+            "type": "aws:iam:RolePolicyAttachment",
+            "properties": {
+                "role": "${lambda-role.name}",
+                "policyArn": _LAMBDA_VPC_EXEC_POLICY,
+            },
+        }
+        lambda_depends_on.append("${lambda-vpc-access-attach}")
 
     # ── Lambda function ───────────────────────────────────────────────────────
     lambda_props: dict[str, Any] = {
@@ -311,6 +484,12 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
         "memorySize": "${lambdaMemoryMb}",
         "environment": {"variables": env_vars},
     }
+    if needs_vpc:
+        lambda_props["vpcConfig"] = {
+            "subnetIds": "${defaultSubnetIds}",
+            "securityGroupIds": ["${lambda-sg.id}"],
+            "vpcId": "${defaultVpcId}",
+        }
     if deploy.reserved_concurrency >= 0:
         lambda_props["reservedConcurrentExecutions"] = "${lambdaReservedConcurrency}"
         config["lambdaReservedConcurrency"] = {
@@ -321,6 +500,7 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
     resources["lambda-fn"] = {
         "type": "aws:lambda:Function",
         "properties": lambda_props,
+        "options": {"dependsOn": lambda_depends_on},
     }
 
     # ── HTTP API Gateway v2 ───────────────────────────────────────────────────
@@ -406,15 +586,19 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
         "apiUrl": "${default-stage.invokeUrl}",
         "lambdaArn": "${lambda-fn.arn}",
         **{f"table{k.capitalize()}": v for k, v in table_outputs.items()},
+        **{f"dbEndpoint{k.capitalize()}": v for k, v in db_outputs.items()},
     }
 
-    return {
+    stack = {
         "name": f"skaal-{app.name}",
         "runtime": "yaml",
         "config": config,
         "resources": resources,
         "outputs": outputs,
     }
+    if variables:
+        stack["variables"] = variables
+    return stack
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
@@ -501,6 +685,12 @@ def generate_artifacts(
     mesh_src_dir = project_root / "mesh"
     has_mesh = mesh_src_dir.is_dir() and (mesh_src_dir / "Cargo.toml").exists()
 
+    handler_extra_deps: list[str] = []
+    for spec in plan.storage.values():
+        for dep in get_handler(spec).extra_deps:
+            if dep not in handler_extra_deps:
+                handler_extra_deps.append(dep)
+
     user_pkgs = collect_user_packages(source_module)
     base_deps = ["skaal[aws]"]
     if wsgi_attribute:
@@ -509,7 +699,7 @@ def generate_artifacts(
         # Included so requirements are explicit, but requires a Lambda Layer
         # with the compiled skaal_mesh extension for the target platform.
         base_deps.append("skaal-mesh")
-    deps = list(dict.fromkeys(base_deps + user_pkgs))
+    deps = list(dict.fromkeys(base_deps + handler_extra_deps + user_pkgs))
     pyproject_path = output_dir / "pyproject.toml"
     pyproject_path.write_text(to_pyproject_toml(app.name, deps), encoding="utf-8")
     generated.append(pyproject_path)

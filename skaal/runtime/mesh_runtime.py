@@ -84,19 +84,26 @@ class MeshRuntime:
 
     def _patch_storage(self) -> None:
         from skaal.backends.local_backend import LocalMap
+        from skaal.backends.sqlite_backend import SqliteBackend
+        from skaal.relational import is_relational_model, wire_relational_model
         from skaal.storage import Store
 
         for qname, obj in self.app._collect_all().items():
-            if (
-                isinstance(obj, type)
-                and hasattr(obj, "__skaal_storage__")
-                and issubclass(obj, Store)
-            ):
-                backend = (
-                    self._backend_overrides.get(qname)
-                    or self._backend_overrides.get(obj.__name__)
-                    or LocalMap()
-                )
+            if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
+                continue
+
+            backend = self._backend_overrides.get(qname) or self._backend_overrides.get(
+                obj.__name__
+            )
+
+            if is_relational_model(obj):
+                backend = backend or SqliteBackend("skaal_local.db", namespace=qname)
+                self._backends[qname] = backend
+                wire_relational_model(obj, backend)
+                continue
+
+            if issubclass(obj, Store):
+                backend = backend or LocalMap()
                 self._backends[qname] = backend
                 obj.wire(backend)
 

@@ -17,6 +17,7 @@ PatternType = Literal["event-log", "projection", "saga", "outbox"]
 class StorageSpec(BaseModel):
     variable_name: str
     backend: str
+    kind: str = "kv"
     previous_backend: str | None = None
     migration_plan: str | None = None
     migration_stage: int = 0

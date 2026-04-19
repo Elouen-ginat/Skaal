@@ -22,12 +22,15 @@ from skaal.components import (
 from skaal.decorators import (
     compute,
     handler,
+    relational,
     scale,
     shared,
     storage,
 )
 from skaal.module import Module, ModuleExport
 from skaal.patterns import EventLog, Outbox, Projection, Saga, SagaStep
+from skaal.relational import ensure_schema as ensure_relational_schema
+from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.storage import Store
 from skaal.types import (
@@ -51,9 +54,12 @@ __all__ = [
     "agent",
     "compute",
     "handler",
+    "relational",
     "scale",
     "shared",
     "storage",
+    "open_relational_session",
+    "ensure_relational_schema",
     # Patterns
     "EventLog",
     "Outbox",

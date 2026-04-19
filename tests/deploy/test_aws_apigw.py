@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from skaal.app import App
 from skaal.components import APIGateway, AuthConfig, Proxy, Route
-from skaal.deploy.aws import _add_apigw_resources, _apigw_path
-from skaal.plan import ComponentSpec, PlanFile
+from skaal.deploy._backends import build_wiring_aws
+from skaal.deploy.aws import _add_apigw_resources, _apigw_path, _build_pulumi_stack
+from skaal.plan import ComponentSpec, PlanFile, StorageSpec
 from skaal.solver.components import encode_component
 from skaal.types import RateLimitPolicy
 
@@ -207,3 +209,102 @@ def test_stage_depends_on_routes():
     route_keys = {k for k in resources if k.startswith("route-")}
     for rk in route_keys:
         assert f"${{{rk}}}" in depends
+
+
+def test_build_wiring_aws_uses_planned_handlers() -> None:
+    plan = PlanFile(
+        app_name="demo",
+        storage={
+            "demo.Counter": StorageSpec(
+                variable_name="demo.Counter",
+                backend="dynamodb",
+                kind="kv",
+                wire_params={
+                    "class_name": "DynamoBackend",
+                    "module": "dynamodb_backend",
+                    "env_prefix": "SKAAL_TABLE",
+                },
+            ),
+            "demo.User": StorageSpec(
+                variable_name="demo.User",
+                backend="rds-postgres",
+                kind="relational",
+                wire_params={
+                    "class_name": "PostgresBackend",
+                    "module": "postgres_backend",
+                    "env_prefix": "SKAAL_DB_DSN",
+                    "uses_namespace": True,
+                    "requires_vpc": True,
+                },
+            ),
+        },
+    )
+
+    imports, overrides = build_wiring_aws(plan)
+
+    assert "from skaal.backends.dynamodb_backend import DynamoBackend" in imports
+    assert "from skaal.backends.postgres_backend import PostgresBackend" in imports
+    assert '"Counter": DynamoBackend(os.environ["SKAAL_TABLE_COUNTER"]),' in overrides
+    assert (
+        '"User": PostgresBackend(os.environ["SKAAL_DB_DSN_USER"], namespace="User"),' in overrides
+    )
+
+
+def test_aws_pulumi_stack_provisions_rds_and_lambda_vpc() -> None:
+    app = App(name="demo")
+    plan = PlanFile(
+        app_name="demo",
+        deploy_target="aws",
+        storage={
+            "demo.Counter": StorageSpec(
+                variable_name="demo.Counter",
+                backend="dynamodb",
+                kind="kv",
+                wire_params={
+                    "class_name": "DynamoBackend",
+                    "module": "dynamodb_backend",
+                    "env_prefix": "SKAAL_TABLE",
+                },
+            ),
+            "demo.User": StorageSpec(
+                variable_name="demo.User",
+                backend="rds-postgres",
+                kind="relational",
+                wire_params={
+                    "class_name": "PostgresBackend",
+                    "module": "postgres_backend",
+                    "env_prefix": "SKAAL_DB_DSN",
+                    "uses_namespace": True,
+                    "requires_vpc": True,
+                },
+            ),
+        },
+    )
+
+    stack = _build_pulumi_stack(app, plan, region="us-east-1")
+
+    assert stack["variables"]["defaultVpcId"]["fn::invoke"]["function"] == "aws:ec2:getVpc"
+    assert stack["variables"]["defaultSubnetIds"]["fn::invoke"]["return"] == "ids"
+
+    resources = stack["resources"]
+    assert resources["counter-table"]["type"] == "aws:dynamodb:Table"
+    assert resources["user-db-password"]["type"] == "random:index:RandomPassword"
+    assert resources["user-db-sg"]["properties"]["ingress"][0]["securityGroups"] == [
+        "${lambda-sg.id}"
+    ]
+    assert resources["user-db"]["type"] == "aws:rds:Instance"
+    assert resources["user-db"]["properties"]["instanceClass"] == "${dbInstanceClassUser}"
+    assert resources["user-db"]["properties"]["vpcSecurityGroupIds"] == ["${user-db-sg.id}"]
+
+    lambda_fn = resources["lambda-fn"]
+    env_vars = lambda_fn["properties"]["environment"]["variables"]
+    assert env_vars["SKAAL_TABLE_COUNTER"] == "${counter-table.name}"
+    assert env_vars["SKAAL_DB_DSN_USER"].startswith(
+        "postgresql://skaal:${user-db-password.result}@"
+    )
+    assert lambda_fn["properties"]["vpcConfig"]["subnetIds"] == "${defaultSubnetIds}"
+    assert "${lambda-dynamodb-attach}" in lambda_fn["options"]["dependsOn"]
+    assert "${lambda-vpc-access-attach}" in lambda_fn["options"]["dependsOn"]
+
+    assert stack["outputs"]["tableCounter"] == "${counter-table.name}"
+    assert stack["outputs"]["dbEndpointUser"] == "${user-db.address}"

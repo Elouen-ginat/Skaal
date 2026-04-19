@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, List
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Callable, List, cast
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
 
@@ -42,6 +43,17 @@ class PostgresBackend:
         self.max_size = max_size
         self._pool: Any = None  # asyncpg pool, lazy-created
         self._pool_loop: asyncio.AbstractEventLoop | None = None  # loop that owns the pool
+        self._engine: Any = None
+        self._session_factory: Any = None
+
+    def _sqlalchemy_dsn(self) -> str:
+        if self.dsn.startswith("postgresql+asyncpg://"):
+            return self.dsn
+        if self.dsn.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + self.dsn[len("postgresql://") :]
+        if self.dsn.startswith("postgres://"):
+            return "postgresql+asyncpg://" + self.dsn[len("postgres://") :]
+        return self.dsn
 
     async def connect(self) -> None:
         """Create the asyncpg connection pool and ensure table exists."""
@@ -79,6 +91,20 @@ class PostgresBackend:
             self._pool_loop = None
         if self._pool is None:
             await self.connect()
+
+    async def _ensure_relational_engine(self) -> None:
+        if self._engine is not None:
+            return
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlmodel.ext.asyncio.session import AsyncSession
+
+        self._engine = create_async_engine(self._sqlalchemy_dsn())
+        self._session_factory = async_sessionmaker(
+            self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
 
     async def get(self, key: str) -> Any | None:
         await self._ensure_connected()
@@ -213,10 +239,30 @@ class PostgresBackend:
         ) as exc:
             raise SkaalUnavailable(f"Postgres unavailable: {exc}") from exc
 
+    async def ensure_relational_schema(self, model_cls: type) -> None:
+        """Create missing SQLModel tables for *model_cls*."""
+        await self._ensure_relational_engine()
+        typed_model = cast(Any, model_cls)
+        async with self._engine.begin() as conn:
+            await conn.run_sync(typed_model.metadata.create_all)
+
+    @asynccontextmanager
+    async def open_relational_session(self, model_cls: type) -> AsyncIterator[Any]:
+        """Yield an AsyncSession bound to this backend's PostgreSQL engine."""
+        await self.ensure_relational_schema(model_cls)
+        assert self._session_factory is not None
+        async with self._session_factory() as session:
+            yield session
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+            self._pool_loop = None
+        if self._engine is not None:
+            await self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
 
     def __repr__(self) -> str:
         return f"PostgresBackend(dsn={self.dsn!r}, namespace={self.namespace!r})"

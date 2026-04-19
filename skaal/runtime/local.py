@@ -78,19 +78,26 @@ class LocalRuntime:
 
     def _patch_storage(self) -> None:
         """Wire all registered storage classes with appropriate backends."""
+        from skaal.backends.sqlite_backend import SqliteBackend
+        from skaal.relational import is_relational_model, wire_relational_model
         from skaal.storage import Store
 
         for qname, obj in self.app._collect_all().items():
-            if (
-                isinstance(obj, type)
-                and hasattr(obj, "__skaal_storage__")
-                and issubclass(obj, Store)
-            ):
-                backend = (
-                    self._backend_overrides.get(qname)
-                    or self._backend_overrides.get(obj.__name__)
-                    or LocalMap()
-                )
+            if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
+                continue
+
+            backend = self._backend_overrides.get(qname) or self._backend_overrides.get(
+                obj.__name__
+            )
+
+            if is_relational_model(obj):
+                backend = backend or SqliteBackend(Path("skaal_local.db"), namespace=qname)
+                self._backends[qname] = backend
+                wire_relational_model(obj, backend)
+                continue
+
+            if issubclass(obj, Store):
+                backend = backend or LocalMap()
                 self._backends[qname] = backend
                 obj.wire(backend)
 
@@ -132,8 +139,13 @@ class LocalRuntime:
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` using Redis backends for all storage classes."""
         from skaal.backends.redis_backend import RedisBackend
+        from skaal.relational import is_relational_model
 
         def _make_backend(qname: str, obj: Any) -> RedisBackend:
+            if is_relational_model(obj):
+                raise ValueError(
+                    "LocalRuntime.from_redis() does not support @app.relational models."
+                )
             return RedisBackend(url=redis_url, namespace=qname.replace(".", "_").lower())
 
         backends = cls._build_backends(app, _make_backend)
@@ -178,8 +190,13 @@ class LocalRuntime:
             database: Firestore database name.  Defaults to ``"(default)"``.
         """
         from skaal.backends.firestore_backend import FirestoreBackend
+        from skaal.relational import is_relational_model
 
         def _make_backend(qname: str, obj: Any) -> FirestoreBackend:
+            if is_relational_model(obj):
+                raise ValueError(
+                    "LocalRuntime.from_firestore() does not support @app.relational models."
+                )
             return FirestoreBackend(
                 collection=qname.replace(".", "_").lower(),
                 project=project,
@@ -228,8 +245,13 @@ class LocalRuntime:
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` backed by DynamoDB."""
         from skaal.backends.dynamodb_backend import DynamoBackend
+        from skaal.relational import is_relational_model
 
         def _make_backend(qname: str, obj: Any) -> DynamoBackend:
+            if is_relational_model(obj):
+                raise ValueError(
+                    "LocalRuntime.from_dynamodb() does not support @app.relational models."
+                )
             return DynamoBackend(
                 table_name=f"{table_name}_{qname.replace('.', '_').lower()}", region=region
             )
