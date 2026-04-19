@@ -297,8 +297,10 @@ class LocalStackDeployConfig(ComputeDeployConfig):
 _STORAGE_CONFIGS: dict[str, type[StorageDeployConfig]] = {
     "dynamodb": DynamoDBDeployConfig,
     "rds-postgres": RDSPostgresDeployConfig,
+    "rds-pgvector": RDSPostgresDeployConfig,
     "firestore": FirestoreDeployConfig,
     "cloud-sql-postgres": CloudSQLDeployConfig,
+    "cloud-sql-pgvector": CloudSQLDeployConfig,
     "memorystore-redis": MemorystoreRedisDeployConfig,
 }
 

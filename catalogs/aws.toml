@@ -49,6 +49,40 @@ local_service   = "postgres"
 local_env_value = "postgresql://skaal_user:skaal_pass@postgres/skaal_db"
 extra_deps      = ["asyncpg>=0.29"]
 
+[storage.rds-pgvector]
+display_name = "Amazon RDS (PostgreSQL 16 + pgvector)"
+read_latency  = { min = 2.0, max = 60.0, unit = "ms" }
+write_latency = { min = 4.0, max = 120.0, unit = "ms" }
+durability    = ["persistent", "durable"]
+max_size_gb   = 16_000
+storage_kinds = ["vector"]
+access_patterns = ["random-read", "bulk-read"]
+cost_per_gb_month = 0.14
+requires_vpc  = true
+regions = ["all"]
+notes = "RDS PostgreSQL with pgvector for vector similarity search workloads."
+
+[storage.rds-pgvector.deploy]
+engine_version            = "16.3"
+instance_class            = "db.t4g.micro"
+allocated_storage_gb      = 20
+max_allocated_storage_gb  = 100
+storage_type              = "gp3"
+username                  = "skaal"
+port                      = 5432
+backup_retention_days     = 7
+deletion_protection       = false
+
+[storage.rds-pgvector.wire]
+class_name      = "PgVectorBackend"
+module          = "pgvector_backend"
+env_prefix      = "SKAAL_DB_DSN"
+uses_namespace  = true
+requires_vpc    = true
+local_service   = "postgres"
+local_env_value = "postgresql://skaal_user:skaal_pass@postgres/skaal_db"
+extra_deps      = ["langchain-postgres>=0.0.17", "psycopg[binary]>=3.3"]
+
 [storage.s3]
 display_name = "Amazon S3"
 read_latency  = { min = 50, max = 500, unit = "ms" }

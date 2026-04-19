@@ -1,4 +1,4 @@
-"""Core user-facing decorators: @storage, @relational, @compute, @scale, @handler, @shared."""
+"""Core user-facing decorators: @storage, @relational, @vector, @compute, @scale, @handler, @shared."""
 
 from __future__ import annotations
 
@@ -133,6 +133,75 @@ def relational(
                 "durability": Durability(durability) if isinstance(durability, str) else durability,
                 "size_hint": size_hint,
                 "access_pattern": AccessPattern.TRANSACTIONAL,
+                "write_throughput": (
+                    Throughput(write_throughput)
+                    if isinstance(write_throughput, str)
+                    else write_throughput
+                ),
+                "residency": residency,
+                "retention": None,
+                "auto_optimize": auto_optimize,
+                "decommission_policy": decommission_policy,
+                "collocate_with": collocate_with,
+                "schema": schema,
+            },
+        )
+        return cls
+
+    return decorator
+
+
+def vector(
+    *,
+    dim: int,
+    metric: str = "cosine",
+    read_latency: Latency | str | None = None,
+    write_latency: Latency | str | None = None,
+    durability: Durability | str = Durability.PERSISTENT,
+    size_hint: str | None = None,
+    write_throughput: Throughput | str | None = None,
+    residency: str | None = None,
+    auto_optimize: bool = False,
+    decommission_policy: DecommissionPolicy | None = None,
+    collocate_with: str | None = None,
+) -> Callable[[C], C]:
+    """Declare infrastructure constraints for a typed vector store."""
+
+    def decorator(cls: C) -> C:
+        from skaal.vector import _schema_hints, validate_vector_model
+
+        validate_vector_model(cls)
+
+        normalized_metric = metric.lower()
+        if dim <= 0:
+            raise ValueError("@app.vector requires dim > 0.")
+
+        _rl: Latency | None
+        if isinstance(read_latency, str):
+            _rl = Latency(read_latency)
+        else:
+            _rl = read_latency
+
+        _wl: Latency | None
+        if isinstance(write_latency, str):
+            _wl = Latency(write_latency)
+        else:
+            _wl = write_latency
+
+        setattr(cls, "__skaal_vector_dimensions__", dim)
+        setattr(cls, "__skaal_vector_metric__", normalized_metric)
+        schema = _schema_hints(cls)
+
+        setattr(
+            cls,
+            "__skaal_storage__",
+            {
+                "kind": "vector",
+                "read_latency": _rl,
+                "write_latency": _wl,
+                "durability": Durability(durability) if isinstance(durability, str) else durability,
+                "size_hint": size_hint,
+                "access_pattern": AccessPattern.BULK_READ,
                 "write_throughput": (
                     Throughput(write_throughput)
                     if isinstance(write_throughput, str)

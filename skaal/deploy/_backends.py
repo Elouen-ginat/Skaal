@@ -159,7 +159,9 @@ _LOCAL_FALLBACK: dict[tuple[str, str], str] = {
     ("firestore", "kv"): "local-map",
     ("cloud-sql-postgres", "kv"): "local-redis",
     ("cloud-sql-postgres", "relational"): "sqlite",
+    ("cloud-sql-pgvector", "vector"): "chroma-local",
     ("memorystore-redis", "kv"): "local-redis",
+    ("rds-pgvector", "vector"): "chroma-local",
 }
 
 
@@ -208,6 +210,13 @@ _FALLBACK_WIRE: dict[str, BackendHandler] = {
     "local-map": BackendHandler(
         class_name="LocalMap",
         module="local_backend",
+    ),
+    "chroma-local": BackendHandler(
+        class_name="ChromaVectorBackend",
+        module="chroma_backend",
+        path_default="/app/data/chroma",
+        uses_namespace=True,
+        extra_deps=["langchain-chroma>=1.1", "chromadb>=1.5"],
     ),
     "local-redis": BackendHandler(
         class_name="RedisBackend",

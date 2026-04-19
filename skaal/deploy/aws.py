@@ -308,7 +308,7 @@ def _build_pulumi_stack(app: Any, plan: "PlanFile", region: str = "us-east-1") -
             table_outputs[class_name.lower()] = f"${{{resource_key}.name}}"
             continue
 
-        if spec.backend == "rds-postgres":
+        if spec.backend in ("rds-postgres", "rds-pgvector"):
             rds = RDSPostgresDeployConfig.model_validate(spec.deploy_params)
             config[f"dbInstanceClass{class_name}"] = {
                 "type": "string",

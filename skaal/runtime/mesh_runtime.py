@@ -20,7 +20,7 @@ from __future__ import annotations
 import inspect
 import json
 import traceback
-from typing import Any
+from typing import Any, cast
 
 _MAX_BODY_SIZE = 10 * 1024 * 1024
 
@@ -83,10 +83,12 @@ class MeshRuntime:
     # ── Setup (mirrors LocalRuntime) ──────────────────────────────────────────
 
     def _patch_storage(self) -> None:
+        from skaal.backends.chroma_backend import ChromaVectorBackend
         from skaal.backends.local_backend import LocalMap
         from skaal.backends.sqlite_backend import SqliteBackend
         from skaal.relational import is_relational_model, wire_relational_model
         from skaal.storage import Store
+        from skaal.vector import VectorStore, is_vector_model
 
         for qname, obj in self.app._collect_all().items():
             if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
@@ -102,8 +104,18 @@ class MeshRuntime:
                 wire_relational_model(obj, backend)
                 continue
 
+            if is_vector_model(obj):
+                backend = backend or ChromaVectorBackend("skaal_chroma", namespace=qname)
+                self._backends[qname] = backend
+                cast(type[VectorStore[Any]], obj).wire(backend)
+                continue
+
             if issubclass(obj, Store):
                 backend = backend or LocalMap()
+                self._backends[qname] = backend
+                obj.wire(backend)
+            elif issubclass(obj, VectorStore):
+                backend = backend or ChromaVectorBackend("skaal_chroma", namespace=qname)
                 self._backends[qname] = backend
                 obj.wire(backend)
 

@@ -262,6 +262,84 @@ class Module:
         return decorator(cls_to_decorate)
 
     @overload
+    def vector(
+        self,
+        cls_to_decorate: C,
+        *,
+        dim: int,
+        metric: str = ...,
+        read_latency: Latency | str | None = ...,
+        write_latency: Latency | str | None = ...,
+        durability: Durability | str = ...,
+        size_hint: str | None = ...,
+        write_throughput: Throughput | str | None = ...,
+        residency: str | None = ...,
+        auto_optimize: bool = ...,
+        decommission_policy: DecommissionPolicy | None = ...,
+        collocate_with: str | None = ...,
+    ) -> C: ...
+
+    @overload
+    def vector(
+        self,
+        cls_to_decorate: None = ...,
+        *,
+        dim: int,
+        metric: str = ...,
+        read_latency: Latency | str | None = ...,
+        write_latency: Latency | str | None = ...,
+        durability: Durability | str = ...,
+        size_hint: str | None = ...,
+        write_throughput: Throughput | str | None = ...,
+        residency: str | None = ...,
+        auto_optimize: bool = ...,
+        decommission_policy: DecommissionPolicy | None = ...,
+        collocate_with: str | None = ...,
+    ) -> Callable[[C], C]: ...
+
+    def vector(
+        self,
+        cls_to_decorate: C | None = None,
+        *,
+        dim: int,
+        metric: str = "cosine",
+        read_latency: Latency | str | None = None,
+        write_latency: Latency | str | None = None,
+        durability: Durability | str = Durability.PERSISTENT,
+        size_hint: str | None = None,
+        write_throughput: Throughput | str | None = None,
+        residency: str | None = None,
+        auto_optimize: bool = False,
+        decommission_policy: DecommissionPolicy | None = None,
+        collocate_with: str | None = None,
+    ) -> C | Callable[[C], C]:
+        """Register a typed vector store with infrastructure constraints."""
+        from skaal.decorators import vector as _vector_dec
+
+        outer = _vector_dec(
+            dim=dim,
+            metric=metric,
+            read_latency=read_latency,
+            write_latency=write_latency,
+            durability=durability,
+            size_hint=size_hint,
+            write_throughput=write_throughput,
+            residency=residency,
+            auto_optimize=auto_optimize,
+            decommission_policy=decommission_policy,
+            collocate_with=collocate_with,
+        )
+
+        def decorator(cls: C) -> C:
+            annotated = outer(cls)
+            self._storage[cls.__name__] = annotated
+            return annotated
+
+        if cls_to_decorate is None:
+            return decorator
+        return decorator(cls_to_decorate)
+
+    @overload
     def agent(self, cls_to_decorate: C, *, persistent: bool = ...) -> C: ...
 
     @overload

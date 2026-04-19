@@ -26,6 +26,7 @@ from skaal.decorators import (
     scale,
     shared,
     storage,
+    vector,
 )
 from skaal.module import Module, ModuleExport
 from skaal.patterns import EventLog, Outbox, Projection, Saga, SagaStep
@@ -39,6 +40,7 @@ from skaal.types import (
     RateLimitPolicy,
     RetryPolicy,
 )
+from skaal.vector import VectorStore
 
 __all__ = [
     # Python API namespace (run/plan/build/deploy/...)
@@ -48,6 +50,7 @@ __all__ = [
     "Module",
     "ModuleExport",
     "Store",
+    "VectorStore",
     "Agent",
     "Channel",
     # Decorators
@@ -58,6 +61,7 @@ __all__ = [
     "scale",
     "shared",
     "storage",
+    "vector",
     "open_relational_session",
     "ensure_relational_schema",
     # Patterns

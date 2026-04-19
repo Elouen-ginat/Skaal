@@ -212,7 +212,7 @@ def _build_pulumi_stack(
     # Per-storage overridable params validated via typed config models.
     for qname, spec in plan.storage.items():
         class_name = qname.split(".")[-1]
-        if spec.backend == "cloud-sql-postgres":
+        if spec.backend in ("cloud-sql-postgres", "cloud-sql-pgvector"):
             sql_cfg = CloudSQLDeployConfig.model_validate(spec.deploy_params)
             config[f"sqlTier{class_name}"] = {"type": "string", "default": sql_cfg.tier}
             config[f"sqlDeletionProtection{class_name}"] = {
@@ -250,7 +250,7 @@ def _build_pulumi_stack(
             collection = f"{app.name}-{class_name.lower()}"
             container_envs.append({"name": env_var, "value": collection})
 
-        elif spec.backend == "cloud-sql-postgres":
+        elif spec.backend in ("cloud-sql-postgres", "cloud-sql-pgvector"):
             sql_cfg = CloudSQLDeployConfig.model_validate(spec.deploy_params)
             resource_key = f"{class_name.lower()}-sql"
             resources[resource_key] = {

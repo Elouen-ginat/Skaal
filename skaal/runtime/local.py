@@ -6,7 +6,7 @@ import inspect
 import json
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from skaal.backends.local_backend import LocalMap
 
@@ -78,9 +78,11 @@ class LocalRuntime:
 
     def _patch_storage(self) -> None:
         """Wire all registered storage classes with appropriate backends."""
+        from skaal.backends.chroma_backend import ChromaVectorBackend
         from skaal.backends.sqlite_backend import SqliteBackend
         from skaal.relational import is_relational_model, wire_relational_model
         from skaal.storage import Store
+        from skaal.vector import VectorStore, is_vector_model
 
         for qname, obj in self.app._collect_all().items():
             if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
@@ -96,8 +98,18 @@ class LocalRuntime:
                 wire_relational_model(obj, backend)
                 continue
 
+            if is_vector_model(obj):
+                backend = backend or ChromaVectorBackend(Path("skaal_chroma"), namespace=qname)
+                self._backends[qname] = backend
+                cast(type[VectorStore[Any]], obj).wire(backend)
+                continue
+
             if issubclass(obj, Store):
                 backend = backend or LocalMap()
+                self._backends[qname] = backend
+                obj.wire(backend)
+            elif issubclass(obj, VectorStore):
+                backend = backend or ChromaVectorBackend(Path("skaal_chroma"), namespace=qname)
                 self._backends[qname] = backend
                 obj.wire(backend)
 
@@ -140,11 +152,12 @@ class LocalRuntime:
         """Create a ``LocalRuntime`` using Redis backends for all storage classes."""
         from skaal.backends.redis_backend import RedisBackend
         from skaal.relational import is_relational_model
+        from skaal.vector import is_vector_model
 
         def _make_backend(qname: str, obj: Any) -> RedisBackend:
-            if is_relational_model(obj):
+            if is_relational_model(obj) or is_vector_model(obj):
                 raise ValueError(
-                    "LocalRuntime.from_redis() does not support @app.relational models."
+                    "LocalRuntime.from_redis() does not support @app.relational or @app.vector models."
                 )
             return RedisBackend(url=redis_url, namespace=qname.replace(".", "_").lower())
 
@@ -160,9 +173,14 @@ class LocalRuntime:
         port: int = 8000,
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` backed by SQLite."""
+        from skaal.backends.chroma_backend import ChromaVectorBackend
         from skaal.backends.sqlite_backend import SqliteBackend
+        from skaal.vector import is_vector_model
 
-        def _make_backend(qname: str, obj: Any) -> SqliteBackend:
+        def _make_backend(qname: str, obj: Any) -> Any:
+            if is_vector_model(obj):
+                chroma_path = Path(db_path).parent / f"{Path(db_path).stem}_chroma"
+                return ChromaVectorBackend(chroma_path, namespace=qname)
             return SqliteBackend(Path(db_path), namespace=qname)
 
         backends = cls._build_backends(app, _make_backend)
@@ -191,11 +209,12 @@ class LocalRuntime:
         """
         from skaal.backends.firestore_backend import FirestoreBackend
         from skaal.relational import is_relational_model
+        from skaal.vector import is_vector_model
 
         def _make_backend(qname: str, obj: Any) -> FirestoreBackend:
-            if is_relational_model(obj):
+            if is_relational_model(obj) or is_vector_model(obj):
                 raise ValueError(
-                    "LocalRuntime.from_firestore() does not support @app.relational models."
+                    "LocalRuntime.from_firestore() does not support @app.relational or @app.vector models."
                 )
             return FirestoreBackend(
                 collection=qname.replace(".", "_").lower(),
@@ -226,9 +245,13 @@ class LocalRuntime:
             min_size: Connection pool minimum size.
             max_size: Connection pool maximum size.
         """
+        from skaal.backends.pgvector_backend import PgVectorBackend
         from skaal.backends.postgres_backend import PostgresBackend
+        from skaal.vector import is_vector_model
 
-        def _make_backend(qname: str, obj: Any) -> PostgresBackend:
+        def _make_backend(qname: str, obj: Any) -> Any:
+            if is_vector_model(obj):
+                return PgVectorBackend(dsn=dsn, namespace=qname)
             return PostgresBackend(dsn=dsn, namespace=qname, min_size=min_size, max_size=max_size)
 
         backends = cls._build_backends(app, _make_backend)
@@ -246,11 +269,12 @@ class LocalRuntime:
         """Create a ``LocalRuntime`` backed by DynamoDB."""
         from skaal.backends.dynamodb_backend import DynamoBackend
         from skaal.relational import is_relational_model
+        from skaal.vector import is_vector_model
 
         def _make_backend(qname: str, obj: Any) -> DynamoBackend:
-            if is_relational_model(obj):
+            if is_relational_model(obj) or is_vector_model(obj):
                 raise ValueError(
-                    "LocalRuntime.from_dynamodb() does not support @app.relational models."
+                    "LocalRuntime.from_dynamodb() does not support @app.relational or @app.vector models."
                 )
             return DynamoBackend(
                 table_name=f"{table_name}_{qname.replace('.', '_').lower()}", region=region

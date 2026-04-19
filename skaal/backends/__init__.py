@@ -19,9 +19,11 @@ from skaal.plugins import get_backend
 # Only the zero-dependency backends are re-exported eagerly.  Everything else
 # is loaded lazily via ``__getattr__`` to keep optional dependencies optional.
 __all__ = [
+    "ChromaVectorBackend",
     "DynamoBackend",
     "LocalMap",
     "PostgresBackend",
+    "PgVectorBackend",
     "RedisBackend",
     "RedisStreamChannel",
     "SqliteBackend",
@@ -31,8 +33,10 @@ __all__ = [
 
 _LEGACY_ALIASES: dict[str, str] = {
     # Module-attribute name → plugin-registry name
+    "ChromaVectorBackend": "chroma",
     "DynamoBackend": "dynamodb",
     "PostgresBackend": "postgres",
+    "PgVectorBackend": "pgvector",
     "RedisBackend": "redis",
     "SqliteBackend": "sqlite",
 }

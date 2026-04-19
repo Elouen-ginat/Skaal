@@ -56,6 +56,13 @@ gcp = [
     "pulumi>=3.0",
     "pulumi-gcp>=7.0",
 ]
+vector = [
+    "langchain-core>=1.3",
+    "langchain-chroma>=1.1",
+    "langchain-postgres>=0.0.17",
+    "chromadb>=1.5",
+    "psycopg[binary]>=3.3",
+]
 mesh = [
     # Rust mesh extension — compiled from source via maturin on `uv sync`
     "skaal-mesh",
@@ -96,6 +103,8 @@ local = "skaal.backends.local_backend:LocalMap"
 sqlite = "skaal.backends.sqlite_backend:SqliteBackend"
 redis = "skaal.backends.redis_backend:RedisBackend"
 postgres = "skaal.backends.postgres_backend:PostgresBackend"
+chroma = "skaal.backends.chroma_backend:ChromaVectorBackend"
+pgvector = "skaal.backends.pgvector_backend:PgVectorBackend"
 dynamodb = "skaal.backends.dynamodb_backend:DynamoBackend"
 firestore = "skaal.backends.firestore_backend:FirestoreBackend"
 
