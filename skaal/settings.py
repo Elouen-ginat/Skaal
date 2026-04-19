@@ -7,15 +7,28 @@ Priority (highest to lowest):
   4. ``[tool.skaal]`` section in the nearest ``pyproject.toml``
   5. Built-in defaults
 
+Per-stack overrides can be declared under ``[tool.skaal.stacks.<name>]``;
+call :meth:`SkaalSettings.for_stack` to resolve them against the base
+settings.
+
 Example ``pyproject.toml``::
 
     [tool.skaal]
     app    = "mypackage.app:skaal_app"   # default MODULE:APP for build/plan/run
-    target = "aws"                        # aws | gcp
-    region = "eu-west-1"
+    target = "gcp"                        # aws | gcp
+    region = "europe-west1"
     out    = "artifacts"
-    stack  = "prod"
-    # gcp_project = "my-gcp-project"     # required for GCP deploys
+    stack  = "p-dev"
+
+    [tool.skaal.stacks.p-dev]
+    gcp_project = "my-dev-proj"
+
+    [tool.skaal.stacks.p-ppr]
+    gcp_project = "my-ppr-proj"
+
+    [tool.skaal.stacks.p-prd]
+    gcp_project = "my-prd-proj"
+    region      = "europe-west4"
 """
 
 from __future__ import annotations
@@ -24,7 +37,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 # ── pyproject.toml discovery ──────────────────────────────────────────────────
@@ -73,6 +86,24 @@ class PyprojectTomlSource(PydanticBaseSettingsSource):
         # Only return keys that are actually declared on the settings model.
         known = set(self.settings_cls.model_fields)
         return {k: v for k, v in self._data.items() if k in known}
+
+
+# ── Per-stack profile ─────────────────────────────────────────────────────────
+
+
+class StackProfile(BaseModel):
+    """Per-stack overrides layered on top of the base :class:`SkaalSettings`.
+
+    Only the fields that may legitimately differ between stacks are exposed
+    here.  Everything left as ``None`` falls through to the base value.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    target: str | None = None
+    region: str | None = None
+    catalog: Path | None = None
+    gcp_project: str | None = None
 
 
 # ── Unified settings model ────────────────────────────────────────────────────
@@ -128,6 +159,35 @@ class SkaalSettings(BaseSettings):
         default=None,
         description="GCP project ID (required for GCP target).",
     )
+
+    # ── Stack profiles ────────────────────────────────────────────────────────
+    stacks: dict[str, StackProfile] = Field(
+        default_factory=dict,
+        description=(
+            "Per-stack overrides keyed by stack name. Populated from "
+            "``[tool.skaal.stacks.<name>]`` in pyproject.toml. "
+            "Call :meth:`for_stack` to resolve them against the base settings."
+        ),
+    )
+
+    # ── Stack resolution ──────────────────────────────────────────────────────
+    def for_stack(self, name: str | None = None) -> "SkaalSettings":
+        """Return a new :class:`SkaalSettings` with the *name* profile applied.
+
+        Passing ``None`` or a stack name that has no profile returns a copy of
+        ``self`` unchanged (so callers can call this unconditionally).  When a
+        profile exists, any non-``None`` field on the profile wins over the
+        base setting, and the resolved ``stack`` field is set to *name*.
+        """
+        resolved_name = name if name is not None else self.stack
+        profile = self.stacks.get(resolved_name)
+
+        updates: dict[str, Any] = {"stack": resolved_name}
+        if profile is not None:
+            for field_name, value in profile.model_dump(exclude_none=True).items():
+                updates[field_name] = value
+
+        return self.model_copy(update=updates)
 
     @classmethod
     def settings_customise_sources(

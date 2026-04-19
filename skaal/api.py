@@ -336,6 +336,7 @@ def build(
     app: AppRef | None = None,
     output_dir: Path | str | None = None,
     region: str | None = None,
+    stack: str | None = None,
     dev: bool = False,
 ) -> list[Path]:
     """Generate deployment artifacts from a solved plan.
@@ -353,6 +354,8 @@ def build(
                     ``SkaalSettings.out``.
         region:     Cloud region override.  Falls back to
                     ``SkaalSettings.region``.
+        stack:      Stack profile to resolve settings against.  Falls back to
+                    ``SkaalSettings.stack``.
         dev:        Bundle the local ``skaal`` source into the artifact
                     (local target only).
 
@@ -366,7 +369,7 @@ def build(
     """
     from skaal.deploy.registry import get_target
 
-    cfg = SkaalSettings()
+    cfg = SkaalSettings().for_stack(stack)
     resolved_out = Path(output_dir) if output_dir is not None else cfg.out
     resolved_region = region or cfg.region
 
@@ -425,10 +428,11 @@ def deploy(
         ValueError:        If the target is unknown or required settings (e.g.
                            ``gcp_project`` for GCP) are missing.
     """
-    from skaal.deploy.push import package_and_push
+    from skaal.deploy.push import package_and_push, read_meta
 
-    cfg = SkaalSettings()
-    resolved_stack = stack or cfg.stack
+    base = SkaalSettings()
+    resolved_stack = stack or base.stack
+    cfg = base.for_stack(resolved_stack)
     resolved_region = region or cfg.region
     resolved_gcp_project = gcp_project or cfg.gcp_project
 
@@ -438,6 +442,24 @@ def deploy(
             f"Artifacts directory {resolved_dir} does not exist. "
             "Run `skaal.api.build(...)` first."
         )
+
+    if resolved_gcp_project is None:
+        try:
+            target = read_meta(resolved_dir).get("target")
+        except FileNotFoundError:
+            target = None
+        if target in ("gcp", "gcp-cloudrun"):
+            known = sorted(base.stacks)
+            hint = (
+                f" Known stack profiles: {known}."
+                if known
+                else " Declare one under [tool.skaal.stacks.<name>]."
+            )
+            raise ValueError(
+                f"GCP project is required for stack {resolved_stack!r} but none was resolved.\n"
+                f"  Pass --gcp-project, set SKAAL_GCP_PROJECT, or add "
+                f'`gcp_project = "..."` under [tool.skaal.stacks.{resolved_stack}].{hint}'
+            )
 
     return package_and_push(
         artifacts_dir=resolved_dir,

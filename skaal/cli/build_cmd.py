@@ -31,6 +31,15 @@ def build(
         "-r",
         help="Cloud region override (e.g. us-east-1, us-central1). Env: SKAAL_REGION.",
     ),
+    stack: Optional[str] = typer.Option(
+        None,
+        "--stack",
+        "-s",
+        help=(
+            "Stack profile to resolve per-stack settings against "
+            "([tool.skaal.stacks.<name>]). Env: SKAAL_STACK."
+        ),
+    ),
     out: Optional[Path] = typer.Option(
         None,
         "--out",
@@ -65,7 +74,7 @@ def build(
     from skaal.deploy.registry import get_target
     from skaal.plan import PLAN_FILE_NAME
 
-    cfg = SkaalSettings()
+    cfg = SkaalSettings().for_stack(stack)
     resolved_region = region or cfg.region
     resolved_out = out or cfg.out
 
@@ -85,6 +94,7 @@ def build(
             plan=plan_path,
             output_dir=resolved_out,
             region=resolved_region,
+            stack=stack,
             dev=dev,
         )
     except FileNotFoundError as exc:
