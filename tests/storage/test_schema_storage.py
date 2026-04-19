@@ -370,54 +370,92 @@ async def test_store_update_accepts_atomic_function():
 
 
 @pytest.mark.asyncio
-async def test_todo_api_end_to_end():
+async def test_todo_api_end_to_end(tmp_path):
     """Full integration test of examples/todo_api.py with typed Store storage."""
     import json
 
     from examples.todo_api import app as todo_app
     from skaal.runtime.local import LocalRuntime
 
-    runtime = LocalRuntime(todo_app)
+    runtime = LocalRuntime.from_sqlite(todo_app, db_path=tmp_path / "todo_api.db")
 
-    # Create
-    body = json.dumps({"id": "t1", "title": "Test todo", "tags": ["test"]}).encode()
-    data, status = await runtime._dispatch("POST", "/create_todo", body)
-    assert status == 200
-    assert data["id"] == "t1"
-    assert data["tags"] == ["test"]
-    assert data["done"] is False
+    try:
+        # Create
+        body = json.dumps(
+            {
+                "id": "t1",
+                "title": "Test todo",
+                "description": "Prepare the integration spec for the grocery workflow",
+                "tags": ["test", "groceries"],
+            }
+        ).encode()
+        data, status = await runtime._dispatch("POST", "/create_todo", body)
+        assert status == 200
+        assert data["id"] == "t1"
+        assert data["tags"] == ["test", "groceries"]
+        assert data["done"] is False
 
-    # Get (returns full Pydantic model serialized)
-    data, status = await runtime._dispatch("POST", "/get_todo", b'{"id":"t1"}')
-    assert status == 200
-    assert data["title"] == "Test todo"
+        # Get (returns full Pydantic model serialized)
+        data, status = await runtime._dispatch("POST", "/get_todo", b'{"id":"t1"}')
+        assert status == 200
+        assert data["title"] == "Test todo"
 
-    # Add attachment (nested model mutation)
-    body = json.dumps(
-        {"id": "t1", "url": "https://example.com/file.pdf", "name": "spec.pdf"}
-    ).encode()
-    data, status = await runtime._dispatch("POST", "/add_attachment", body)
-    assert status == 200
-    assert len(data["attachments"]) == 1
-    assert data["attachments"][0]["name"] == "spec.pdf"
-    assert data["attachments"][0]["mime_type"] == "application/octet-stream"
+        # Add a relational comment
+        body = json.dumps(
+            {"todo_id": "t1", "author": "alex", "body": "Remember oat milk too"}
+        ).encode()
+        data, status = await runtime._dispatch("POST", "/add_comment", body)
+        assert status == 200
+        assert data["todo_id"] == "t1"
+        assert data["author"] == "alex"
 
-    # Complete
-    data, status = await runtime._dispatch("POST", "/complete_todo", b'{"id":"t1"}')
-    assert status == 200
-    assert data["done"] is True
-    assert data["completed_at"] is not None
+        data, status = await runtime._dispatch("POST", "/list_comments", b'{"todo_id":"t1"}')
+        assert status == 200
+        assert data["count"] == 1
+        assert data["comments"][0]["body"] == "Remember oat milk too"
 
-    # List — attachment and done status preserved
-    data, status = await runtime._dispatch("POST", "/list_todos", b"")
-    assert status == 200
-    assert data["count"] == 1
-    todo = data["todos"][0]
-    assert len(todo["attachments"]) == 1
+        # Add attachment (nested model mutation)
+        body = json.dumps(
+            {"id": "t1", "url": "https://example.com/file.pdf", "name": "spec.pdf"}
+        ).encode()
+        data, status = await runtime._dispatch("POST", "/add_attachment", body)
+        assert status == 200
+        assert len(data["attachments"]) == 1
+        assert data["attachments"][0]["name"] == "spec.pdf"
+        assert data["attachments"][0]["mime_type"] == "application/octet-stream"
 
-    # Delete
-    data, status = await runtime._dispatch("POST", "/delete_todo", b'{"id":"t1"}')
-    assert status == 200
+        # Complete
+        data, status = await runtime._dispatch("POST", "/complete_todo", b'{"id":"t1"}')
+        assert status == 200
+        assert data["done"] is True
+        assert data["completed_at"] is not None
 
-    data, status = await runtime._dispatch("POST", "/list_todos", b"")
-    assert data["count"] == 0
+        # Semantic search should use the vector index and resolve back to the stored todo
+        body = json.dumps({"query": "grocery integration spec pdf", "done": True}).encode()
+        data, status = await runtime._dispatch("POST", "/search_todos", body)
+        assert status == 200
+        assert data["count"] == 1
+        assert data["todos"][0]["id"] == "t1"
+
+        # List — attachment and done status preserved
+        data, status = await runtime._dispatch("POST", "/list_todos", b"")
+        assert status == 200
+        assert data["count"] == 1
+        todo = data["todos"][0]
+        assert len(todo["attachments"]) == 1
+
+        # Delete
+        data, status = await runtime._dispatch("POST", "/delete_todo", b'{"id":"t1"}')
+        assert status == 200
+
+        data, status = await runtime._dispatch("POST", "/list_todos", b"")
+        assert data["count"] == 0
+
+        data, status = await runtime._dispatch(
+            "POST", "/search_todos", b'{"query":"grocery integration spec"}'
+        )
+        assert status == 200
+        assert data["count"] == 0
+    finally:
+        for backend in runtime._backends.values():
+            await backend.close()
