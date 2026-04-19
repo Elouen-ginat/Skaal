@@ -55,6 +55,14 @@ gcp = [
     "pulumi>=3.0",
     "pulumi-gcp>=7.0",
 ]
+mesh = [
+    # The skaal_mesh extension module is built from mesh/ via maturin:
+    #   maturin build --manifest-path mesh/Cargo.toml --release
+    #   pip install target/wheels/skaal-*.whl
+    # This extra exists so `pip install skaal[mesh]` documents the intent;
+    # the wheel must be pre-built since maturin isn't a PEP 517 build dep
+    # of the pure-Python skaal package.
+]
 
 [dependency-groups]
 dev = [
@@ -76,6 +84,24 @@ examples = [
 
 [project.scripts]
 skaal = "skaal.cli.main:app"
+
+# ── Built-in plugin registrations ─────────────────────────────────────────────
+# Skaal resolves storage backends, channel backends, and named catalogs through
+# its own plugin registry (skaal.plugins).  Core built-ins are registered here
+# so the discovery path is exercised in-tree and third-party packages can
+# register additional implementations the same way.
+
+[project.entry-points."skaal.backends"]
+local = "skaal.backends.local_backend:LocalMap"
+sqlite = "skaal.backends.sqlite_backend:SqliteBackend"
+redis = "skaal.backends.redis_backend:RedisBackend"
+postgres = "skaal.backends.postgres_backend:PostgresBackend"
+dynamodb = "skaal.backends.dynamodb_backend:DynamoBackend"
+firestore = "skaal.backends.firestore_backend:FirestoreBackend"
+
+[project.entry-points."skaal.channels"]
+local = "skaal.channel:wire_local"
+redis = "skaal.channel:wire_redis"
 
 [tool.hatch.build.targets.wheel]
 packages = ["skaal"]
