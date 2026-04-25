@@ -77,7 +77,7 @@ backend_registry = BackendRegistry()
 target_registry = TargetRegistry()
 
 
-def register_backend(plugin: BackendPlugin) -> BackendPlugin:
+def register_backend_plugin(plugin: BackendPlugin) -> BackendPlugin:
     return backend_registry.register(plugin)
 
 
@@ -101,7 +101,7 @@ from skaal.deploy.backends import BUILTIN_BACKENDS  # noqa: E402
 from skaal.deploy.targets import BUILTIN_TARGETS  # noqa: E402
 
 for _plugin in BUILTIN_BACKENDS:
-    register_backend(_plugin)
+    register_backend_plugin(_plugin)
 
 for _target in BUILTIN_TARGETS:
     register_target(_target)
@@ -112,7 +112,7 @@ __all__ = [
     "target_registry",
     "get_backend_plugin",
     "get_target",
-    "register_backend",
+    "register_backend_plugin",
     "register_target",
     "resolve_backend_plugin",
 ]

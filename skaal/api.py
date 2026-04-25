@@ -40,7 +40,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Literal, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
 
 from skaal.errors import SkaalHookError
 from skaal.plan import PLAN_FILE_NAME, ComputeSpec, PlanFile, StorageSpec
@@ -992,15 +992,3 @@ def migrate_list(app_name: str | None = None) -> list["MigrationState"]:
             except Exception:  # noqa: BLE001
                 continue
     return states
-
-
-# ── Helpers exposed for the CLI layer ─────────────────────────────────────────
-
-
-def iter_plan_files(root: Path | None = None) -> Iterable[Path]:
-    """Yield every ``plan.skaal.lock`` file found under *root*.
-
-    Convenience helper for tooling built on top of the Python API.
-    """
-    base = Path(root) if root is not None else Path.cwd()
-    yield from base.rglob(PLAN_FILE_NAME)

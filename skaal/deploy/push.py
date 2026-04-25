@@ -50,7 +50,7 @@ def read_meta(artifacts_dir: Path) -> dict[str, Any]:
 # ── AWS helpers ───────────────────────────────────────────────────────────────
 
 
-def _package_aws(artifacts_dir: Path, project_root: Path, source_module: str) -> None:
+def package_aws(artifacts_dir: Path, project_root: Path, source_module: str) -> None:
     """
     Build ``lambda_package/`` inside *artifacts_dir*.
 
@@ -93,7 +93,7 @@ def _package_aws(artifacts_dir: Path, project_root: Path, source_module: str) ->
 # ── GCP helpers ───────────────────────────────────────────────────────────────
 
 
-def _build_push_image(
+def build_push_image(
     artifacts_dir: Path,
     project: str,
     region: str,
@@ -126,3 +126,6 @@ def _build_push_image(
             "Verify Docker credentials for Artifact Registry and confirm the target repository exists."
         ),
     )
+
+
+__all__ = ["META_FILE", "build_push_image", "package_aws", "read_meta", "write_meta"]

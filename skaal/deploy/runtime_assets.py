@@ -13,7 +13,6 @@ from skaal.deploy.packaging.source_bundle import (
     copy_mesh_bundle,
     copy_source_package,
 )
-from skaal.deploy.push import write_meta
 from skaal.deploy.wiring import build_runtime_wiring, resolve_backend
 
 if TYPE_CHECKING:
@@ -139,16 +138,6 @@ def write_pyproject_artifact(
 
 def write_pulumi_stack_artifact(output_dir: Path, stack: dict[str, Any]) -> Path:
     return write_text_artifact(output_dir, "Pulumi.yaml", to_pulumi_yaml(stack))
-
-
-def write_meta_artifact(
-    output_dir: Path,
-    *,
-    target: str,
-    source_module: str,
-    app_name: str,
-) -> Path:
-    return write_meta(output_dir, target=target, source_module=source_module, app_name=app_name)
 
 
 def copy_runtime_source_bundle(

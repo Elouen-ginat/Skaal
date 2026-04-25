@@ -3,7 +3,7 @@
 Every backend name is resolved through :mod:`skaal.plugins`, which merges the
 built-in backends declared in ``pyproject.toml`` (``[project.entry-points."skaal.backends"]``)
 with any third-party backends installed alongside Skaal and any in-process
-registrations made via :func:`skaal.plugins.register_backend`.
+registrations made via :func:`skaal.plugins.register_runtime_backend`.
 
 Importing a specific backend directly still works — the ``from skaal.backends
 import RedisBackend`` form is preserved for backward compatibility through a

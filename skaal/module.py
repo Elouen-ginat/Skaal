@@ -104,6 +104,26 @@ class Module:
 
     # ── Registration decorators ────────────────────────────────────────────
 
+    def _register_storage(
+        self,
+        decorator_fn: Callable[..., Callable[[C], C]],
+        cls_to_decorate: C | None,
+        **kwargs: Any,
+    ) -> C | Callable[[C], C]:
+        """Build the outer decorator from *decorator_fn*, register the result
+        in ``self._storage``, and apply the dual ``@app.storage`` /
+        ``@app.storage(...)`` calling convention."""
+        outer = decorator_fn(**kwargs)
+
+        def decorator(cls: C) -> C:
+            annotated = outer(cls)
+            self._storage[cls.__name__] = annotated
+            return annotated
+
+        if cls_to_decorate is None:
+            return decorator
+        return decorator(cls_to_decorate)
+
     @overload
     def storage(
         self,
@@ -168,7 +188,9 @@ class Module:
         """
         from skaal.decorators import storage as _storage_dec
 
-        outer = _storage_dec(
+        return self._register_storage(
+            _storage_dec,
+            cls_to_decorate,
             read_latency=read_latency,
             write_latency=write_latency,
             durability=durability,
@@ -181,15 +203,6 @@ class Module:
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
         )
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
 
     @overload
     def relational(
@@ -240,7 +253,9 @@ class Module:
         """Register a SQLModel relational table with infrastructure constraints."""
         from skaal.decorators import relational as _relational_dec
 
-        outer = _relational_dec(
+        return self._register_storage(
+            _relational_dec,
+            cls_to_decorate,
             read_latency=read_latency,
             write_latency=write_latency,
             durability=durability,
@@ -251,15 +266,6 @@ class Module:
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
         )
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
 
     @overload
     def vector(
@@ -316,7 +322,9 @@ class Module:
         """Register a typed vector store with infrastructure constraints."""
         from skaal.decorators import vector as _vector_dec
 
-        outer = _vector_dec(
+        return self._register_storage(
+            _vector_dec,
+            cls_to_decorate,
             dim=dim,
             metric=metric,
             read_latency=read_latency,
@@ -329,15 +337,6 @@ class Module:
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
         )
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
 
     @overload
     def agent(self, cls_to_decorate: C, *, persistent: bool = ...) -> C: ...

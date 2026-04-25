@@ -6,6 +6,7 @@ from typing import Any
 from skaal.deploy.push import read_meta
 from skaal.deploy.registry import get_target
 from skaal.deploy.reporting import DeployReporter, SilentReporter
+from skaal.deploy.targets.base import BuildOptions, DeployOptions
 
 
 def build_artifacts(
@@ -25,9 +26,7 @@ def build_artifacts(
         output_dir=output_dir,
         source_module=source_module,
         app_var=app_var,
-        region=region,
-        dev=dev,
-        stack_profile=stack_profile,
+        options=BuildOptions(region=region, dev=dev, stack_profile=stack_profile),
     )
 
 
@@ -47,15 +46,17 @@ def deploy_artifacts(
     target = get_target(meta["target"])
     return target.deploy(
         resolved_dir,
-        stack=stack,
-        region=region,
-        gcp_project=gcp_project,
-        yes=yes,
-        project_root=resolved_dir.parent,
-        source_module=meta["source_module"],
-        app_name=meta["app_name"],
-        config_overrides=config_overrides,
-        runtime_options=runtime_options,
+        options=DeployOptions(
+            stack=stack,
+            project_root=resolved_dir.parent,
+            source_module=meta["source_module"],
+            app_name=meta["app_name"],
+            region=region,
+            gcp_project=gcp_project,
+            yes=yes,
+            config_overrides=config_overrides,
+            runtime_options=runtime_options,
+        ),
         reporter=reporter or SilentReporter(),
     )
 

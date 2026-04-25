@@ -47,7 +47,7 @@ class RedisBackend:
 
     async def _ensure_connected(self) -> Any:
         """Return the client for the running event loop, creating it if needed."""
-        import redis.asyncio as aioredis  # type: ignore[import-untyped]
+        import redis.asyncio as aioredis
 
         loop = asyncio.get_running_loop()
         loop_id = id(loop)
@@ -121,7 +121,7 @@ class RedisBackend:
         become :class:`skaal.errors.SkaalUnavailable`.
         """
         import redis.asyncio as aioredis
-        from redis.exceptions import (  # type: ignore[import-untyped]
+        from redis.exceptions import (
             ConnectionError as RedisConnectionError,
         )
 

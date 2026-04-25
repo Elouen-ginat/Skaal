@@ -20,8 +20,8 @@ Entry-point registration (in a distributed package's ``pyproject.toml``)::
 
 In-process registration is also supported (useful for tests and notebooks)::
 
-    from skaal.plugins import register_backend
-    register_backend("mycache", MyCacheBackend)
+    from skaal.plugins import register_runtime_backend
+    register_runtime_backend("mycache", MyCacheBackend)
 """
 
 from __future__ import annotations
@@ -75,9 +75,12 @@ def clear_cache() -> None:
 # ── Backends ──────────────────────────────────────────────────────────────────
 
 
-def register_backend(name: str, factory: Any) -> None:
+def register_runtime_backend(name: str, factory: Any) -> None:
     """Register a storage backend under *name* (in-process; no pyproject edit)."""
     _backends[name] = factory
+
+
+register_backend = register_runtime_backend
 
 
 def get_backend(name: str) -> Any:
@@ -186,6 +189,7 @@ __all__ = [
     "iter_catalogs",
     "iter_channels",
     "register_backend",
+    "register_runtime_backend",
     "register_catalog",
     "register_channel",
 ]

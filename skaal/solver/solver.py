@@ -145,91 +145,60 @@ def _resolve_resource_qname(obj: Any, all_resources: dict[str, Any]) -> str | No
     return None
 
 
-def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "PlanFile":
+def _resolve_collocate(
+    raw_colocate: str | None,
+    *,
+    owner_qname: str,
+    owner_kind: str,
+    all_resources: dict[str, Any],
+) -> str | None:
+    """Resolve a ``collocate_with`` hint to a qualified resource name.
+
+    The decorator accepts a bare class name or a qualified name; this
+    normalises to a qualified name registered in *all_resources*.  Emits a
+    ``RuntimeWarning`` and returns ``None`` if the hint matches nothing.
     """
-    Run the Z3 constraint solver over all registered storage and compute
-    declarations, producing a concrete infrastructure plan.
+    if not raw_colocate:
+        return None
+    if raw_colocate in all_resources:
+        return raw_colocate
+    for candidate in all_resources:
+        if candidate == raw_colocate or candidate.endswith(f".{raw_colocate}"):
+            return candidate
+    warnings.warn(
+        f"{owner_kind} {owner_qname!r}: collocate_with={raw_colocate!r} "
+        "does not match any registered resource. Ignored.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return None
 
-    Args:
-        app:     The Skaal App whose decorators define the constraints.
-        catalog: Parsed TOML catalog entries (backends and their characteristics).
-        target:  Deploy target: "generic" | "aws-lambda" | "k8s" | "ecs"
 
-    Returns:
-        A PlanFile with concrete backend and instance selections.
-
-    Raises:
-        UnsatisfiableConstraints: If no backend can satisfy the declared constraints.
-    """
-    all_resources = app._collect_all()
-    storage_backends = catalog.get("storage", {})
-    compute_backends = catalog.get("compute", {})
-
+def _solve_storage(
+    all_resources: dict[str, Any],
+    storage_backends: dict[str, Any],
+    *,
+    target: str,
+) -> dict[str, StorageSpec]:
+    """Pick a backend for every ``__skaal_storage__``-annotated class."""
     storage_specs: dict[str, StorageSpec] = {}
-    compute_specs: dict[str, ComputeSpec] = {}
-    component_specs: dict[str, ComponentSpec] = {}
-    pattern_specs: dict[str, PatternSpec] = {}
-
-    # ── Dependency graph ──────────────────────────────────────────────────
-    # Build once up front so every sub-solver can consult it.  The ordering is
-    # written into the plan so deploy generators can provision resources in
-    # dependency order.
-    graph = build_graph(app)
-    try:
-        resource_order = graph.topological_order()
-    except CyclicDependencyError as exc:
-        warnings.warn(
-            f"Cyclic dependency detected in resource graph: {exc}. "
-            "Falling back to unordered resource list.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        resource_order = sorted(all_resources.keys())
-
-    # ── Solve storage ──────────────────────────────────────────────────────
     for qname, obj in all_resources.items():
         if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
             continue
 
         constraints = obj.__skaal_storage__
+        backend_name, reason = select_backend(qname, constraints, storage_backends, target=target)
 
-        backend_name, reason = select_backend(
-            qname,
-            constraints,
-            storage_backends,
-            target=target,
-        )
-
-        # Compute a stable schema hash from the class's annotated fields
-        # This changes when fields are added, removed, or their types change
-        schema_hash = _compute_schema_hash(obj)
-
-        # Carry deploy-time provisioning params from the catalog into the plan.
-        # The solver never reads these; they are only consumed by deploy generators.
         backend_entry = storage_backends.get(backend_name, {})
         deploy_params = backend_entry.get("deploy", {})
         wire_params = backend_entry.get("wire", {})
 
-        # Resolve collocate_with: the decorator takes a raw string which may
-        # be a bare class name or a qualified name.  Normalise to a qualified
-        # name if it resolves against a registered resource.
-        raw_colocate = constraints.get("collocate_with")
-        colocate_qname: str | None = None
-        if raw_colocate:
-            if raw_colocate in all_resources:
-                colocate_qname = raw_colocate
-            else:
-                for candidate in all_resources:
-                    if candidate == raw_colocate or candidate.endswith(f".{raw_colocate}"):
-                        colocate_qname = candidate
-                        break
-                if colocate_qname is None:
-                    warnings.warn(
-                        f"Storage {qname!r}: collocate_with={raw_colocate!r} "
-                        "does not match any registered resource. Ignored.",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
+        colocate_qname = _resolve_collocate(
+            constraints.get("collocate_with"),
+            owner_qname=qname,
+            owner_kind="Storage",
+            all_resources=all_resources,
+        )
 
         storage_specs[qname] = StorageSpec(
             variable_name=qname,
@@ -238,17 +207,26 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
             previous_backend=None,
             migration_plan=None,
             migration_stage=0,
-            schema_hash=schema_hash,
+            schema_hash=_compute_schema_hash(obj),
             reason=reason,
             collocate_with=colocate_qname,
             auto_optimize=bool(constraints.get("auto_optimize", False)),
             deploy_params=deploy_params,
             wire_params=wire_params,
         )
+    return storage_specs
 
-    # ── Solve compute ──────────────────────────────────────────────────────
+
+def _solve_compute(
+    all_resources: dict[str, Any],
+    compute_backends: dict[str, Any],
+    *,
+    target: str,
+) -> dict[str, ComputeSpec]:
+    """Pick an instance type for every ``__skaal_compute__``-annotated callable."""
     from skaal.solver.compute import UnsatisfiableComputeConstraints, encode_compute
 
+    compute_specs: dict[str, ComputeSpec] = {}
     for qname, obj in all_resources.items():
         if not (callable(obj) and hasattr(obj, "__skaal_compute__")):
             continue
@@ -258,10 +236,9 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
             instance_type, reason = encode_compute(
                 qname, compute_constraint, compute_backends, target=target
             )
-        except UnsatisfiableComputeConstraints as e:
-            # Warn the user that their constraint was violated, then fall back to cheapest
+        except UnsatisfiableComputeConstraints as exc:
             warnings.warn(
-                f"Compute constraint for {qname!r} is unsatisfiable: {e}. "
+                f"Compute constraint for {qname!r} is unsatisfiable: {exc}. "
                 "Falling back to cheapest available instance.",
                 RuntimeWarning,
                 stacklevel=2,
@@ -275,24 +252,12 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
                 instance_type = "c5-large"
                 reason = "default compute (empty catalog)"
 
-        # Resolve collocate_with on the compute object
-        raw_colocate = getattr(compute_constraint, "collocate_with", None)
-        colocate_qname = None
-        if raw_colocate:
-            if raw_colocate in all_resources:
-                colocate_qname = raw_colocate
-            else:
-                for candidate in all_resources:
-                    if candidate == raw_colocate or candidate.endswith(f".{raw_colocate}"):
-                        colocate_qname = candidate
-                        break
-                if colocate_qname is None:
-                    warnings.warn(
-                        f"Function {qname!r}: collocate_with={raw_colocate!r} "
-                        "does not match any registered resource. Ignored.",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
+        colocate_qname = _resolve_collocate(
+            getattr(compute_constraint, "collocate_with", None),
+            owner_qname=qname,
+            owner_kind="Function",
+            all_resources=all_resources,
+        )
 
         # Scale strategy — set by @scale decorator
         scale_obj = getattr(obj, "__skaal_scale__", None)
@@ -317,25 +282,51 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
             rate_limit=_policy_to_dict(getattr(compute_constraint, "rate_limit", None)),
             bulkhead=_policy_to_dict(getattr(compute_constraint, "bulkhead", None)),
         )
+    return compute_specs
 
-    # ── Solve components ───────────────────────────────────────────────────
+
+def _solve_components(
+    app: "App",
+    catalog: dict[str, Any],
+    *,
+    target: str,
+) -> dict[str, ComponentSpec]:
+    """Encode every attached :class:`ComponentBase` into a spec."""
     from skaal.components import ComponentBase
     from skaal.solver.components import encode_component
 
+    component_specs: dict[str, ComponentSpec] = {}
     for comp_name, comp_obj in _collect_all_components(app).items():
-        if isinstance(comp_obj, ComponentBase):
-            try:
-                spec = encode_component(comp_name, comp_obj, catalog, target=target)
-                component_specs[comp_name] = spec
-            except Exception as exc:  # noqa: BLE001
-                warnings.warn(
-                    f"Component {comp_name!r} encoding failed: {exc}. "
-                    "It will be omitted from the plan.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
+        if not isinstance(comp_obj, ComponentBase):
+            continue
+        try:
+            component_specs[comp_name] = encode_component(
+                comp_name, comp_obj, catalog, target=target
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"Component {comp_name!r} encoding failed: {exc}. "
+                "It will be omitted from the plan.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    return component_specs
 
-    # ── Solve patterns (EventLog, Projection, Saga, Outbox) ───────────────
+
+def _solve_patterns(
+    app: "App",
+    all_resources: dict[str, Any],
+    storage_backends: dict[str, Any],
+    storage_specs: dict[str, StorageSpec],
+    *,
+    target: str,
+) -> dict[str, PatternSpec]:
+    """Encode EventLog / Projection / Saga / Outbox patterns into specs.
+
+    May mutate *storage_specs* — Projections force their target store to
+    co-locate with the source.
+    """
+    pattern_specs: dict[str, PatternSpec] = {}
     registered_functions = _collect_function_names(app)
 
     for qname, obj in all_resources.items():
@@ -345,7 +336,6 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
         ptype = pattern_meta.get("pattern_type")
 
         if ptype == "event-log":
-            # Select a backing store for the append-only log.
             pattern_constraints = _storage_constraints_from_pattern(pattern_meta)
             try:
                 backend_name, reason = select_backend(
@@ -387,7 +377,6 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
                 _resolve_resource_qname(target_obj, all_resources) if target_obj else None
             )
 
-            # Validate the handler points to a registered function
             if handler and handler not in registered_functions:
                 warnings.warn(
                     f"Projection {qname!r} references unknown handler {handler!r}. "
@@ -397,8 +386,6 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
                 )
 
             # Projections force the target store to co-locate with the source.
-            # If the target appears in storage_specs, overwrite its collocate_with
-            # so deploy generators pin it to the same cluster as the source.
             if target_qname and source_qname and target_qname in storage_specs:
                 existing = storage_specs[target_qname]
                 storage_specs[target_qname] = existing.model_copy(
@@ -492,18 +479,66 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
                     "delivery": pattern_meta.get("delivery"),
                 },
             )
+    return pattern_specs
 
-    # ── Propagate collocation through the storage graph ───────────────────
-    # A storage that is co-located with another storage inherits the region /
-    # cluster hints of its target.  We cannot enforce region pinning here
-    # (that's a deploy-time concern), but we can surface the inherited target
-    # in the plan so downstream generators can follow the chain in one pass.
+
+def _resolve_resource_order(app: "App") -> list[str]:
+    """Compute the topological order over the app's resource graph.
+
+    Falls back to alphabetical order with a ``RuntimeWarning`` on cycles.
+    """
+    graph = build_graph(app)
+    try:
+        return graph.topological_order()
+    except CyclicDependencyError as exc:
+        warnings.warn(
+            f"Cyclic dependency detected in resource graph: {exc}. "
+            "Falling back to unordered resource list.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return sorted(app._collect_all().keys())
+
+
+def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "PlanFile":
+    """
+    Run the Z3 constraint solver over all registered storage and compute
+    declarations, producing a concrete infrastructure plan.
+
+    Args:
+        app:     The Skaal App whose decorators define the constraints.
+        catalog: Parsed TOML catalog entries (backends and their characteristics).
+        target:  Deploy target: "generic" | "aws-lambda" | "k8s" | "ecs"
+
+    Returns:
+        A PlanFile with concrete backend and instance selections.
+
+    Raises:
+        UnsatisfiableConstraints: If no backend can satisfy the declared constraints.
+    """
+    all_resources = app._collect_all()
+    storage_backends = catalog.get("storage", {})
+    compute_backends = catalog.get("compute", {})
+
+    # Build the dependency graph once up front so every sub-solver can consult
+    # it.  The ordering is written into the plan so deploy generators can
+    # provision resources in dependency order.
+    resource_order = _resolve_resource_order(app)
+
+    storage_specs = _solve_storage(all_resources, storage_backends, target=target)
+    compute_specs = _solve_compute(all_resources, compute_backends, target=target)
+    component_specs = _solve_components(app, catalog, target=target)
+    # Patterns may rewrite storage_specs (Projections force collocation).
+    pattern_specs = _solve_patterns(
+        app, all_resources, storage_backends, storage_specs, target=target
+    )
+
+    # Flatten transitive collocate_with chains in topological order.
     _propagate_collocation(storage_specs, compute_specs, resource_order)
 
-    # ── Target-level deploy config ─────────────────────────────────────────
-    # Read the deploy params for the target compute backend (e.g. Lambda,
-    # Cloud Run) from the catalog.  The solver doesn't use these; deploy
-    # generators do.
+    # Target-level deploy config — read deploy params for the target compute
+    # backend (e.g. Lambda, Cloud Run) from the catalog.  The solver doesn't
+    # use these; deploy generators do.
     target_compute_key = catalog_compute_key(target)
     deploy_config: dict[str, Any] = {}
     if target_compute_key:

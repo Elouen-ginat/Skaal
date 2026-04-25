@@ -1,12 +1,78 @@
+"""AWS Lambda deploy target — artifact generation, packaging, and deploy."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from skaal.deploy.packaging.lambda_zip import LambdaZipPackager
 from skaal.deploy.pulumi import PulumiClient
+from skaal.deploy.push import package_aws, write_meta
 from skaal.deploy.reporting import DeployReporter
-from skaal.deploy.targets.base import Target
+from skaal.deploy.targets.base import BuildOptions, DeployOptions, Target
+
+if TYPE_CHECKING:
+    from skaal.plan import PlanFile
+
+
+def _generate_artifacts(
+    app: Any,
+    plan: "PlanFile",
+    output_dir: Path,
+    source_module: str,
+    app_var: str,
+    region: str,
+) -> list[Path]:
+    from skaal.deploy.builders.aws_stack import _build_pulumi_stack
+    from skaal.deploy.runtime_assets import (
+        collect_runtime_dependencies,
+        prepare_output_dir,
+        project_has_mesh,
+        write_pulumi_stack_artifact,
+        write_pyproject_artifact,
+        write_runtime_bootstrap,
+    )
+
+    output_dir = prepare_output_dir(output_dir)
+
+    generated = [
+        write_runtime_bootstrap(
+            output_dir,
+            target="aws",
+            output_name="handler.py",
+            template_name="aws/handler",
+            source_module=source_module,
+            app_var=app_var,
+            plan=plan,
+            app=app,
+            non_wsgi_context={"app_name": app.name},
+        )
+    ]
+
+    base_deps = ["skaal[aws]"]
+    if getattr(app, "_wsgi_attribute", None):
+        base_deps.append("mangum>=0.17")
+    if project_has_mesh(output_dir.parent):
+        base_deps.append("skaal-mesh")
+
+    deps = collect_runtime_dependencies(
+        plan,
+        source_module,
+        target="aws",
+        base_deps=base_deps,
+    )
+    generated.append(write_pyproject_artifact(output_dir, app_name=app.name, deps=deps))
+    generated.append(
+        write_pulumi_stack_artifact(output_dir, _build_pulumi_stack(app, plan, region=region))
+    )
+    generated.append(
+        write_meta(
+            output_dir,
+            target="aws",
+            source_module=source_module,
+            app_name=app.name,
+        )
+    )
+    return generated
 
 
 class AWSLambdaBuilder:
@@ -17,62 +83,40 @@ class AWSLambdaBuilder:
         output_dir: Path,
         source_module: str,
         app_var: str = "app",
-        *,
-        region: str | None = None,
-        dev: bool = False,
-        stack_profile: dict[str, Any] | None = None,
+        options: BuildOptions | None = None,
     ) -> list[Path]:
-        del dev, stack_profile
-        from skaal.deploy.aws import generate_artifacts
-
-        return generate_artifacts(
+        resolved_options = options or BuildOptions()
+        return _generate_artifacts(
             app=app,
             plan=plan,
             output_dir=output_dir,
             source_module=source_module,
             app_var=app_var,
-            region=region or "us-east-1",
+            region=resolved_options.region or "us-east-1",
         )
 
 
 class AWSLambdaDeployer:
-    def __init__(self, packager: LambdaZipPackager | None = None) -> None:
-        self._packager = packager or LambdaZipPackager()
-
     def deploy(
         self,
         artifacts_dir: Path,
-        *,
-        stack: str,
-        region: str | None,
-        gcp_project: str | None,
-        yes: bool,
-        project_root: Path,
-        source_module: str,
-        app_name: str,
-        config_overrides: dict[str, str] | None = None,
-        runtime_options: dict[str, Any] | None = None,
+        options: DeployOptions,
         reporter: DeployReporter | None = None,
     ) -> dict[str, str]:
-        del gcp_project, runtime_options, app_name
         assert reporter is not None
 
         client = PulumiClient(artifacts_dir)
-        client.select_or_init_stack(stack)
-        client.config_set({"aws:region": region or "us-east-1"})
-        if config_overrides:
-            client.config_set(config_overrides)
+        client.select_or_init_stack(options.stack)
+        client.config_set({"aws:region": options.region or "us-east-1"})
+        if options.config_overrides:
+            client.config_set(options.config_overrides)
 
         reporter.step("Packaging Lambda")
-        self._packager.package(
-            artifacts_dir,
-            project_root=project_root,
-            source_module=source_module,
-        )
+        package_aws(artifacts_dir, options.project_root, options.source_module)
 
         reporter.step("Deploying AWS Lambda stack")
         client.up(
-            yes=yes,
+            yes=options.yes,
             stage="deploy AWS Lambda stack",
             recovery_hint=(
                 "Validate AWS credentials, region configuration, and the generated Pulumi "
