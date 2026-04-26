@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from skaal.backends._spec import BackendPlugin, Wiring
+from skaal.backends.pgvector_backend import PgVectorBackend
+from skaal.backends.postgres_backend import PostgresBackend
 from skaal.deploy.kinds import StorageKind
-from skaal.deploy.plugin import BackendPlugin, Wiring
 
 _LOCAL_POSTGRES_DSN = "postgresql://skaal_user:skaal_pass@postgres/skaal_db"
 
@@ -13,6 +15,7 @@ def _postgres_plugin(
     kinds: frozenset[StorageKind],
     class_name: str,
     module: str,
+    impl: type[object],
     dependency_sets: tuple[str, ...],
     local_fallbacks: dict[StorageKind, str],
 ) -> BackendPlugin:
@@ -22,6 +25,7 @@ def _postgres_plugin(
         wiring=Wiring(
             class_name=class_name,
             module=module,
+            impl=impl,
             env_prefix="SKAAL_DB_DSN",
             uses_namespace=True,
             dependency_sets=dependency_sets,
@@ -46,6 +50,7 @@ def postgres_kv_plugin(
         kinds=frozenset({StorageKind.KV, StorageKind.RELATIONAL}),
         class_name="PostgresBackend",
         module="postgres_backend",
+        impl=PostgresBackend,
         dependency_sets=dependency_sets,
         local_fallbacks={
             StorageKind.KV: "local-redis",
@@ -66,6 +71,7 @@ def postgres_vector_plugin(
         kinds=frozenset({StorageKind.VECTOR}),
         class_name="PgVectorBackend",
         module="pgvector_backend",
+        impl=PgVectorBackend,
         dependency_sets=dependency_sets,
         local_fallbacks={StorageKind.VECTOR: "chroma-local"},
     )

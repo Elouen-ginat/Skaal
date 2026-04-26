@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from skaal.backends._spec import BackendPlugin, Wiring
+from skaal.backends.redis_backend import RedisBackend
 from skaal.deploy.kinds import StorageKind
-from skaal.deploy.plugin import BackendPlugin, Wiring
 
 plugin = BackendPlugin(
     name="local-redis",
@@ -9,6 +10,7 @@ plugin = BackendPlugin(
     wiring=Wiring(
         class_name="RedisBackend",
         module="redis_backend",
+        impl=RedisBackend,
         env_prefix="SKAAL_REDIS_URL",
         uses_namespace=True,
         local_service="redis",

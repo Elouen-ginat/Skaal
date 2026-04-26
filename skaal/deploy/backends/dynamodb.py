@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from skaal.backends._spec import BackendPlugin, Wiring
+from skaal.backends.dynamodb_backend import DynamoBackend
 from skaal.deploy.kinds import StorageKind
-from skaal.deploy.plugin import BackendPlugin, Wiring
 
 plugin = BackendPlugin(
     name="dynamodb",
@@ -9,6 +10,7 @@ plugin = BackendPlugin(
     wiring=Wiring(
         class_name="DynamoBackend",
         module="dynamodb_backend",
+        impl=DynamoBackend,
         env_prefix="SKAAL_TABLE",
     ),
     supported_targets=frozenset({"aws"}),

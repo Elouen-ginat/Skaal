@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from skaal.backends._registry import backend_registry
+from skaal.backends._spec import BackendPlugin
 from skaal.deploy.kinds import StorageKind
-from skaal.deploy.plugin import BackendPlugin
 from skaal.deploy.targets.base import Target
 
 if TYPE_CHECKING:
@@ -73,7 +74,6 @@ class TargetRegistry:
         return tuple(sorted({target.name for target in self._targets.values()}))
 
 
-backend_registry = BackendRegistry()
 target_registry = TargetRegistry()
 
 
@@ -97,11 +97,7 @@ def get_target(name: str) -> Target:
     return target_registry.get(name)
 
 
-from skaal.deploy.backends import BUILTIN_BACKENDS  # noqa: E402
 from skaal.deploy.targets import BUILTIN_TARGETS  # noqa: E402
-
-for _plugin in BUILTIN_BACKENDS:
-    register_backend_plugin(_plugin)
 
 for _target in BUILTIN_TARGETS:
     register_target(_target)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from skaal.backends._spec import BackendPlugin, Wiring
+from skaal.backends.chroma_backend import ChromaVectorBackend
 from skaal.deploy.kinds import StorageKind
-from skaal.deploy.plugin import BackendPlugin, Wiring
 
 plugin = BackendPlugin(
     name="chroma-local",
@@ -9,6 +10,7 @@ plugin = BackendPlugin(
     wiring=Wiring(
         class_name="ChromaVectorBackend",
         module="chroma_backend",
+        impl=ChromaVectorBackend,
         path_default="/app/data/chroma",
         uses_namespace=True,
         dependency_sets=("chroma-runtime",),

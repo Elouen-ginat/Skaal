@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from skaal.deploy.plugin import BackendPlugin, Wiring, resolve_wiring
-from skaal.deploy.registry import resolve_backend_plugin
+from skaal.backends._registry import resolve_backend_plugin
+from skaal.backends._spec import BackendPlugin, Wiring, resolve_wiring
 
 if TYPE_CHECKING:
     from skaal.plan import PlanFile, StorageSpec
