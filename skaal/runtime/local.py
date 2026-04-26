@@ -44,7 +44,7 @@ class LocalRuntime(
     Runs a Skaal App locally as a minimal asyncio HTTP server.
 
     - Each ``@app.function()`` becomes a ``POST /{name}`` endpoint.
-    - Storage classes are patched with in-memory :class:`~skaal.backends.local_backend.LocalMap`
+    - Storage classes are patched with in-memory :class:`~skaal.backends.kv.local_map.LocalMap`
       backends (or overrides supplied via *backend_overrides*).
     - Channel instances are wired to :class:`~skaal.backends.channels.local.LocalChannel`.
     - ``GET /`` returns a JSON index of available endpoints.

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from skaal.backends._registry import get_backend_impl
-from skaal.backends.local_backend import LocalMap
-from skaal.backends.sqlite_backend import SqliteBackend
+from skaal.backends.kv.local_map import LocalMap
+from skaal.backends.kv.sqlite import SqliteBackend
 from skaal.deploy.wiring import build_runtime_wiring
 from skaal.plan import PlanFile, StorageSpec
 

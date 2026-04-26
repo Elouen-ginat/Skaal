@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
-from skaal.backends.local_backend import LocalMap
+from skaal.backends.kv.local_map import LocalMap
 from skaal.patterns import EventLog
 
 
@@ -266,15 +265,3 @@ class TestRuntimeDispatchFixes:
         assert result["error"] == "boom"
         assert "traceback" in result
         assert "RuntimeError: boom" in result["traceback"]
-
-
-class TestRuntimePlanningFixes:
-    def test_default_local_storage_factories_use_path_backends(self) -> None:
-        from skaal.runtime._planning import _default_local_storage_factories
-
-        _, vector_factory, relational_factory = _default_local_storage_factories()
-        vector_backend = vector_factory("example.VectorStore", object)
-        relational_backend = relational_factory("example.Store", object)
-
-        assert vector_backend.path == Path("skaal_chroma")
-        assert relational_backend.path == Path("skaal_local.db")

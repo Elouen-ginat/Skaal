@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from skaal.backends.local_backend import LocalMap
+from skaal.backends.kv.local_map import LocalMap
 from skaal.patterns import EventLog, Outbox, Saga, SagaStep
 from skaal.runtime._observer import InMemoryRuntimeObserver
 from skaal.runtime.engines.eventlog import EventLogEngine

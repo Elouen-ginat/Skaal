@@ -332,7 +332,7 @@ def test_build_runtime_returns_local_runtime(simple_app: App) -> None:
 
 
 def test_build_runtime_from_plan_uses_local_fallbacks(simple_app: App) -> None:
-    from skaal.backends.sqlite_backend import SqliteBackend
+    from skaal.backends.kv.sqlite import SqliteBackend
     from skaal.plan import PlanFile, StorageSpec
     from skaal.runtime.local import LocalRuntime
     from skaal.storage import Store
