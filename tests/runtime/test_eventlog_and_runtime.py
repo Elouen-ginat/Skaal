@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -200,3 +201,80 @@ class TestLocalRuntimeFixes:
         # Both close() should have been attempted
         mock_backend1.close.assert_called_once()
         mock_backend2.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_backend_shutdown_closes_uninstalled_override(self) -> None:
+        """Test shutdown closes backend overrides even when they were never wired."""
+        from unittest.mock import AsyncMock
+
+        from skaal.app import App
+        from skaal.runtime.local import LocalRuntime
+
+        app = App(name="test")
+        runtime = LocalRuntime(app)
+
+        orphan_backend = AsyncMock()
+        runtime._backends = {}
+        runtime._backend_overrides = {"MissingStore": orphan_backend}
+
+        await runtime.shutdown()
+
+        orphan_backend.close.assert_called_once()
+
+
+class TestRuntimeDispatchFixes:
+    @pytest.mark.asyncio
+    async def test_dispatch_omits_traceback_without_debug_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from skaal.app import App
+        from skaal.runtime.local import LocalRuntime
+
+        app = App(name="traceback-test")
+
+        @app.function
+        async def explode() -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.delenv("SKAAL_DEBUG", raising=False)
+        runtime = LocalRuntime(app)
+
+        result, status = await runtime._dispatch("POST", "/explode", b"{}")
+
+        assert status == 500
+        assert result == {"error": "boom"}
+
+    @pytest.mark.asyncio
+    async def test_dispatch_includes_traceback_with_debug_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from skaal.app import App
+        from skaal.runtime.local import LocalRuntime
+
+        app = App(name="traceback-test")
+
+        @app.function
+        async def explode() -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setenv("SKAAL_DEBUG", "1")
+        runtime = LocalRuntime(app)
+
+        result, status = await runtime._dispatch("POST", "/explode", b"{}")
+
+        assert status == 500
+        assert result["error"] == "boom"
+        assert "traceback" in result
+        assert "RuntimeError: boom" in result["traceback"]
+
+
+class TestRuntimePlanningFixes:
+    def test_default_local_storage_factories_use_path_backends(self) -> None:
+        from skaal.runtime._planning import _default_local_storage_factories
+
+        _, vector_factory, relational_factory = _default_local_storage_factories()
+        vector_backend = vector_factory("example.VectorStore", object)
+        relational_backend = relational_factory("example.Store", object)
+
+        assert vector_backend.path == Path("skaal_chroma")
+        assert relational_backend.path == Path("skaal_local.db")

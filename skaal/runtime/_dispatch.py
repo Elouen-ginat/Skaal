@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import traceback
 from typing import TYPE_CHECKING, cast
 
@@ -35,6 +36,10 @@ class _RuntimeDispatchMixin:
 
     def _health_payload(self) -> RuntimePayload:
         return {}
+
+    def _include_debug_traceback(self) -> bool:
+        value = os.getenv("SKAAL_DEBUG", "")
+        return value.lower() in {"1", "true", "yes", "on"}
 
     def _prepare_invocation_kwargs(
         self,
@@ -97,6 +102,9 @@ class _RuntimeDispatchMixin:
             except TypeError as exc:
                 return {"error": f"Bad arguments for {fn_name!r}: {exc}"}, 422
             except Exception as exc:  # noqa: BLE001
-                return {"error": str(exc), "traceback": traceback.format_exc()}, 500
+                payload: RuntimePayload = {"error": str(exc)}
+                if self._include_debug_traceback():
+                    payload["traceback"] = traceback.format_exc()
+                return payload, 500
 
         return {"error": f"Method {method} not allowed"}, 405

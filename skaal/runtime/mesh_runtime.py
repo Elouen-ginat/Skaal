@@ -33,7 +33,12 @@ from skaal.types.runtime import (
 from ._core import _RuntimeCoreMixin
 from ._dispatch import _RuntimeDispatchMixin
 from ._lifecycle import _RuntimeLifecycleMixin
-from ._planning import build_backend_overrides, build_development_plan, coerce_runtime_plan
+from ._planning import (
+    _default_local_storage_factories,
+    build_backend_overrides,
+    build_development_plan,
+    coerce_runtime_plan,
+)
 from ._transport import _RuntimeHttpTransportMixin
 
 
@@ -111,14 +116,12 @@ class MeshRuntime(
     # ── Setup (mirrors LocalRuntime) ──────────────────────────────────────────
 
     def _patch_storage(self) -> None:
-        from skaal.backends.chroma_backend import ChromaVectorBackend
-        from skaal.backends.local_backend import LocalMap
-        from skaal.backends.sqlite_backend import SqliteBackend
+        store_factory, vector_factory, relational_factory = _default_local_storage_factories()
 
         self._patch_storage_backends(
-            store_factory=lambda qname, obj: LocalMap(),
-            vector_factory=lambda qname, obj: ChromaVectorBackend("skaal_chroma", namespace=qname),
-            relational_factory=lambda qname, obj: SqliteBackend("skaal_local.db", namespace=qname),
+            store_factory=store_factory,
+            vector_factory=vector_factory,
+            relational_factory=relational_factory,
         )
 
     def _patch_channels(self) -> None:

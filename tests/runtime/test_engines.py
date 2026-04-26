@@ -214,3 +214,38 @@ async def test_outbox_relay_publishes_pending_rows() -> None:
     assert remaining == []
 
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_outbox_restart_rebinds_write_helper_to_current_backend() -> None:
+    backend_one = LocalMap()
+    backend_two = LocalMap()
+    chan = _FakeChannel()
+    ob = Outbox(channel=chan, storage=_Storage, delivery="at-least-once")
+
+    _Storage._backend = backend_one
+    engine = OutboxEngine(ob, poll_interval=0.01)
+    await engine.start(SimpleNamespace())
+    await ob.write("order-1", {"event": "placed", "id": 1})  # type: ignore[attr-defined]
+
+    for _ in range(50):
+        if len(chan.sent) == 1:
+            break
+        await asyncio.sleep(0.02)
+
+    await engine.stop()
+
+    _Storage._backend = backend_two
+    await engine.start(SimpleNamespace())
+    await ob.write("order-2", {"event": "placed", "id": 2})  # type: ignore[attr-defined]
+
+    for _ in range(50):
+        if len(chan.sent) == 2:
+            break
+        await asyncio.sleep(0.02)
+
+    assert [payload["id"] for payload in chan.sent] == [1, 2]  # type: ignore[index]
+    assert await backend_one.scan("outbox:") == []
+    assert await backend_two.scan("outbox:") == []
+
+    await engine.stop()

@@ -25,7 +25,7 @@ from skaal.patterns import Saga
 
 
 class SagaExecutor:
-    """Runs a single saga instance; exposed on the app via :meth:`SagaEngine.executor`."""
+    """Runs a single saga instance exposed on the runtime context."""
 
     def __init__(
         self,
@@ -146,8 +146,3 @@ class SagaEngine:
 
     async def stop(self) -> None:
         self._executor = None
-
-    def executor(self) -> SagaExecutor:
-        if self._executor is None:
-            raise SkaalError("saga engine is not started")
-        return self._executor

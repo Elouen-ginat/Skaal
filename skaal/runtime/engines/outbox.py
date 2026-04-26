@@ -27,8 +27,8 @@ class OutboxEngine:
     async def start(self, context: Any) -> None:
         # Install a send helper on the outbox so user code has a one-liner:
         #     await orders_outbox.write(key, payload)
-        if not hasattr(self.outbox, "write"):
-            setattr(self.outbox, "write", self._write_factory())
+        self._stopping = asyncio.Event()
+        setattr(self.outbox, "write", self._write_factory())
         self._task = asyncio.create_task(self._relay_loop(), name=f"outbox:{self._outbox_name()}")
 
     async def stop(self) -> None:
@@ -44,14 +44,13 @@ class OutboxEngine:
     # ── Writer + relay ───────────────────────────────────────────────────────
 
     def _write_factory(self) -> Any:
-        store_backend = _backend_of(self.outbox.storage)
-
         async def write(row_key: str, payload: Any) -> None:
             """Atomically append *payload* to the outbox.
 
             The payload is stored under ``outbox:<row_key>:<ts>`` so ordering
             is preserved by the backend's lexicographic scan.
             """
+            store_backend = _backend_of(self.outbox.storage)
             ts = f"{time.time_ns():020d}"
             key = f"outbox:{row_key}:{ts}"
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any, cast
 
 from skaal.backends.base import StorageBackend
@@ -116,11 +117,30 @@ class _RuntimeCoreMixin:
     async def shutdown(self) -> None:
         import contextlib
 
+        seen_backends: set[int] = set()
+
+        async def _close_backend(backend: object) -> None:
+            marker = id(backend)
+            if marker in seen_backends:
+                return
+            seen_backends.add(marker)
+
+            close = getattr(backend, "close", None)
+            if close is None:
+                return
+
+            with contextlib.suppress(Exception):
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+
         for engine in self._engines:
             with contextlib.suppress(Exception):
                 await engine.stop()
         self._engines = []
 
         for backend in self._backends.values():
-            with contextlib.suppress(Exception):
-                await backend.close()
+            await _close_backend(backend)
+
+        for backend in self._backend_overrides.values():
+            await _close_backend(backend)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
-from skaal.backends.local_backend import LocalMap
 from skaal.plan import PlanFile
 from skaal.types.runtime import (
     AsyncClosable,
@@ -20,7 +19,12 @@ from ._dispatch import _RuntimeDispatchMixin
 from ._lifecycle import _RuntimeLifecycleMixin
 from ._local_scheduler import _LocalSchedulerMixin
 from ._local_server import _LocalServerMixin
-from ._planning import build_backend_overrides, build_development_plan, coerce_runtime_plan
+from ._planning import (
+    _default_local_storage_factories,
+    build_backend_overrides,
+    build_development_plan,
+    coerce_runtime_plan,
+)
 from ._transport import _RuntimeHttpTransportMixin
 
 
@@ -89,17 +93,12 @@ class LocalRuntime(
 
     def _patch_storage(self) -> None:
         """Wire all registered storage classes with appropriate backends."""
-        from skaal.backends.chroma_backend import ChromaVectorBackend
-        from skaal.backends.sqlite_backend import SqliteBackend
+        store_factory, vector_factory, relational_factory = _default_local_storage_factories()
 
         self._patch_storage_backends(
-            store_factory=lambda qname, obj: LocalMap(),
-            vector_factory=lambda qname, obj: ChromaVectorBackend(
-                Path("skaal_chroma"), namespace=qname
-            ),
-            relational_factory=lambda qname, obj: SqliteBackend(
-                Path("skaal_local.db"), namespace=qname
-            ),
+            store_factory=store_factory,
+            vector_factory=vector_factory,
+            relational_factory=relational_factory,
         )
 
     def _patch_channels(self) -> None:
