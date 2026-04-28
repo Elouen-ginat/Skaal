@@ -10,6 +10,7 @@ import pytest
 from skaal.backends.kv.local_map import LocalMap
 from skaal.patterns import EventLog, Outbox, Saga, SagaStep
 from skaal.runtime._observer import InMemoryRuntimeObserver
+from skaal.runtime.engines.base import register_engine, start_engines_for
 from skaal.runtime.engines.eventlog import EventLogEngine
 from skaal.runtime.engines.outbox import OutboxEngine
 from skaal.runtime.engines.projection import ProjectionEngine
@@ -54,6 +55,47 @@ async def test_eventlog_engine_start_stop() -> None:
     assert engine_name.startswith("eventlog:")
     assert engines[engine_name]["starts"] == 1
     assert engines[engine_name]["stops"] == 1
+
+
+@pytest.mark.asyncio
+async def test_start_engines_for_dispatches_registered_patterns() -> None:
+    log: EventLog[dict] = EventLog(LocalMap())
+    saga = Saga("noop", steps=[])
+    app = SimpleNamespace(_collect_all=lambda: {"log": log, "saga": saga, "ignored": object()})
+    context = SimpleNamespace(functions={}, stores={})
+
+    engines = await start_engines_for(app, context)
+
+    assert [type(engine) for engine in engines] == [EventLogEngine, SagaEngine]
+    assert "noop" in context.sagas
+
+    for engine in reversed(engines):
+        await engine.stop()
+
+
+def test_register_engine_rejects_duplicate_pattern_registration() -> None:
+    class DuplicatePattern:
+        __skaal_pattern__ = {"pattern_type": "duplicate"}
+
+    @register_engine(DuplicatePattern)
+    class DuplicateEngine:
+        async def start(self, context: object) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    with pytest.raises(RuntimeError, match="already registered"):
+
+        @register_engine(DuplicatePattern)
+        class SecondDuplicateEngine:
+            async def start(self, context: object) -> None:
+                return None
+
+            async def stop(self) -> None:
+                return None
+
+    assert DuplicateEngine is not None
 
 
 # ── Projection ───────────────────────────────────────────────────────────────

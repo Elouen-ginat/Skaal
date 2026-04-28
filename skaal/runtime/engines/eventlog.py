@@ -12,8 +12,10 @@ from __future__ import annotations
 from typing import Any
 
 from skaal.patterns import EventLog
+from skaal.runtime.engines.base import register_engine
 
 
+@register_engine(EventLog)
 class EventLogEngine:
     def __init__(self, log: EventLog[Any]) -> None:
         self.log = log
@@ -26,9 +28,10 @@ class EventLogEngine:
         # Ensure the backend is reachable — fail fast if the user's catalog
         # picked a server-backed backend that isn't running.
         probe = self.log._backend
-        if hasattr(probe, "connect") and getattr(probe, "_client", "?") is None:
+        connect = getattr(probe, "connect", None)
+        if callable(connect) and getattr(probe, "_client", "?") is None:
             try:
-                await probe.connect()
+                await connect()
             except Exception:  # noqa: BLE001
                 # Connection errors surface lazily on first append/subscribe;
                 # the engine stays startable so tests with unavailable servers

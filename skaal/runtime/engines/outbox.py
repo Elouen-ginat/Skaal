@@ -13,8 +13,10 @@ import time
 from typing import Any
 
 from skaal.patterns import Outbox
+from skaal.runtime.engines.base import register_engine
 
 
+@register_engine(Outbox)
 class OutboxEngine:
     """Background relay that publishes pending outbox rows to a channel."""
 

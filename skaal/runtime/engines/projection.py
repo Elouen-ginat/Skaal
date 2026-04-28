@@ -13,8 +13,10 @@ import inspect
 from typing import Any
 
 from skaal.patterns import Projection
+from skaal.runtime.engines.base import register_engine
 
 
+@register_engine(Projection)
 class ProjectionEngine:
     """Background worker for a single :class:`skaal.patterns.Projection`."""
 

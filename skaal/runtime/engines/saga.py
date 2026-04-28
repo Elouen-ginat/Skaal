@@ -22,6 +22,7 @@ from typing import Any
 
 from skaal.errors import SkaalError
 from skaal.patterns import Saga
+from skaal.runtime.engines.base import register_engine
 
 
 class SagaExecutor:
@@ -122,6 +123,7 @@ class SagaExecutor:
             pass
 
 
+@register_engine(Saga)
 class SagaEngine:
     """Registers a :class:`SagaExecutor` on the app so user code can trigger it."""
 

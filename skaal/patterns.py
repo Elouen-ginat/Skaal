@@ -13,13 +13,20 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Generic, Literal, TypeVar
+from typing import Any, AsyncIterator, Generic, Literal, Protocol, TypeVar, runtime_checkable
 
 from skaal.types import Consistency, Durability, Throughput
 
 TSource = TypeVar("TSource")
 TView = TypeVar("TView")
 T = TypeVar("T")
+
+
+@runtime_checkable
+class Pattern(Protocol):
+    """Structural marker shared by all Skaal patterns."""
+
+    __skaal_pattern__: dict[str, object]
 
 
 # ── EventLog ──────────────────────────────────────────────────────────────
