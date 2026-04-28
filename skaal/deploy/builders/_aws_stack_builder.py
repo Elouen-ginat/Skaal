@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from skaal.deploy._external import DefaultExternalProvisioner
 from skaal.deploy.builders._aws_stack_apigw import _add_apigw_resources
+from skaal.deploy.builders._schedule import _load_schedule
 from skaal.deploy.builders._aws_stack_common import (
     DYNAMODB_ACTIONS,
     LAMBDA_BASIC_EXEC_POLICY,
@@ -386,17 +387,8 @@ def _add_schedule_resources(ctx: _AWSStackContext) -> None:
         if comp.kind != "schedule-trigger":
             continue
         cfg = comp.config
-        trigger_type = cfg.get("trigger_type", "cron")
         target_fn = cfg.get("target_function", comp_name)
-
-        if trigger_type == "cron":
-            from skaal.schedule import Cron
-
-            schedule_expr = Cron(expression=cfg["trigger"]["expression"]).as_aws_expression()
-        else:
-            from skaal.schedule import Every
-
-            schedule_expr = Every(interval=cfg["trigger"]["interval"]).as_rate_expression()
+        schedule_expr = _load_schedule(cfg).to_aws_expression()
 
         rule_key = f"{comp_name}-rule"
         target_key = f"{comp_name}-target"

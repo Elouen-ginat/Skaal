@@ -8,6 +8,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from skaal.deploy._external import DefaultExternalProvisioner
+from skaal.deploy.builders._schedule import _load_schedule
 from skaal.deploy.config import (
     CloudRunDeployConfig,
     CloudSQLDeployConfig,
@@ -354,16 +355,9 @@ def _build_pulumi_stack(
         if comp.kind != "schedule-trigger":
             continue
         cfg = comp.config
-        trigger_type = cfg.get("trigger_type", "cron")
         target_fn = cfg.get("target_function", comp_name)
         timezone = cfg.get("timezone", "UTC")
-
-        if trigger_type == "cron":
-            cron_expr = cfg["trigger"]["expression"]
-        else:
-            from skaal.schedule import Every
-
-            cron_expr = Every(interval=cfg["trigger"]["interval"]).as_cron_expression()
+        cron_expr = _load_schedule(cfg).to_gcp_expression()
 
         body_bytes = json.dumps({"_skaal_trigger": comp_name}).encode()
 
