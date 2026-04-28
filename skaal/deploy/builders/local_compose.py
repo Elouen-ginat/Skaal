@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from skaal.deploy._external import DefaultExternalProvisioner
 from skaal.deploy._render import render
 from skaal.deploy.builders._gateways import (
+    _kong_config,  # noqa: F401
+    _traefik_labels,  # noqa: F401
     adapter_for_component,
 )
 from skaal.deploy.local_services import COMPOSE_SERVICES
