@@ -63,6 +63,4 @@ def test_gcp_schedule_trigger_uses_typed_schedule_expression() -> None:
 
     stack = build_gcp_stack(app, plan, region="us-central1")
 
-    assert stack["resources"]["daily-schedule-scheduler"]["properties"]["schedule"] == (
-        "0 8 * * *"
-    )
+    assert stack["resources"]["daily-schedule-scheduler"]["properties"]["schedule"] == ("0 8 * * *")

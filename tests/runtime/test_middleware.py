@@ -166,7 +166,9 @@ def test_rate_limit_per_client_scope_uses_client_identifier() -> None:
 
 
 def test_rate_limit_per_key_scope_uses_named_argument() -> None:
-    limiter = _RateLimiter(RateLimitPolicy(requests_per_second=1.0, burst=1, scope="per-key:tenant"))
+    limiter = _RateLimiter(
+        RateLimitPolicy(requests_per_second=1.0, burst=1, scope="per-key:tenant")
+    )
 
     assert limiter._key({"tenant": "blue"}) == "blue"
     assert limiter._key({}) == "__missing__"

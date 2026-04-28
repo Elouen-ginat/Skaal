@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from skaal.plan import ComponentSpec, ComputeSpec, PatternSpec, PlanFile, StorageSpec
 from skaal.solver._pattern_solvers import PatternSolveContext, collect_function_names, solve_pattern
 from skaal.solver.graph import CyclicDependencyError, build_graph
-from skaal.solver.storage import UnsatisfiableConstraints, select_backend
+from skaal.solver.storage import select_backend
 from skaal.solver.targets import catalog_compute_key
 
 if TYPE_CHECKING:

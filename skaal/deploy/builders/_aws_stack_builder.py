@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from skaal.deploy._external import DefaultExternalProvisioner
 from skaal.deploy.builders._aws_stack_apigw import _add_apigw_resources
-from skaal.deploy.builders._schedule import _load_schedule
 from skaal.deploy.builders._aws_stack_common import (
     DYNAMODB_ACTIONS,
     LAMBDA_BASIC_EXEC_POLICY,
@@ -14,6 +13,7 @@ from skaal.deploy.builders._aws_stack_common import (
     _database_name,
     _resource_slug,
 )
+from skaal.deploy.builders._schedule import _load_schedule
 from skaal.deploy.config import DynamoDBDeployConfig, LambdaDeployConfig, RDSPostgresDeployConfig
 from skaal.deploy.wiring import resolve_backend
 
