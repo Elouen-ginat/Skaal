@@ -10,10 +10,29 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal, cast
 
 from skaal.patterns import Outbox
 from skaal.runtime.engines.base import register_engine
+
+DeliveryMode = Literal["at-least-once", "exactly-once"]
+DeliveryFinalizer = Callable[[Any, str, dict[str, Any]], Awaitable[None]]
+
+
+async def _delete_delivered_row(store_backend: Any, key: str, row: dict[str, Any]) -> None:
+    await store_backend.delete(key)
+
+
+async def _mark_delivered_row(store_backend: Any, key: str, row: dict[str, Any]) -> None:
+    row["delivered"] = True
+    await store_backend.set(key, row)
+
+
+_DELIVERY_FINALIZERS: dict[DeliveryMode, DeliveryFinalizer] = {
+    "at-least-once": _delete_delivered_row,
+    "exactly-once": _mark_delivered_row,
+}
 
 
 @register_engine(Outbox)
@@ -76,26 +95,21 @@ class OutboxEngine:
                 for key, row in sorted(pending):
                     if not isinstance(row, dict) or row.get("delivered"):
                         continue
+                    row_data = cast(dict[str, Any], row)
                     try:
                         if hasattr(channel, "send"):
-                            await channel.send(row["payload"])
+                            await channel.send(row_data["payload"])
                         elif hasattr(channel, "append"):
-                            await channel.append(row["payload"])
+                            await channel.append(row_data["payload"])
                         else:
                             continue
                     except Exception:  # noqa: BLE001
                         # Retry on next tick — at-least-once delivery.
                         continue
 
-                    # Mark delivered.  For at-least-once the safest thing is to
-                    # delete the row; for exactly-once we keep it marked so a
-                    # downstream dedupe layer can reconcile.
                     try:
-                        if self.outbox.delivery == "at-least-once":
-                            await store_backend.delete(key)
-                        else:
-                            row["delivered"] = True
-                            await store_backend.set(key, row)
+                        finalizer = _DELIVERY_FINALIZERS[cast(DeliveryMode, self.outbox.delivery)]
+                        await finalizer(store_backend, key, row_data)
                     except Exception:  # noqa: BLE001
                         continue
                     delivered_any = True

@@ -163,6 +163,17 @@ def test_compose_api_gateway_adds_kong():
     assert "traefik" not in compose
 
 
+def test_compose_proxy_can_override_to_kong():
+    proxy = Proxy("edge", routes=[Route("/api/*", target="fn")], implementation="kong")
+    spec = encode_component("edge", proxy, {}, target="local")
+    plan = _empty_plan(components={"edge": spec})
+    app = _make_app()
+    compose = _build_docker_compose(plan, port=8000, source_pkg="myapp", app=app)
+
+    assert "kong" in compose
+    assert "traefik" not in compose
+
+
 # ── Mount routes wired to Traefik ─────────────────────────────────────────────
 
 

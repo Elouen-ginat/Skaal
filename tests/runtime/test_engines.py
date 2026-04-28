@@ -368,3 +368,28 @@ async def test_outbox_restart_rebinds_write_helper_to_current_backend() -> None:
     assert await backend_two.scan("outbox:") == []
 
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_outbox_exactly_once_marks_row_delivered() -> None:
+    backend = LocalMap()
+    _Storage._backend = backend
+    chan = _FakeChannel()
+    ob = Outbox(channel=chan, storage=_Storage, delivery="exactly-once")
+
+    engine = OutboxEngine(ob, poll_interval=0.01)
+    await engine.start(SimpleNamespace())
+    await ob.write("order-1", {"event": "placed", "id": 1})  # type: ignore[attr-defined]
+
+    for _ in range(50):
+        remaining = await backend.scan("outbox:")
+        if remaining and remaining[0][1].get("delivered") is True:
+            break
+        await asyncio.sleep(0.02)
+
+    remaining = await backend.scan("outbox:")
+    assert len(remaining) == 1
+    assert remaining[0][1]["delivered"] is True
+    assert chan.sent == [{"event": "placed", "id": 1}]
+
+    await engine.stop()
