@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from skaal import App
 from skaal.runtime.local import LocalRuntime
 from skaal.storage import Store
+
+
+def _invoke_path(app: App, function_name: str) -> str:
+    return f"/_skaal/invoke/{app.name}.{function_name}"
 
 
 @pytest.fixture
@@ -72,16 +77,16 @@ async def test_runtime_dispatch_get(counter_app):
 
 @pytest.mark.asyncio
 async def test_runtime_dispatch_increment(counter_app):
-    """POST /increment increments the counter."""
+    """POST /_skaal/invoke/<fn> increments the counter."""
     import json
 
     rt = LocalRuntime(counter_app)
     body = json.dumps({"name": "hits"}).encode()
-    result, status = await rt._dispatch("POST", "/increment", body)
+    result, status = await rt._dispatch("POST", _invoke_path(counter_app, "increment"), body)
     assert status == 200
     assert result["value"] == 1
 
-    result2, _ = await rt._dispatch("POST", "/increment", body)
+    result2, _ = await rt._dispatch("POST", _invoke_path(counter_app, "increment"), body)
     assert result2["value"] == 2
 
 
@@ -89,7 +94,7 @@ async def test_runtime_dispatch_increment(counter_app):
 async def test_runtime_dispatch_missing_function(counter_app):
     """POST to unknown function returns 404."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("POST", "/nonexistent", b"{}")
+    result, status = await rt._dispatch("POST", "/_skaal/invoke/runtime-extras.nonexistent", b"{}")
     assert status == 404
 
 
@@ -106,7 +111,7 @@ async def test_runtime_dispatch_health(counter_app):
 async def test_runtime_dispatch_bad_method(counter_app):
     """DELETE returns 405."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("DELETE", "/increment", b"")
+    result, status = await rt._dispatch("DELETE", _invoke_path(counter_app, "increment"), b"")
     assert status == 405
 
 
@@ -119,3 +124,35 @@ def test_from_postgres_creates_backends(counter_app):
     assert all(isinstance(b, PostgresBackend) for b in backends)
     # Connections are lazy — no actual DB needed for this test
     assert all(b.dsn == "postgresql://user:pass@localhost/test" for b in backends)
+
+
+@pytest.mark.asyncio
+async def test_build_asgi_preserves_mounted_fastapi_routes() -> None:
+    from fastapi import FastAPI
+
+    app = App("mounted-asgi")
+    api = FastAPI()
+
+    @app.function()
+    async def greet(name: str) -> dict:
+        return {"hello": name}
+
+    @api.get("/chat")
+    async def chat() -> dict:
+        return {"ok": True}
+
+    app.mount_asgi(api, attribute="api")
+    rt = LocalRuntime(app)
+    asgi_app = rt.build_asgi()
+
+    transport = httpx.ASGITransport(app=asgi_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        chat_response = await client.get("/chat")
+        invoke_response = await client.post(
+            "/_skaal/invoke/mounted-asgi.greet", json={"name": "copilot"}
+        )
+
+    assert chat_response.status_code == 200
+    assert chat_response.json() == {"ok": True}
+    assert invoke_response.status_code == 200
+    assert invoke_response.json() == {"hello": "copilot"}

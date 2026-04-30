@@ -13,6 +13,7 @@ from skaal.backends.local_backend import LocalMap
 
 _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MiB — reject oversized request bodies
 log = logging.getLogger("skaal.runtime")
+_SKAAL_INVOKE_PREFIX = "/_skaal/invoke/"
 
 
 def _format_banner(title: str, lines: list[str]) -> str:
@@ -65,10 +66,14 @@ class LocalRuntime:
         # and persists across invocations.
         from skaal.runtime.middleware import wrap_handler
 
-        self._invokers: dict[str, Any] = {
-            name: wrap_handler(fn, fallback_lookup=self._function_cache.get)
-            for name, fn in self._function_cache.items()
-        }
+        self._invokers: dict[str, Any] = {}
+        _shared_invokers: dict[int, Any] = {}
+        for name, fn in self._function_cache.items():
+            invoker = _shared_invokers.get(id(fn))
+            if invoker is None:
+                invoker = wrap_handler(fn, fallback_lookup=self._function_cache.get)
+                _shared_invokers[id(fn)] = invoker
+            self._invokers[name] = invoker
         # Pattern engines are started lazily by ``serve()`` so an asyncio loop
         # is already running when they spin up background tasks.
         self._engines: list[Any] = []
@@ -79,6 +84,7 @@ class LocalRuntime:
             for qname, obj in self.app._collect_all().items()
             if isinstance(obj, type) and hasattr(obj, "__skaal_storage__")
         }
+        self.app._bind_runtime(self)
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -337,16 +343,64 @@ class LocalRuntime:
         """Flat map of name → callable for all ``@app.schedule()`` functions."""
         return dict(getattr(self.app, "_schedules", {}))
 
+    def _public_functions(self) -> dict[str, Any]:
+        return {
+            qname: obj
+            for qname, obj in self.app._collect_all().items()
+            if callable(obj) and hasattr(obj, "__skaal_compute__")
+        }
+
+    @staticmethod
+    def _invocation_target(path: str) -> str | None:
+        if not path.startswith(_SKAAL_INVOKE_PREFIX):
+            return None
+        target = path[len(_SKAAL_INVOKE_PREFIX) :]
+        return target or None
+
+    async def invoke(self, function_name: str, kwargs: dict[str, Any]) -> Any:
+        invoker = self._invokers.get(function_name)
+        if invoker is None:
+            raise KeyError(
+                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
+            )
+        return await invoker.invoke(
+            kwargs=kwargs,
+            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
+                function_name,
+                payload,
+                is_stream=False,
+                attempt=attempt,
+            ),
+        )
+
+    def invoke_stream(self, function_name: str, kwargs: dict[str, Any]) -> Any:
+        invoker = self._invokers.get(function_name)
+        if invoker is None:
+            raise KeyError(
+                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
+            )
+        return invoker.invoke_stream(
+            kwargs=kwargs,
+            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
+                function_name,
+                payload,
+                is_stream=True,
+                attempt=attempt,
+            ),
+        )
+
     async def _dispatch(self, method: str, path: str, body: bytes) -> tuple[Any, int]:
         """Route an HTTP request to a registered function."""
         funcs = self._function_cache
 
         if method == "GET" and path in ("/", ""):
             # Only expose @app.function() endpoints in the public index.
-            public = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
+            public = sorted(self._public_functions())
             return {
                 "app": self.app.name,
-                "endpoints": [{"path": f"/{n}", "function": n} for n in public],
+                "endpoints": [
+                    {"path": f"{_SKAAL_INVOKE_PREFIX}{n}", "function": n} for n in public
+                ],
                 "storage": list(self._backends.keys()),
             }, 200
 
@@ -354,7 +408,9 @@ class LocalRuntime:
             return {"status": "ok", "app": self.app.name}, 200
 
         if method == "POST":
-            fn_name = path.lstrip("/")
+            fn_name = self._invocation_target(path)
+            if fn_name is None:
+                return {"error": f"No function route for {path!r}"}, 404
             if fn_name not in funcs:
                 return {"error": f"No function {fn_name!r}. Available: {sorted(funcs)}"}, 404
 
@@ -385,7 +441,7 @@ class LocalRuntime:
             invoker = self._invokers.get(fn_name)
             try:
                 if invoker is not None:
-                    result = await invoker(**kwargs)
+                    result = await self.invoke(fn_name, kwargs)
                 else:
                     result = await fn(**kwargs) if inspect.iscoroutinefunction(fn) else fn(**kwargs)
                 return result, 200
@@ -456,7 +512,7 @@ class LocalRuntime:
             pass
 
     def build_asgi(self) -> Any:
-        """Return a Starlette ASGI app that serves all ``@app.function()`` endpoints.
+        """Return a Starlette ASGI app for the active runtime surface.
 
         Use this in deployment entry-points where the ASGI server (gunicorn,
         uvicorn) is started externally rather than via :meth:`serve`::
@@ -466,13 +522,14 @@ class LocalRuntime:
 
         Returns:
             A ``starlette.applications.Starlette`` instance wired to
-            :meth:`_dispatch`.
+            the mounted ASGI/WSGI app or, when none is mounted, :meth:`_dispatch`.
         """
         try:
             from starlette.applications import Starlette
+            from starlette.middleware.wsgi import WSGIMiddleware
             from starlette.requests import Request as StarletteRequest
             from starlette.responses import JSONResponse
-            from starlette.routing import Route
+            from starlette.routing import Mount, Route
         except ImportError as exc:
             raise RuntimeError(
                 "build_asgi() requires starlette.\n"
@@ -484,6 +541,29 @@ class LocalRuntime:
             body = await request.body()
             result, status = await self._dispatch(request.method, request.url.path, body)
             return JSONResponse(result, status_code=status)
+
+        async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
+            return JSONResponse({"status": "ok", "app": self.app.name})
+
+        asgi_app = getattr(self.app, "_asgi_app", None)
+        wsgi_app = getattr(self.app, "_wsgi_app", None)
+        if asgi_app is not None:
+            return Starlette(
+                routes=[
+                    Route("/health", _health),
+                    Route("/_skaal/{path:path}", _handle, methods=["GET", "POST"]),
+                    Mount("/", asgi_app),
+                ]
+            )
+
+        if wsgi_app is not None:
+            return Starlette(
+                routes=[
+                    Route("/health", _health),
+                    Route("/_skaal/{path:path}", _handle, methods=["GET", "POST"]),
+                    Mount("/", WSGIMiddleware(wsgi_app)),
+                ]
+            )
 
         return Starlette(
             routes=[
@@ -548,6 +628,7 @@ class LocalRuntime:
         for backend in self._backends.values():
             with contextlib.suppress(Exception):
                 await backend.close()
+        self.app._unbind_runtime(self)
 
     async def _serve_skaal(self) -> None:
         """Expose @app.function() as POST /{name} endpoints via uvicorn + Starlette.
@@ -571,13 +652,12 @@ class LocalRuntime:
             ) from exc
 
         # ── Print startup banner ───────────────────────────────────────────────
-        funcs = self._function_cache
-        public_fns = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
+        public_fns = sorted(self._public_functions())
         scheduled = self._collect_schedules()
 
         banner_lines = [f"  http://{self.host}:{self.port}", ""]
         for name in public_fns:
-            banner_lines.append(f"    POST /{name}")
+            banner_lines.append(f"    POST {_SKAAL_INVOKE_PREFIX}{name}")
         if scheduled:
             banner_lines.append("")
             for name, fn in sorted(scheduled.items()):
@@ -619,7 +699,9 @@ class LocalRuntime:
                     tz = meta.get("timezone", "UTC")
 
                     if isinstance(trigger, Every):
-                        ap_trigger = IntervalTrigger(seconds=cast(Any, trigger.seconds), timezone=tz)
+                        ap_trigger = IntervalTrigger(
+                            seconds=cast(Any, trigger.seconds), timezone=tz
+                        )
                     else:
                         ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
 
@@ -779,6 +861,7 @@ class LocalRuntime:
             import uvicorn
             from starlette.applications import Starlette
             from starlette.middleware.wsgi import WSGIMiddleware
+            from starlette.requests import Request as StarletteRequest
             from starlette.responses import JSONResponse
             from starlette.routing import Mount, Route
         except ImportError as exc:
@@ -791,9 +874,15 @@ class LocalRuntime:
         async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
             return JSONResponse({"status": "ok", "app": self.app.name})
 
+        async def _internal(request: StarletteRequest) -> JSONResponse:
+            body = await request.body()
+            result, status = await self._dispatch(request.method, request.url.path, body)
+            return JSONResponse(result, status_code=status)
+
         asgi_app = Starlette(
             routes=[
                 Route("/health", _health),
+                Route("/_skaal/{path:path}", _internal, methods=["GET", "POST"]),
                 Mount("/", WSGIMiddleware(wsgi_app)),
             ]
         )
@@ -806,6 +895,7 @@ class LocalRuntime:
                     f"  http://{self.host}:{self.port}",
                     "",
                     "    /health  → Skaal health check",
+                    "    /_skaal/* → Skaal internal invoke endpoints",
                     f"    /*       → {attribute}  (Dash / Flask)",
                 ],
             )
@@ -847,9 +937,15 @@ class LocalRuntime:
         async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
             return JSONResponse({"status": "ok", "app": self.app.name})
 
+        async def _handle(request: Any) -> JSONResponse:  # noqa: ANN001
+            body = await request.body()
+            result, status = await self._dispatch(request.method, request.url.path, body)
+            return JSONResponse(result, status_code=status)
+
         wrapped = Starlette(
             routes=[
                 Route("/health", _health),
+                Route("/_skaal/{path:path}", _handle, methods=["GET", "POST"]),
                 Mount("/", asgi_app),
             ]
         )
@@ -862,6 +958,7 @@ class LocalRuntime:
                     f"  http://{self.host}:{self.port}",
                     "",
                     "    /health  → Skaal health check",
+                    "    /_skaal/* → Skaal internal invoke endpoints",
                     f"    /*       → {attribute}  (FastAPI / Starlette)",
                 ],
             )

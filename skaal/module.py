@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import weakref
+from collections.abc import AsyncIterator
+from types import SimpleNamespace
+
 # TYPE_CHECKING import to avoid circular deps at runtime
 from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload
 
 from skaal.types import (
     AccessPattern,
+    BeforeInvoke,
     Bulkhead,
     CircuitBreaker,
     Compute,
@@ -101,6 +106,8 @@ class Module:
         self._schedules: dict[str, Any] = {}
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}  # namespace → mounted module
+        self._before_invoke: list[BeforeInvoke] = []
+        self._runtime_ref: weakref.ReferenceType[Any] | None = None
 
     # ── Registration decorators ────────────────────────────────────────────
 
@@ -572,6 +579,23 @@ class Module:
         self._patterns[name] = p
         return p
 
+    def add_before_invoke(self, hook: BeforeInvoke) -> BeforeInvoke:
+        """Register a hook that runs before every resilience-wrapped invocation."""
+        self._before_invoke.append(hook)
+        return hook
+
+    async def invoke(self, fn: str | Callable[..., Any], **kwargs: Any) -> Any:
+        """Invoke a registered function through the active runtime's resilience stack."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return await runtime.invoke(function_name, kwargs)
+
+    def invoke_stream(self, fn: str | Callable[..., Any], **kwargs: Any) -> AsyncIterator[Any]:
+        """Invoke a registered async iterator function through the active runtime."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return runtime.invoke_stream(function_name, kwargs)
+
     # ── Export / import API ────────────────────────────────────────────────
 
     def export(self, *symbols: Any) -> ModuleExport:
@@ -733,6 +757,67 @@ class Module:
                 result[f"{sub_prefix}{bare}"] = obj
 
         return result
+
+    def _bind_runtime(self, runtime: Any) -> None:
+        self._runtime_ref = weakref.ref(runtime)
+        for submodule in self._submodules.values():
+            submodule._bind_runtime(runtime)
+
+    def _unbind_runtime(self, runtime: Any) -> None:
+        if self._runtime_ref is not None and self._runtime_ref() is runtime:
+            self._runtime_ref = None
+        for submodule in self._submodules.values():
+            submodule._unbind_runtime(runtime)
+
+    def _require_runtime(self) -> Any:
+        runtime = self._runtime_ref() if self._runtime_ref is not None else None
+        if runtime is None:
+            raise RuntimeError(
+                "No active Skaal runtime is bound to this app. "
+                "Start or construct a runtime before calling app.invoke(...)."
+            )
+        return runtime
+
+    async def _prepare_invoke_kwargs(
+        self,
+        function_name: str,
+        kwargs: dict[str, Any],
+        *,
+        is_stream: bool,
+        attempt: int,
+    ) -> dict[str, Any]:
+        ctx = SimpleNamespace(
+            function_name=function_name,
+            kwargs=dict(kwargs),
+            is_stream=is_stream,
+            attempt=attempt,
+        )
+        for hook in self._before_invoke:
+            await hook(ctx)
+        return ctx.kwargs
+
+    def _resolve_invokable(self, fn: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        invokables = {
+            name: obj
+            for name, obj in self._collect_all().items()
+            if callable(obj)
+            and (hasattr(obj, "__skaal_compute__") or hasattr(obj, "__skaal_schedule__"))
+        }
+
+        if isinstance(fn, str):
+            direct = invokables.get(fn)
+            if direct is not None:
+                return fn, direct
+            for function_name, obj in invokables.items():
+                if getattr(obj, "__name__", None) == fn:
+                    return function_name, obj
+            raise KeyError(f"No invokable function named {fn!r}")
+
+        for function_name, obj in invokables.items():
+            if obj is fn:
+                return function_name, obj
+
+        raise KeyError(f"Callable {fn!r} is not registered with module {self.name!r}")
 
     # ── Introspection ──────────────────────────────────────────────────────
 

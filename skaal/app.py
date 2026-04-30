@@ -137,12 +137,15 @@ class App(Module):
             app.mount(auth, prefix="/auth")
             # auth's functions are now accessible at /auth/*
         """
+        normalized = prefix if prefix.startswith("/") else f"/{prefix}"
+        if normalized == "/_skaal" or normalized.startswith("/_skaal/"):
+            raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
         exports = self.use(module)
         # Record the prefix mapping for the deploy engine
         ns = exports.namespace or module.name
         if not hasattr(self, "_mounts"):
             self._mounts: dict[str, str] = {}
-        self._mounts[ns] = prefix
+        self._mounts[ns] = normalized
         return exports
 
     # ── Introspection ──────────────────────────────────────────────────────

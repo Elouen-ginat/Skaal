@@ -11,6 +11,11 @@ from skaal.backends.local_backend import LocalMap
 from skaal.runtime.local import LocalRuntime
 from skaal.storage import Store
 
+
+def _invoke_path(app: App, function_name: str) -> str:
+    return f"/_skaal/invoke/{app.name}.{function_name}"
+
+
 # ── Storage tests ──────────────────────────────────────────────────────────────
 
 
@@ -74,8 +79,8 @@ async def test_runtime_index():
     assert status == 200
     assert "endpoints" in data
     names = [e["function"] for e in data["endpoints"]]
-    assert "increment" in names
-    assert "get_count" in names
+    assert "test-counter.increment" in names
+    assert "test-counter.get_count" in names
 
 
 @pytest.mark.asyncio
@@ -90,14 +95,14 @@ async def test_runtime_health():
 async def test_runtime_function_call():
     runtime = LocalRuntime(_make_counter_app())
     body = json.dumps({"name": "hits"}).encode()
-    data, status = await runtime._dispatch("POST", "/increment", body)
+    data, status = await runtime._dispatch("POST", _invoke_path(runtime.app, "increment"), body)
     assert status == 200
     assert data["name"] == "hits"
     assert data["value"] == 1
 
     # Increment again by 5
     body2 = json.dumps({"name": "hits", "by": 5}).encode()
-    data2, status2 = await runtime._dispatch("POST", "/increment", body2)
+    data2, status2 = await runtime._dispatch("POST", _invoke_path(runtime.app, "increment"), body2)
     assert status2 == 200
     assert data2["value"] == 6
 
@@ -106,11 +111,17 @@ async def test_runtime_function_call():
 async def test_runtime_storage_persists_across_calls():
     runtime = LocalRuntime(_make_counter_app())
 
-    await runtime._dispatch("POST", "/increment", json.dumps({"name": "a"}).encode())
-    await runtime._dispatch("POST", "/increment", json.dumps({"name": "a"}).encode())
-    await runtime._dispatch("POST", "/increment", json.dumps({"name": "b"}).encode())
+    await runtime._dispatch(
+        "POST", _invoke_path(runtime.app, "increment"), json.dumps({"name": "a"}).encode()
+    )
+    await runtime._dispatch(
+        "POST", _invoke_path(runtime.app, "increment"), json.dumps({"name": "a"}).encode()
+    )
+    await runtime._dispatch(
+        "POST", _invoke_path(runtime.app, "increment"), json.dumps({"name": "b"}).encode()
+    )
 
-    data, status = await runtime._dispatch("POST", "/list_counts", b"")
+    data, status = await runtime._dispatch("POST", _invoke_path(runtime.app, "list_counts"), b"")
     assert status == 200
     assert data["counts"]["a"] == 2
     assert data["counts"]["b"] == 1
@@ -119,7 +130,7 @@ async def test_runtime_storage_persists_across_calls():
 @pytest.mark.asyncio
 async def test_runtime_unknown_function():
     runtime = LocalRuntime(_make_counter_app())
-    data, status = await runtime._dispatch("POST", "/no_such_fn", b"{}")
+    data, status = await runtime._dispatch("POST", "/_skaal/invoke/test-counter.no_such_fn", b"{}")
     assert status == 404
     assert "error" in data
 
@@ -127,7 +138,9 @@ async def test_runtime_unknown_function():
 @pytest.mark.asyncio
 async def test_runtime_invalid_json():
     runtime = LocalRuntime(_make_counter_app())
-    data, status = await runtime._dispatch("POST", "/increment", b"not json")
+    data, status = await runtime._dispatch(
+        "POST", _invoke_path(runtime.app, "increment"), b"not json"
+    )
     assert status == 400
     assert "error" in data
 
@@ -136,7 +149,7 @@ async def test_runtime_invalid_json():
 async def test_runtime_bad_args():
     runtime = LocalRuntime(_make_counter_app())
     # increment() requires 'name', send nothing
-    data, status = await runtime._dispatch("POST", "/increment", b"{}")
+    data, status = await runtime._dispatch("POST", _invoke_path(runtime.app, "increment"), b"{}")
     assert status == 422
     assert "error" in data
 
@@ -144,8 +157,18 @@ async def test_runtime_bad_args():
 @pytest.mark.asyncio
 async def test_runtime_method_not_allowed():
     runtime = LocalRuntime(_make_counter_app())
-    data, status = await runtime._dispatch("DELETE", "/increment", b"")
+    data, status = await runtime._dispatch("DELETE", _invoke_path(runtime.app, "increment"), b"")
     assert status == 405
+
+
+@pytest.mark.asyncio
+async def test_runtime_legacy_public_function_route_is_gone():
+    runtime = LocalRuntime(_make_counter_app())
+    data, status = await runtime._dispatch(
+        "POST", "/increment", json.dumps({"name": "hits"}).encode()
+    )
+    assert status == 404
+    assert "error" in data
 
 
 # ── End-to-end: actual TCP server ─────────────────────────────────────────────

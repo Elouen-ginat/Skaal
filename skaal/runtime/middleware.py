@@ -21,10 +21,11 @@ No third-party dependencies; each primitive is ~30 lines.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import random
 import time
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
 from typing import Any, Callable
 
 from skaal.errors import SkaalUnavailable
@@ -170,6 +171,11 @@ class _RateLimiter:
 # ── Retry with jittered backoff ──────────────────────────────────────────────
 
 
+_current_attempt: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "skaal_current_attempt", default=1
+)
+
+
 def _delay_seconds(policy: RetryPolicy, attempt: int) -> float:
     """Return seconds to sleep before *attempt* (1-indexed)."""
     base = policy.base_delay_ms / 1000.0
@@ -191,6 +197,7 @@ async def _with_retry(
 ) -> Any:
     last: BaseException | None = None
     for attempt in range(1, policy.max_attempts + 1):
+        token = _current_attempt.set(attempt)
         try:
             return await call()
         except Exception as exc:  # noqa: BLE001
@@ -198,6 +205,8 @@ async def _with_retry(
             if attempt >= policy.max_attempts:
                 break
             await asyncio.sleep(_delay_seconds(policy, attempt))
+        finally:
+            _current_attempt.reset(token)
     assert last is not None  # for type-checkers
     raise last
 
@@ -238,13 +247,65 @@ class ResilientInvoker:
             self._fallback = fallback_lookup(compute.circuit_breaker.fallback)
 
     async def __call__(self, **kwargs: Any) -> Any:
-        async def _raw() -> Any:
-            if inspect.iscoroutinefunction(self.fn):
-                return await self.fn(**kwargs)
-            return self.fn(**kwargs)
+        return await self.invoke(kwargs=kwargs)
 
+    async def invoke(
+        self,
+        *,
+        kwargs: dict[str, Any] | None = None,
+        before_attempt: Callable[[int, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+    ) -> Any:
+        payload = dict(kwargs or {})
+
+        async def _raw() -> Any:
+            call_kwargs = dict(payload)
+            if before_attempt is not None:
+                call_kwargs = await before_attempt(_current_attempt.get(), call_kwargs)
+            if inspect.iscoroutinefunction(self.fn):
+                return await self.fn(**call_kwargs)
+            return self.fn(**call_kwargs)
+
+        return await self._apply_policies(_raw, payload)
+
+    def invoke_stream(
+        self,
+        *,
+        kwargs: dict[str, Any] | None = None,
+        before_attempt: Callable[[int, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+    ) -> AsyncIterator[Any]:
+        payload = dict(kwargs or {})
+
+        async def _start() -> tuple[bool, Any, AsyncIterator[Any]]:
+            call_kwargs = dict(payload)
+            if before_attempt is not None:
+                call_kwargs = await before_attempt(_current_attempt.get(), call_kwargs)
+            if inspect.iscoroutinefunction(self.fn):
+                result = await self.fn(**call_kwargs)
+            else:
+                result = self.fn(**call_kwargs)
+            iterator = self._ensure_async_iterator(result)
+            try:
+                first_item = await anext(iterator)
+            except StopAsyncIteration:
+                return False, None, iterator
+            return True, first_item, iterator
+
+        async def _stream() -> AsyncIterator[Any]:
+            has_first, first_item, iterator = await self._apply_policies(_start, payload)
+            if has_first:
+                yield first_item
+            async for item in iterator:
+                yield item
+
+        return _stream()
+
+    async def _apply_policies(
+        self,
+        raw_call: Callable[[], Awaitable[Any]],
+        kwargs: dict[str, Any],
+    ) -> Any:
         # innermost → outermost
-        call: Callable[[], Awaitable[Any]] = _raw
+        call: Callable[[], Awaitable[Any]] = raw_call
 
         if self._ratelimit is not None:
             _inner = call
@@ -292,27 +353,22 @@ class ResilientInvoker:
 
         return await call()
 
+    @staticmethod
+    def _ensure_async_iterator(result: Any) -> AsyncIterator[Any]:
+        if inspect.isasyncgen(result):
+            return result
+        if hasattr(result, "__aiter__"):
+            return result
+        raise TypeError("invoke_stream() requires an async iterator result")
+
 
 def wrap_handler(
     fn: Callable[..., Any],
     fallback_lookup: Callable[[str], Callable[..., Any] | None] | None = None,
-) -> Callable[..., Awaitable[Any]]:
+) -> ResilientInvoker:
     """Wrap *fn* with resilience middleware if it declares any policies.
 
-    Returns *fn* unchanged when no policies are attached — the caller can
-    blindly ``await wrap_handler(fn)(**kwargs)`` without paying overhead
-    for handlers that don't opt-in.
+    Returns a callable invoker object for both direct calls and stream calls.
     """
     compute = getattr(fn, "__skaal_compute__", None)
-    if not isinstance(compute, Compute) or not (
-        compute.retry or compute.circuit_breaker or compute.rate_limit or compute.bulkhead
-    ):
-        # No policies — return a thin async adapter so the call shape is uniform.
-        async def _passthrough(**kwargs: Any) -> Any:
-            if inspect.iscoroutinefunction(fn):
-                return await fn(**kwargs)
-            return fn(**kwargs)
-
-        return _passthrough
-
-    return ResilientInvoker(fn, compute, fallback_lookup)
+    return ResilientInvoker(fn, compute if isinstance(compute, Compute) else None, fallback_lookup)

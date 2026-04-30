@@ -1,0 +1,382 @@
+# Skaal — user gaps report
+
+A review of v0.2.0 from the user's point of view: things solo-dev → production users will reasonably want to do, what happens today, where the gap is, and how badly it hurts. Focus is **ergonomics + capability**; observability/security/license/maturity gaps live in [`what_is_needed_for_prod.md`](./what_is_needed_for_prod.md).
+
+Severity legend:
+
+- **P0** — fundamental gap. A common user story can't be expressed without dropping out of the framework, or the framework silently does the wrong thing.
+- **P1** — friction. Possible, but the user has to reach around the framework or learn an undocumented escape hatch.
+- **P2** — polish. The path works; the experience could be smoother.
+
+Each finding cites file:line evidence verified against current code.
+
+---
+
+## Top of list — start here
+
+If the next implementation pass is one PR, these are the items that buy the most user-visible improvement, ranked by reach × severity:
+
+1. **Path-param HTTP routing + method routing** — every CRUD-style API needs `GET /items/{id}`. Today only `POST /{function_name}` works. P0. ([§B.1](#b1-httpapi-surface))
+2. **Pagination on `Store[T]`** — `Store.list()` returns *all* rows. Any non-toy KV store needs cursor/limit. P0. ([§B.2](#b2-kv-store-and-storage-tiers))
+3. **Secondary indexes on `Store[T]`** — only `scan(prefix)` exists, so `Users.find_by_email(...)` is impossible without dropping to relational. P0. ([§B.2](#b2-kv-store-and-storage-tiers))
+4. **Built-in auth middleware** — `APIGateway.auth` is declared but never consumed; runtime exposes everything publicly. P0. ([§B.1](#b1-httpapi-surface))
+5. **Blob / object storage tier** — there is no `@app.blob` and no S3/GCS backend, so any user with files drops the framework entirely. P0. ([§B.2](#b2-kv-store-and-storage-tiers))
+6. **Agent persistent-state save/load** — `__skaal_persistent_fields__` is collected but the runtime never loads or persists it; "fields marked @persistent survive restarts" in the docstring is currently false. P0 correctness gap. ([§B.7](#b7-agents))
+7. **`skaal init` / project scaffolding + `skaal dev` watch mode** — no zero-config first-run; no hot-reload. P0 for adoption. ([§A.1](#a1-cli-zero-config-and-dev-loop))
+8. **Solver-failure error messages with closest-match suggestions** — today an unsatisfiable plan surfaces as a Z3 stack trace. P0 for first-time users. ([§A.4](#a4-error-messages-and-validation))
+9. **Streaming responses + ASGI-native routing for Skaal functions** — required for any LLM use, and Skaal already markets a vector tier. P0 for AI users. ([§B.6](#b6-compute--functions))
+10. **Catalog overrides per environment** (dev / staging / prod) without copy-pasting whole TOML files. P1 but hits everyone past the prototype stage. ([§A.5](#a5-catalog-ergonomics))
+
+---
+
+## A. Ergonomics gaps
+
+### A.1. CLI zero-config and dev loop
+
+**What users want:** `pip install skaal && skaal init && skaal dev` — get to "code reload on save, hitting localhost" without reading docs.
+
+**What happens today:**
+- No `skaal init` / `skaal new` command — the CLI in `skaal/cli/main.py:25-34` registers `run / plan / build / deploy / destroy / catalog / diff / infra / migrate / stacks` and nothing that scaffolds a project.
+- No `skaal dev` watch-mode. `skaal run` (`skaal/cli/run_cmd.py:62-67`) starts a server but does not watch source files; users must Ctrl-C and restart on every edit.
+- `skaal run` requires `MODULE:APP` either as a positional or under `[tool.skaal]` in `pyproject.toml`. The fallback is real and the error message is good, but it is not surfaced in `--help`.
+- No tab-completion install path documented (Typer supports it; nothing in the CLI registers it).
+
+**Why it's awkward:** First-run experience for a solo dev is "read several docs pages, hand-write `pyproject.toml`, hand-write or copy a catalog, then run." Compare to `cargo new`, `npm init`, `django-admin startproject`. After that, the inner loop has no hot-reload.
+
+**Severity:** P0 (adoption). Fix is mechanical: add `skaal init <name>` (writes `pyproject.toml`, sample `app.py`, copies a starter `catalogs/local.toml`) and `skaal dev` (uvicorn `--reload` plus a watcher on the catalog).
+
+---
+
+### A.2. Testing story
+
+**What users want:** Unit-test a `Module` in pytest with in-memory backends, no HTTP server, no temp directories.
+
+**What happens today:**
+- `LocalRuntime` (`skaal/runtime/local.py:29-82`) is instantiable from Python, but it is undocumented in the README and has no `pytest` fixture / context-manager helper.
+- `skaal/api.py` exposes `run`, `serve_async`, `serve_blocking` but none yield a "started, ready, here is a callable" handle for tests.
+- No `tests/` examples in `examples/` — users have nothing to copy.
+- No documented in-memory backend for relational/vector tiers in tests; the local KV backend works, but `@app.relational` resolves to SQLite-on-disk by default.
+- No mock/double for `Store[T]` — users have to register the class against a runtime they spun up by hand.
+
+**Severity:** P1. A single `from skaal.testing import build_test_app` (or a `pytest_plugin` wired via `pyproject.toml` plugin entry-points) would land this. Add at least one example test under `examples/02_todo_api/tests/`.
+
+---
+
+### A.3. Decorator and constraint-syntax consistency
+
+**What users want:** Pass the same string syntax to every decorator, with validation at decoration time.
+
+**What happens today:**
+- `Latency("< 5ms")` is parsed eagerly at construction (`skaal/types/constraints.py:52-83`) with a regex that rejects `"5ms"` (missing operator) — fine.
+- `@storage(read_latency=...)` and `@relational(...)` accept either a `Latency` or a `str`. Decorators in `skaal/decorators.py:44-58` coerce strings.
+- `@app.function(compute=Compute(latency="< 50ms"))` does **not** pre-coerce: the `Compute` dataclass takes the string straight (`skaal/decorators.py:223-264` flow). The mismatch surfaces only at solve time.
+- `Throughput`'s unit regex captures any tail (`(.+)`), so `"> 1000 frobnications/s"` is accepted at parse time and only rejected (if at all) when the solver compares against catalog units.
+- Constraint vocabulary is not documented anywhere user-facing: spaces, `<` vs `<=`, valid units, valid `access_pattern` strings, `metric` strings, `durability` enum strings — users learn by reading the source.
+
+**Severity:** P1. Add a single page (`docs/constraints.md`) listing the grammar; tighten the `Throughput` parser to a closed set of units; coerce at every decorator boundary so `solve` only ever sees typed values.
+
+---
+
+### A.4. Error messages and validation
+
+**What users want:** When something is wrong, the message names the file/decorator/constraint and suggests the fix.
+
+**What happens today:**
+- The CLI error boundary (`skaal/cli/_errors.py:18-39`) captures and prints exception text, hiding tracebacks unless `-vv`. Most cases are fine.
+- An unsatisfiable solve surfaces as a generic exception with no "closest backend" hint or "you asked for `read_latency < 1ms` but the cheapest local backend is `sqlite` at `< 5ms`" guidance. Z3's UNSAT is a black box to a first-time user.
+- `AccessPattern("badvalue")` raises a bare `ValueError: 'badvalue' is not a valid AccessPattern` from the enum — no list of legal values, no "did you mean…".
+- Forgetting `pip install "skaal[vector]"` and using `@app.vector(...)` raises `ImportError` from inside the decorator — no "install the `vector` extra" message.
+- `skaal/api.py` has four `except Exception:  # noqa: BLE001` paths (lines 589, 818, 870, 964) that swallow without logging. (Already noted in the prod-readiness review; keeping it here because the *user* feels these as "it just silently did nothing.")
+- Bad TOML in a catalog surfaces as `tomllib.TOMLDecodeError` with no Skaal context.
+
+**Severity:** P0 for the solver-UNSAT case; P1 for the rest. The solver case alone causes more "give up and move on" moments than any other ergonomic issue.
+
+---
+
+### A.5. Catalog ergonomics
+
+**What users want:** Per-environment overrides (dev catalog inherits from base, swaps the storage tier); a way to ask "what backends could I pick?"; templates for `[storage.X.deploy]`.
+
+**What happens today:**
+- `skaal catalog` exists (`skaal/cli/catalog_cmd.py`) and prints backends; not advertised in any doc.
+- No catalog inheritance / overlay. To run dev vs prod with different latency budgets, users copy `catalogs/local.toml` and edit. Drift is on the user.
+- `Catalog.from_raw()` validates `[storage.X.deploy]` (`skaal/catalog/models.py:78-100`), but there is no published schema or "skaal catalog validate" command — users discover required fields only on failure.
+- Catalog file lookup fallback chain (`skaal/catalog/loader.py:44-134`) is reasonable but invisible: when it fails, the error names the search list, but users do not know that list existed.
+
+**Severity:** P1 across the board. Adding `[extends = "../base.toml"]` and `skaal catalog validate <path>` covers most of it.
+
+---
+
+### A.6. Plan/lock readability and "why this backend?"
+
+**What users want:** Run `skaal plan --explain Storage.Profiles` and see the constraint, the candidate backends, and which constraint each one violated.
+
+**What happens today:**
+- `plan.skaal.lock` is JSON. `_print_plan_table` (`skaal/cli/plan_cmd.py:22-45`) renders it readably to stdout and includes a `reason` field per assignment, which is the strongest part of the UX.
+- No `--explain`, no per-candidate breakdown, no "fell back from `dynamodb` because region absent in catalog."
+- No `skaal diff plan.skaal.lock` integration to compare two plans pretty-printed.
+
+**Severity:** P2 — but high-value the day a user's prod stack picks something different from dev.
+
+---
+
+### A.7. Migration UX
+
+**What users want:** Dry-run the migration, see how many rows, see the planned stage transitions, get progress while shadow-writes catch up.
+
+**What happens today (`skaal/cli/migrate_cmd.py:17-60`):**
+- `start / advance / rollback / status` are wired.
+- No `--dry-run`. No row-count or ETA. No documentation of the six stages from ADR 004 in the CLI help — users must read `docs/design/004-six-stage-migration.md` to know what `advance` does next.
+- Rollback semantics are not explained at the CLI surface.
+
+**Severity:** P1 for solo devs, P0 the first time a team runs a real migration on a system they trust.
+
+---
+
+### A.8. Examples don't progress and miss common patterns
+
+**What users want:** A ladder — hello-world → CRUD → background jobs → events → agents → deploy.
+
+**What happens today (`examples/`):**
+- `01_hello_world`, `02_todo_api`, `03_dash_app`, `04_mesh_counter`, `05_task_dashboard` exist.
+- No example uses `@app.agent` despite agents being a first-class feature.
+- No example uses `@app.schedule`.
+- No example uses `EventLog` / `Projection` / `Saga` / `Outbox` (the runtime engines exist — see §C — but users would not know).
+- No example with auth, file upload, websockets, or a test file.
+- The complexity curve across 01→05 is roughly flat: every example is a small KV/relational app.
+
+**Severity:** P1. Adoption-shaped — users who want to evaluate Skaal for a "real" app cannot find prior art for half its surface area.
+
+---
+
+### A.9. Module mounting and cross-module references
+
+**What users want:** Compose `auth` into `api` without name collisions or guessing how exports work.
+
+**What happens today (`skaal/module.py:629-735`, `skaal/app.py:127-146`):**
+- `module.export(...)` returns a `ModuleExport` with `.storage`, `.agents`, `.functions`, `.channels` as plain `dict[str, Any]` — IDE-opaque, not a typed namespace.
+- `app.use(module)` namespaces by module name by default; `app.use(module, namespace=None)` merges into root and detects collisions only on already-exported symbols.
+- `app.mount(module, prefix=...)` records the prefix but the relationship between the prefix and the URL surface generated by deploy is implicit.
+- Cross-module references are by name string in the solver's graph; if module A imports `B.Users`, the wiring works but the user never types it.
+
+**Severity:** P2 today (most users have one module), P0 once Skaal pitches "publish reusable `skaal-<x>` packages on PyPI" — the encapsulation story has to hold.
+
+---
+
+### A.10. Type hints for stored values
+
+**What users want:** `await Counts.get("k")` returns `int` to mypy/Pyright.
+
+**What happens today:**
+- `Store[T]` is `Generic[T]` (`skaal/storage.py:55-160`); the methods are `classmethod`s using `T` from the class generic. Static checkers do follow this when the user writes `class Counts(Store[int]): ...`.
+- `await` of `Store.list()` returns `list[tuple[str, T]]` — fine.
+- The opacity is in `ModuleExport.storage["Users"]` (a plain `dict`) and in the absence of `Latency` literal-string typing, so `read_latency="< 5ms"` is just `str` to checkers.
+
+**Severity:** P2.
+
+---
+
+## B. Capability gaps
+
+### B.1. HTTP/API surface
+
+The runtime in `skaal/runtime/local.py` is the headline gap area for users coming from FastAPI/Flask.
+
+Update: ADR 014 reframes this surface. Skaal now treats `@app.function()` as compute plus resilience, and the supported path for HTTP shape is `mount_asgi(...)` with FastAPI / Starlette / Litestar. See `docs/http.md` and `docs/design/014-http-routing-overhaul.md`.
+
+| Want                                        | Today (`runtime/local.py`)                                                                                                    | Sev    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `GET /items/{id}` — path params, methods    | Only `POST /<fn>`, `GET /`, `GET /health` (`local.py:340-397`). No path-param parser.                                         | **P0** |
+| Auth (OAuth/JWT/sessions)                   | `APIGateway.auth` exists in `skaal/components.py:191-230` but no deploy target consumes it; runtime has no auth middleware.   | **P0** |
+| CORS, request logging middleware            | None. ASGI mount via `mount_asgi()` is the only escape.                                                                       | P1     |
+| Request validation (typed request schemas)  | Body must be a JSON object (`local.py:367`); arg validation is whatever the function signature does at call time.             | P1     |
+| OpenAPI                                     | `GET /` returns `{path, function}`; no schema. Users mounting FastAPI get OpenAPI for the FastAPI side only.                  | P1     |
+| WebSockets                                  | None; channels are server-side only.                                                                                          | P1     |
+| File upload (multipart)                     | `_dispatch` assumes JSON body.                                                                                                | P1     |
+| SSE / streaming response                    | Functions return a single value (`local.py:391`).                                                                             | **P0** for LLM users |
+| Static asset serving                        | None. Mount ASGI/WSGI for it.                                                                                                 | P1     |
+
+The single biggest user surprise is path-param routing — most teams hit it within an hour and conclude Skaal is "not for HTTP APIs."
+
+---
+
+### B.2. KV `Store` and storage tiers
+
+| Want                                       | Today                                                                                                       | Sev    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ------ |
+| Pagination / cursor on `list()`            | `Store.list()` returns everything (`storage.py:225-230`); `scan(prefix)` is full-scan.                      | **P0** |
+| Secondary indexes on `Store[T]`            | None; only prefix scans (`storage.py:233-238`).                                                             | **P0** |
+| Per-row TTL (`@storage(retention=...)`)    | `retention` is parsed and consumed by the solver for catalog matching (`solver/storage.py:78`) but no backend implements per-row expiry — the SQLite/Postgres/Local KV backends have no TTL fields. | **P0** for session stores |
+| Blob / object tier                         | No `@app.blob`, no S3 / GCS backend in `skaal/backends/` or `pyproject.toml` plugin entry points.           | **P0** |
+| Cache layer (Redis-as-cache, not KV store) | Redis backend is a KV store; no TTL on `set`, no eviction policy plumbed.                                   | P1     |
+| Cross-tier transactions                    | `Store.update()` is atomic within KV; relational session is atomic; no cross-tier primitive. Outbox covers the channel→storage case. | P1 |
+| Multi-region replication                   | Solver and deploy are per-region. None.                                                                     | P2     |
+| Encryption at rest config                  | Cloud defaults apply; not user-configurable through Skaal.                                                  | P2     |
+| Full-text search                           | None; PostgreSQL `tsvector` is reachable via raw SQL only.                                                  | P1     |
+| Time-series / graph                        | None.                                                                                                       | P2     |
+
+**Note (correction to the verification agent):** the relational tier *is* now wired through SQLModel — `skaal/relational.py` and `PostgresBackend._ensure_relational_engine` (`backends/postgres_backend.py:95-107`, `242-255`). The KV facade is no longer the only option for SQL-resolving storage. DynamoDB and Firestore remain KV-only.
+
+---
+
+### B.3. Relational tier (`skaal/relational.py`)
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Migrations beyond `create_all` (Alembic)   | `ensure_schema()` calls SQLAlchemy `create_all`. No version table, no diff, no rollback. ADR 004's six-stage flow is for KV migrations, not relational schema migrations. | **P0** for any team past first deploy |
+| Joins                                      | Available via the yielded SQLModel `AsyncSession` — works, but undocumented.                                | P2  |
+| Raw SQL escape hatch                       | `session.exec(text("..."))` works but is undocumented.                                                      | P2  |
+| Read replicas                              | None.                                                                                                       | P1  |
+
+---
+
+### B.4. Vector tier (`skaal/vector.py`)
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Hybrid search (vector + BM25 / keyword)    | `similarity_search` is vector-only.                                                                          | P1  |
+| Rich metadata filtering                    | A `filter` dict is passed to the backend; expressiveness is whatever the LangChain adapter supports.        | P1  |
+| Re-embedding on model change               | None; changing `__skaal_embeddings__` orphans existing vectors.                                              | P1  |
+| Namespaces / collections                   | One per `@app.vector` class; cross-namespace queries require multiple decorators.                            | P2  |
+
+---
+
+### B.5. Channels / events / queues
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Consumer groups                            | `EventLog.subscribe(group=...)` exists (`patterns.py:119-151`); on Redis Streams the backend honours groups (`backends/redis_channel.py:107`). On the local KV-backed log, it's a single offset per group. | P1 |
+| Dead-letter queue                          | None. Projection engine swallows handler exceptions silently (`runtime/engines/projection.py:52-56`); the comment promises a "strict-mode" path "in a later phase." | **P0** for production |
+| Replay by timestamp                        | Replay is by integer offset (`patterns.py:112-117`); no time index.                                         | P1  |
+| Exactly-once                               | `Outbox.delivery` accepts `"exactly-once"` (`patterns.py:316`) but the OutboxEngine guarantees only at-least-once relay; user code must dedupe.                                                       | P1 documented gap |
+| Durable subscription cursors across restart | Cursors live in the storage backend the channel resolves to. Local backend = lost on restart; Redis = durable. | P1 conditional |
+| Channel-to-channel routing                 | None — user writes a function.                                                                              | P2  |
+
+---
+
+### B.6. Compute / functions
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Long-running / background jobs             | `@app.function` is request/response. `@app.schedule` is recurring. No "fire-and-forget" or "delayed once" primitive — users build it from a Channel + worker function. | **P0** |
+| One-shot delayed jobs ("remind me in 1 h") | None; `Cron`/`Every` only.                                                                                   | P1  |
+| Streaming response / async generator       | Functions return a single value (`local.py:391`). Required for LLM use.                                      | **P0** for AI |
+| GPU compute                                | Solver carries `compute_type` ("cpu","gpu","tpu") (`types/compute.py`) but the bundled catalogs (`catalogs/aws.toml`, `catalogs/gcp.toml`) define no GPU instance options. | **P0** for ML |
+| Custom container images                    | Deploy generators bundle Python deps; no path to "ship this Dockerfile."                                     | P1  |
+| Secret injection at deploy / runtime       | No integration with AWS Secrets Manager / GCP Secret Manager / Pulumi secrets. `connection_env` slot exists in `ExternalComponent` (`components.py:79-100`) but is not consumed. | **P0** |
+| Env-specific dependencies                  | None.                                                                                                       | P1  |
+| Per-call retry / circuit breaker for *outbound* HTTP | Function-level resilience (`runtime/middleware.py`) wraps the function as a whole, not its outbound HTTP calls. | P1 |
+| Returning a stream from `@app.function`    | Not supported (single JSON return).                                                                          | P0  |
+| Scheduled functions invocable via HTTP     | `@app.schedule` functions are also exposed via POST (`local.py:332`). Convenient for testing, awkward for security — they have no auth and their existence isn't advertised in `GET /`. | P1 |
+
+---
+
+### B.7. Agents
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Persistent fields survive restart          | `__skaal_persistent_fields__` is collected on the class (`agent.py:42-64`) but **no runtime code reads it.** Grep shows two hits, both in `agent.py`. The docstring claim is currently false. | **P0** correctness |
+| Concurrency control on a single identity   | The runtime does not serialize calls to the same agent; user must add `asyncio.Lock`.                        | **P0** correctness |
+| Agent-to-agent calls                       | None; mediate via Channel.                                                                                   | P1  |
+| Sharding / placement                       | None.                                                                                                        | P1  |
+| Leasing / eviction                         | None; long-running clusters leak.                                                                            | P1  |
+| Timers / reminders                         | None — combine Channel + scheduled function.                                                                 | P1  |
+| Observe agent state without invoking       | Expose a `get_state` handler manually.                                                                       | P2  |
+
+The persistence gap is the single most surprising one — the README and class docstring both promise it.
+
+---
+
+### B.8. Schedules (`skaal/schedule.py`, `module.schedule`)
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Distributed lock (don't fire on every replica) | None at the framework level. APScheduler-local fires once per process; cloud schedulers fire once per rule but multi-instance Skaal deployments behind a custom invoker don't have a documented contract. | **P0** for multi-replica |
+| Overlapping-firing policy                  | Scheduler-defined, not exposed.                                                                              | P1  |
+| Missed-fire policy                         | Scheduler-defined, not exposed (`misfire_grace_time` etc.).                                                  | P1  |
+| Timezone correctness                       | `timezone="..."` is accepted (`module.py:513`) and passed through; cloud-side honoring is unverified end-to-end. | P1 |
+| Dynamic schedules at runtime               | Schedules are decorator-static.                                                                              | P1  |
+
+---
+
+### B.9. Multi-target / multi-env / secrets
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| `dev` / `staging` / `prod` with different storage choices | Stack profiles (`api.py:408-423`) carry `env`, `invokers`, `labels`, `enable_mesh` per stack — *not* a backend override. Users must maintain separate catalogs. | **P0** for teams |
+| Multi-region                               | One `region` per deploy call; multi-region = scripted multiple calls.                                        | P1  |
+| Multi-account                              | Pulumi can; Skaal has no surface for it.                                                                     | P1  |
+| Canary / blue-green                        | None.                                                                                                        | P1  |
+| Env-specific config (env vars / secrets)   | Pulumi config can be passed; no Skaal-level abstraction for "this app needs `DB_DSN`, fetch from Secrets Manager." | **P0** |
+| Feature flags                              | None.                                                                                                        | P2  |
+
+---
+
+### B.10. Inter-service and external integration
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Calling another Skaal app                  | No service-discovery / RPC primitive. Use HTTP.                                                              | P1  |
+| External HTTP clients with retry / breaker | The function-scope policies don't cover individual outbound calls; users wire `httpx` + tenacity by hand.    | P1  |
+| Publish to a non-Skaal Kafka / SNS         | Channels are Skaal-internal.                                                                                 | P1  |
+| GraphQL / gRPC                             | None; mount via ASGI for GraphQL.                                                                            | P2  |
+
+---
+
+### B.11. Frontend / static / TLS
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Static asset serving                       | None native. Dash/Flask works via `mount_wsgi` (`app.py:42-86`); a SPA needs ASGI mount + StaticFiles.       | P1  |
+| Custom domain / TLS                        | Not in the deploy surface; configured in Pulumi or cloud console.                                            | P1  |
+| CDN / edge functions                       | None.                                                                                                        | P2  |
+
+---
+
+### B.12. Data lifecycle and compliance
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| GDPR cascade delete across modules         | None; cascade is on the user.                                                                                | **P0** for privacy-regulated apps |
+| Data residency enforcement                 | `residency` is parsed and the solver carries it (`solver/storage.py:74`) but multi-store residency consistency is not enforced. | **P0** for regulated industries |
+| Backup / restore / point-in-time recovery  | Cloud-native; not surfaced through Skaal.                                                                    | P1  |
+| Export / import to external systems        | None.                                                                                                        | P1  |
+
+---
+
+### B.13. AI / LLM-specific
+
+Skaal markets the vector tier; users will reasonably expect more LLM affordances.
+
+| Want                                       | Today                                                                                                       | Sev |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --- |
+| Streaming token responses                  | Function return is a single JSON value. (Repeated from §B.6.)                                                | **P0** |
+| RAG primitive                              | Vector tier exists; users compose retrieval + LLM call by hand.                                              | P1  |
+| LLM call abstraction (`@app.llm(...)`)     | None; users call `anthropic` / `openai` SDKs directly.                                                       | P1  |
+| Eval harness                               | None.                                                                                                        | P2  |
+
+---
+
+## C. Things the agents flagged as missing that are actually present
+
+The capability review draft over-claimed in a few places. These are present and working — implementation pass should *not* re-do them:
+
+- **Projection / Saga / Outbox runtime engines**: the patterns are not metadata stubs. Real engines exist:
+  - `skaal/runtime/engines/projection.py` — `ProjectionEngine` tails an `EventLog` and applies a registered handler, with checkpointing via `subscribe()`.
+  - `skaal/runtime/engines/saga.py` — `SagaEngine` + `SagaExecutor`, supporting both coordination strategies.
+  - `skaal/runtime/engines/outbox.py` — `OutboxEngine` drains via polling.
+  - `skaal/runtime/engines/base.py:24-39` dispatches by isinstance.
+  Real gaps in the patterns (silent error swallowing in `projection.py:52-56`, no DLQ, "strict mode" deferred) are listed under §B.5.
+- **Per-function resilience policies** (retry, circuit breaker, rate limit, bulkhead) — implemented in `skaal/runtime/middleware.py` and wired in `skaal/runtime/local.py:66-71`. Gap is *outbound* HTTP, not function-level.
+- **Request body size limit** — `_MAX_BODY_SIZE = 10 MiB` enforced (`runtime/local.py:14`, 429-440), returns 413.
+- **`/health` endpoint** — exists (`runtime/local.py:353, 491, 598, 796, 852`). `/ready` and `/metrics` are still missing — see prod-readiness doc.
+- **Structured logging** — present (`skaal/cli/_logging.py` JsonLogFormatter; ~120 log calls across the codebase). Gap is metrics/tracing, not logs.
+- **SQLModel-backed relational tier** — present and wired through `skaal/relational.py` + `PostgresBackend._ensure_relational_engine`.
+
+---
+
+## Cross-references
+
+- Operational/security/maturity gaps: [`what_is_needed_for_prod.md`](./what_is_needed_for_prod.md)
+- Storage tier rationale: [`new_storage.md`](./new_storage.md)
+- Architecture decisions: [`design/`](./design/)

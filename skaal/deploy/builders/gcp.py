@@ -216,7 +216,9 @@ def build_pulumi_stack(
                 "timeZone": timezone,
                 "region": "${gcp:region}",
                 "httpTarget": {
-                    "uri": ("${" "cloud-run-service.statuses[0].url" "}" + f"/{target_fn}"),
+                    "uri": (
+                        "${" "cloud-run-service.statuses[0].url" "}" + f"/_skaal/invoke/{target_fn}"
+                    ),
                     "httpMethod": "POST",
                     "headers": {"Content-Type": "application/json"},
                     "body": base64.b64encode(body_bytes).decode(),

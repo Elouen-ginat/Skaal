@@ -50,6 +50,7 @@ from skaal.types.deploy import (
     StackProfile,
     TargetName,
 )
+from skaal.types.invoke import BeforeInvoke, InvokeContext, StreamFn
 from skaal.types.schema import apply_migrations, migrate_from
 
 __all__ = [
@@ -87,6 +88,10 @@ __all__ = [
     "StackOutputs",
     "StackProfile",
     "TargetName",
+    # invoke
+    "BeforeInvoke",
+    "InvokeContext",
+    "StreamFn",
     # compute
     "Bulkhead",
     "CircuitBreaker",

@@ -36,6 +36,12 @@ skaal plan --app myapp:app --catalog catalogs/local.toml
 skaal run --app myapp:app
 ```
 
+## HTTP APIs
+
+Skaal treats `@app.function()` as compute plus resilience, not as your public router. Mount FastAPI, Starlette, or Litestar with `app.mount_asgi(...)`, then call Skaal compute through `await app.invoke(...)` or `app.invoke_stream(...)` from your handlers.
+
+See `docs/http.md` for the supported pattern. The runnable examples are `examples.todo_api:app` for CRUD and `examples.fastapi_streaming:app` for SSE.
+
 ## Cloud Deployment
 
 ```bash

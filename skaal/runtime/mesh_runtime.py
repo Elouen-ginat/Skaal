@@ -28,6 +28,7 @@ from typing import Any, cast
 
 _MAX_BODY_SIZE = 10 * 1024 * 1024
 log = logging.getLogger("skaal.runtime")
+_SKAAL_INVOKE_PREFIX = "/_skaal/invoke/"
 
 
 def _format_banner(title: str, lines: list[str]) -> str:
@@ -84,10 +85,15 @@ class MeshRuntime:
 
         from skaal.runtime.middleware import wrap_handler
 
-        self._invokers: dict[str, Any] = {
-            name: wrap_handler(fn, fallback_lookup=self._function_cache.get)
-            for name, fn in self._function_cache.items()
-        }
+        self._invokers: dict[str, Any] = {}
+        _shared_invokers: dict[int, Any] = {}
+        for name, fn in self._function_cache.items():
+            invoker = _shared_invokers.get(id(fn))
+            if invoker is None:
+                invoker = wrap_handler(fn, fallback_lookup=self._function_cache.get)
+                _shared_invokers[id(fn)] = invoker
+            self._invokers[name] = invoker
+        self.app._bind_runtime(self)
 
     # ── Setup (mirrors LocalRuntime) ──────────────────────────────────────────
 
@@ -148,16 +154,64 @@ class MeshRuntime:
             funcs.setdefault(name, fn)
         return funcs
 
+    def _public_functions(self) -> dict[str, Any]:
+        return {
+            qname: obj
+            for qname, obj in self.app._collect_all().items()
+            if callable(obj) and hasattr(obj, "__skaal_compute__")
+        }
+
+    @staticmethod
+    def _invocation_target(path: str) -> str | None:
+        if not path.startswith(_SKAAL_INVOKE_PREFIX):
+            return None
+        target = path[len(_SKAAL_INVOKE_PREFIX) :]
+        return target or None
+
+    async def invoke(self, function_name: str, kwargs: dict[str, Any]) -> Any:
+        invoker = self._invokers.get(function_name)
+        if invoker is None:
+            raise KeyError(
+                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
+            )
+        return await invoker.invoke(
+            kwargs=kwargs,
+            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
+                function_name,
+                payload,
+                is_stream=False,
+                attempt=attempt,
+            ),
+        )
+
+    def invoke_stream(self, function_name: str, kwargs: dict[str, Any]) -> Any:
+        invoker = self._invokers.get(function_name)
+        if invoker is None:
+            raise KeyError(
+                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
+            )
+        return invoker.invoke_stream(
+            kwargs=kwargs,
+            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
+                function_name,
+                payload,
+                is_stream=True,
+                attempt=attempt,
+            ),
+        )
+
     # ── Mesh-aware dispatch ───────────────────────────────────────────────────
 
     async def _dispatch(self, method: str, path: str, body: bytes) -> tuple[Any, int]:
         funcs = self._function_cache
 
         if method == "GET" and path in ("/", ""):
-            public = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
+            public = sorted(self._public_functions())
             return {
                 "app": self.app.name,
-                "endpoints": [{"path": f"/{n}", "function": n} for n in public],
+                "endpoints": [
+                    {"path": f"{_SKAAL_INVOKE_PREFIX}{n}", "function": n} for n in public
+                ],
                 "storage": list(self._backends.keys()),
                 "mesh": json.loads(self._mesh.health_snapshot()),
             }, 200
@@ -170,7 +224,9 @@ class MeshRuntime:
             }, 200
 
         if method == "POST":
-            fn_name = path.lstrip("/")
+            fn_name = self._invocation_target(path)
+            if fn_name is None:
+                return {"error": f"No function route for {path!r}"}, 404
             if fn_name not in funcs:
                 return {"error": f"No function {fn_name!r}. Available: {sorted(funcs)}"}, 404
 
@@ -187,7 +243,7 @@ class MeshRuntime:
             invoker = self._invokers.get(fn_name)
             try:
                 if invoker is not None:
-                    result = await invoker(**kwargs)
+                    result = await self.invoke(fn_name, kwargs)
                 else:
                     result = await fn(**kwargs) if inspect.iscoroutinefunction(fn) else fn(**kwargs)
                 return result, 200
@@ -234,6 +290,7 @@ class MeshRuntime:
         for backend in self._backends.values():
             with contextlib.suppress(Exception):
                 await backend.close()
+        self.app._unbind_runtime(self)
 
     async def _serve_skaal(self) -> None:
         try:
@@ -249,11 +306,10 @@ class MeshRuntime:
                 f"Missing: {exc}"
             ) from exc
 
-        funcs = self._function_cache
-        public_fns = [n for n in sorted(funcs) if not hasattr(funcs[n], "__skaal_schedule__")]
+        public_fns = sorted(self._public_functions())
         banner_lines = [f"  http://{self.host}:{self.port}", ""]
         for name in public_fns:
-            banner_lines.append(f"    POST /{name}")
+            banner_lines.append(f"    POST {_SKAAL_INVOKE_PREFIX}{name}")
         log.info(_format_banner(f"  Skaal mesh runtime — {self.app.name}", banner_lines))
 
         async def _handle(request: StarletteRequest) -> JSONResponse:

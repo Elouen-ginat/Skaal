@@ -36,8 +36,10 @@ from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.storage import Store
 from skaal.types import (
+    BeforeInvoke,
     Bulkhead,
     CircuitBreaker,
+    InvokeContext,
     RateLimitPolicy,
     RetryPolicy,
 )
@@ -88,9 +90,11 @@ __all__ = [
     "Every",
     "Schedule",
     "ScheduleContext",
+    "BeforeInvoke",
     # Resilience types
     "Bulkhead",
     "CircuitBreaker",
+    "InvokeContext",
     "RateLimitPolicy",
     "RetryPolicy",
     # Type namespace
