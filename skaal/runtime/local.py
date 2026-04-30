@@ -12,16 +12,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from skaal.backends.local_backend import LocalMap
+from skaal.runtime.base import _SKAAL_INVOKE_PREFIX, BaseRuntime
 
 if TYPE_CHECKING:
     import httpx
 
     from skaal.runtime.telemetry import RuntimeTelemetry
-    from skaal.types import ReadinessState, TelemetryConfig
+    from skaal.types import TelemetryConfig
 
 _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MiB — reject oversized request bodies
 log = logging.getLogger("skaal.runtime")
-_SKAAL_INVOKE_PREFIX = "/_skaal/invoke/"
 _SKAAL_AGENT_PREFIX = "/_skaal/agents/"
 
 
@@ -36,7 +36,7 @@ def _wire_channel(channel_obj: Any) -> None:
     wire_local(channel_obj)
 
 
-class LocalRuntime:
+class LocalRuntime(BaseRuntime):
     """
     Runs a Skaal App locally as a minimal asyncio HTTP server.
 
@@ -67,113 +67,110 @@ class LocalRuntime:
         auth_http_client: "httpx.AsyncClient | None" = None,
         kv_backend_factory: Callable[[str], Any] | None = None,
     ) -> None:
-        from skaal.runtime.auth import JwtVerifier, resolve_gateway_auth
-        from skaal.runtime.telemetry import RuntimeTelemetry, resolve_telemetry_config
-
-        self.app = app
-        self.host = host
-        self.port = port
-        self._backends: dict[str, Any] = {}
-        self._backend_overrides = backend_overrides or {}
         self._kv_backend_factory = kv_backend_factory or (lambda _namespace: LocalMap())
-        self._started = False
-        self._startup_lock: Any | None = None
-        self._startup_error: str | None = None
-        self._readiness_state: ReadinessState = "starting"
+        self.sagas: dict[str, Any] = {}
+        super().__init__(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backend_overrides,
+            telemetry=telemetry,
+            telemetry_runtime=telemetry_runtime,
+            auth_http_client=auth_http_client,
+        )
+
+    def _initialize_runtime_state(self) -> None:
         self._agent_backends: dict[str, Any] = {}
         self._agent_routes = self._collect_agents()
         self._agent_locks: dict[tuple[str, str], asyncio.Lock] = {}
-        self._patch_storage()
-        self._patch_channels()
-        # Cache the function map so it's not rebuilt on every HTTP request
-        self._function_cache = self._collect_functions()
-        # Pre-build resilience wrappers so breaker/bulkhead state is per-function
-        # and persists across invocations.
-        from skaal.runtime.middleware import wrap_handler
 
-        self._invokers: dict[str, Any] = {}
-        _shared_invokers: dict[int, Any] = {}
-        for name, fn in self._function_cache.items():
-            invoker = _shared_invokers.get(id(fn))
-            if invoker is None:
-                invoker = wrap_handler(fn, fallback_lookup=self._function_cache.get)
-                _shared_invokers[id(fn)] = invoker
-            self._invokers[name] = invoker
-        # Pattern engines are started lazily by ``serve()`` so an asyncio loop
-        # is already running when they spin up background tasks.
-        self._engines: list[Any] = []
-        self.sagas: dict[str, Any] = {}
-        # Storage-class references indexed by name so engines can look them up.
-        self._stores: dict[str, Any] = {
-            qname: obj
-            for qname, obj in self.app._collect_all().items()
-            if isinstance(obj, type) and hasattr(obj, "__skaal_storage__")
-        }
-        self._auth_config = resolve_gateway_auth(app)
-        self._auth_verifier = (
-            JwtVerifier(self._auth_config, http_client=auth_http_client)
-            if self._auth_config is not None
-            else None
-        )
-        resolved_telemetry = resolve_telemetry_config(app, telemetry)
-        self._telemetry = telemetry_runtime or RuntimeTelemetry(app.name, resolved_telemetry)
-        self._telemetry.bind_runtime(self)
-        self.app._bind_runtime(self)
+    def _default_kv_backend(self, namespace: str) -> Any:
+        return self._kv_backend_factory(namespace)
 
-    # ── Setup ──────────────────────────────────────────────────────────────────
-
-    def _patch_storage(self) -> None:
-        """Wire all registered storage classes with appropriate backends."""
-        from skaal.backends.chroma_backend import ChromaVectorBackend
-        from skaal.backends.file_blob_backend import FileBlobBackend
+    def _default_relational_backend(self, namespace: str) -> Any:
         from skaal.backends.sqlite_backend import SqliteBackend
-        from skaal.blob import BlobStore, is_blob_model
-        from skaal.relational import is_relational_model, wire_relational_model
-        from skaal.storage import Store
-        from skaal.vector import VectorStore, is_vector_model
 
-        for qname, obj in self.app._collect_all().items():
-            if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
-                continue
+        return SqliteBackend(Path("skaal_local.db"), namespace=namespace)
 
-            backend = self._backend_overrides.get(qname) or self._backend_overrides.get(
-                obj.__name__
+    def _default_vector_backend(self, namespace: str) -> Any:
+        from skaal.backends.chroma_backend import ChromaVectorBackend
+
+        return ChromaVectorBackend(Path("skaal_chroma"), namespace=namespace)
+
+    def _default_blob_backend(self, namespace: str) -> Any:
+        from skaal.backends.file_blob_backend import FileBlobBackend
+
+        return FileBlobBackend(Path(".skaal") / "blobs", namespace=namespace)
+
+    def _wire_channel_instance(self, channel_obj: Any) -> None:
+        _wire_channel(channel_obj)
+
+    def _root_payload(self) -> dict[str, Any]:
+        public = sorted({*self._public_functions(), *self.app._functions})
+        return {
+            "app": self.app.name,
+            "endpoints": [
+                {"path": f"{_SKAAL_INVOKE_PREFIX}{name}", "function": name} for name in public
+            ],
+            "agents": [
+                {
+                    "path": f"{_SKAAL_AGENT_PREFIX}{name}/{{identity}}/{{handler}}",
+                    "agent": name,
+                    "handlers": sorted(self._agent_handlers(agent_cls)),
+                }
+                for name, (qualified_name, agent_cls) in sorted(self._agent_routes.items())
+                if name == qualified_name
+            ],
+            "storage": list(self.stores.keys()),
+        }
+
+    async def _dispatch_extra_post(
+        self,
+        path: str,
+        request_payload: Any,
+        request_headers: Mapping[str, str],
+    ) -> tuple[Any, int, Exception | None] | None:
+        from skaal.runtime.auth import RuntimeAuthFailure
+
+        agent_target = self._agent_invocation_target(path)
+        if agent_target is None:
+            return None
+        if not isinstance(request_payload, dict):
+            return {"error": "Agent request body must be a JSON object"}, 400, None
+
+        args = request_payload.get("args", [])
+        kwargs = request_payload.get("kwargs", {})
+        if not isinstance(args, list) or not isinstance(kwargs, dict):
+            return (
+                {"error": "Agent request body must be {'args': [...], 'kwargs': {...}}"},
+                400,
+                None,
             )
 
-            if is_relational_model(obj):
-                backend = backend or SqliteBackend(Path("skaal_local.db"), namespace=qname)
-                self._backends[qname] = backend
-                wire_relational_model(obj, backend)
-                continue
+        try:
+            auth_claims, auth_subject = await self._authenticate_request(request_headers)
+        except RuntimeAuthFailure as exc:
+            return {"error": exc.message}, exc.status_code, None
 
-            if is_vector_model(obj):
-                backend = backend or ChromaVectorBackend(Path("skaal_chroma"), namespace=qname)
-                self._backends[qname] = backend
-                cast(type[VectorStore[Any]], obj).wire(backend)
-                continue
+        try:
+            agent_name, identity, handler_name = agent_target
+            del auth_claims, auth_subject
+            result = await self.invoke_agent(agent_name, identity, handler_name, *args, **kwargs)
+            return result, 200, None
+        except KeyError as exc:
+            return {"error": str(exc)}, 404, None
+        except TypeError as exc:
+            return {"error": f"Bad arguments for agent route {path!r}: {exc}"}, 422, None
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc), "traceback": traceback.format_exc()}, 500, exc
 
-            if is_blob_model(obj):
-                backend = backend or FileBlobBackend(Path(".skaal") / "blobs", namespace=qname)
-                self._backends[qname] = backend
-                cast(type[BlobStore], obj).wire(backend)
-                continue
+    async def _close_extra_resources(self) -> None:
+        import contextlib
 
-            if issubclass(obj, Store):
-                backend = backend or LocalMap()
-                self._backends[qname] = backend
-                obj.wire(backend)
-            elif issubclass(obj, VectorStore):
-                backend = backend or ChromaVectorBackend(Path("skaal_chroma"), namespace=qname)
-                self._backends[qname] = backend
-                obj.wire(backend)
-
-    def _patch_channels(self) -> None:
-        """Wire Channel instances registered with the app to LocalChannel."""
-        from skaal.channel import Channel as SkaalChannel
-
-        for obj in self.app._collect_all().values():
-            if isinstance(obj, SkaalChannel):
-                _wire_channel(obj)
+        for backend in self._agent_backends.values():
+            with contextlib.suppress(Exception):
+                await backend.close()
+        self._agent_backends.clear()
 
     # ── Factory methods ────────────────────────────────────────────────────────
 
@@ -404,28 +401,6 @@ class LocalRuntime:
 
     # ── HTTP dispatch ──────────────────────────────────────────────────────────
 
-    def _collect_functions(self) -> dict[str, Any]:
-        """Flat map of qualified_name → callable for all HTTP-invocable functions.
-
-        Includes:
-        - ``@app.function()`` decorated callables (have ``__skaal_compute__``)
-        - ``@app.schedule()`` decorated callables (invocable by Cloud Scheduler /
-          EventBridge; excluded from the public ``GET /`` index)
-        """
-        funcs: dict[str, Any] = {
-            qname: obj
-            for qname, obj in self.app._collect_all().items()
-            if callable(obj) and hasattr(obj, "__skaal_compute__")
-        }
-        # Also expose top-level functions by short name for convenience.
-        for name, fn in self.app._functions.items():
-            funcs.setdefault(name, fn)
-        # Include scheduled functions so Cloud Scheduler / EventBridge can invoke
-        # them via HTTP POST.  They are excluded from the GET / listing.
-        for name, fn in getattr(self.app, "_schedules", {}).items():
-            funcs.setdefault(name, fn)
-        return funcs
-
     def _collect_schedules(self) -> dict[str, Any]:
         """Flat map of name → callable for all ``@app.schedule()`` functions."""
         return dict(getattr(self.app, "_schedules", {}))
@@ -496,117 +471,6 @@ class LocalRuntime:
             raise TypeError("Persisted agent state must be a JSON object")
         return raw_state
 
-    def _public_functions(self) -> dict[str, Any]:
-        return {
-            qname: obj
-            for qname, obj in self.app._collect_all().items()
-            if callable(obj) and hasattr(obj, "__skaal_compute__")
-        }
-
-    @staticmethod
-    def _invocation_target(path: str) -> str | None:
-        if not path.startswith(_SKAAL_INVOKE_PREFIX):
-            return None
-        target = path[len(_SKAAL_INVOKE_PREFIX) :]
-        return target or None
-
-    @property
-    def readiness_state(self) -> ReadinessState:
-        return self._readiness_state
-
-    async def ensure_started(self) -> None:
-        import asyncio
-
-        if self._started:
-            return
-        if self._startup_lock is None:
-            self._startup_lock = asyncio.Lock()
-
-        async with self._startup_lock:
-            if self._started:
-                return
-            self._readiness_state = "starting"
-            self._startup_error = None
-            try:
-                if self._auth_verifier is not None and not self._auth_verifier.ready:
-                    await self._auth_verifier.initialize()
-                await self._start_engines()
-            except Exception as exc:
-                self._startup_error = str(exc)
-                self._readiness_state = "degraded"
-                raise
-            self._started = True
-            self._readiness_state = "ready"
-
-    def _readiness_payload(self) -> dict[str, Any]:
-        auth_ready = self._auth_verifier.ready if self._auth_verifier is not None else True
-        checks = {
-            "engines_started": self._started,
-            "auth": auth_ready,
-            "telemetry": self._telemetry.status(),
-        }
-        if self._startup_error is not None:
-            checks["error"] = self._startup_error
-        return {
-            "status": self._readiness_state,
-            "app": self.app.name,
-            "checks": checks,
-        }
-
-    async def _authenticate_request(
-        self, headers: Mapping[str, str]
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        from skaal.runtime.auth import RuntimeAuthFailure
-
-        if self._auth_verifier is None:
-            self._telemetry.record_auth_result("skipped")
-            return None, None
-
-        try:
-            claims = await self._auth_verifier.verify_headers(headers)
-        except RuntimeAuthFailure:
-            self._telemetry.record_auth_result("rejected")
-            raise
-
-        if claims is None:
-            self._telemetry.record_auth_result("skipped")
-            return None, None
-
-        subject = claims.get("sub")
-        self._telemetry.record_auth_result("accepted")
-        return claims, subject if isinstance(subject, str) else None
-
-    async def invoke(
-        self,
-        function_name: str,
-        kwargs: dict[str, Any],
-        *,
-        headers: Mapping[str, str] | None = None,
-        auth_claims: Mapping[str, Any] | None = None,
-        auth_subject: str | None = None,
-        trace_id: str | None = None,
-        span_id: str | None = None,
-    ) -> Any:
-        invoker = self._invokers.get(function_name)
-        if invoker is None:
-            raise KeyError(
-                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
-            )
-        return await invoker.invoke(
-            kwargs=kwargs,
-            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
-                function_name,
-                payload,
-                is_stream=False,
-                attempt=attempt,
-                headers=headers,
-                auth_claims=auth_claims,
-                auth_subject=auth_subject,
-                trace_id=trace_id,
-                span_id=span_id,
-            ),
-        )
-
     async def invoke_agent(
         self,
         agent_name: str,
@@ -651,210 +515,6 @@ class LocalRuntime:
             if backend is not None:
                 await backend.set(identity_key, agent._serialize_state())
             return result
-
-    def invoke_stream(
-        self,
-        function_name: str,
-        kwargs: dict[str, Any],
-        *,
-        headers: Mapping[str, str] | None = None,
-        auth_claims: Mapping[str, Any] | None = None,
-        auth_subject: str | None = None,
-        trace_id: str | None = None,
-        span_id: str | None = None,
-    ) -> Any:
-        invoker = self._invokers.get(function_name)
-        if invoker is None:
-            raise KeyError(
-                f"No function {function_name!r}. Available: {sorted(self._function_cache)}"
-            )
-        return invoker.invoke_stream(
-            kwargs=kwargs,
-            before_attempt=lambda attempt, payload: self.app._prepare_invoke_kwargs(
-                function_name,
-                payload,
-                is_stream=True,
-                attempt=attempt,
-                headers=headers,
-                auth_claims=auth_claims,
-                auth_subject=auth_subject,
-                trace_id=trace_id,
-                span_id=span_id,
-            ),
-        )
-
-    async def _dispatch(
-        self,
-        method: str,
-        path: str,
-        body: bytes,
-        headers: Mapping[str, str] | None = None,
-    ) -> tuple[Any, int]:
-        """Route an HTTP request to a registered function."""
-        from skaal.runtime.auth import RuntimeAuthFailure
-
-        funcs = self._function_cache
-        request_headers = dict(headers or {})
-        request_span = self._telemetry.request_started(method, path, request_headers)
-        status = 500
-        telemetry_error: Exception | None = None
-
-        try:
-            if method == "GET" and path in ("/", ""):
-                public = sorted({*self._public_functions(), *self.app._functions})
-                status = 200
-                return {
-                    "app": self.app.name,
-                    "endpoints": [
-                        {"path": f"{_SKAAL_INVOKE_PREFIX}{n}", "function": n} for n in public
-                    ],
-                    "agents": [
-                        {
-                            "path": f"{_SKAAL_AGENT_PREFIX}{name}/{{identity}}/{{handler}}",
-                            "agent": name,
-                            "handlers": sorted(self._agent_handlers(agent_cls)),
-                        }
-                        for name, (qualified_name, agent_cls) in sorted(self._agent_routes.items())
-                        if name == qualified_name
-                    ],
-                    "storage": list(self._stores.keys()),
-                }, status
-
-            if method == "GET" and path == "/health":
-                status = 200
-                return {"status": "ok", "app": self.app.name}, status
-
-            if method == "GET" and path == "/ready":
-                readiness_payload = self._readiness_payload()
-                status = 200 if self._readiness_state == "ready" else 503
-                return readiness_payload, status
-
-            if method == "POST":
-                try:
-                    await self.ensure_started()
-                except Exception:
-                    status = 503
-                    return self._readiness_payload(), status
-
-                fn_name = self._invocation_target(path)
-                agent_target = self._agent_invocation_target(path)
-                request_payload: Any = {}
-                if body:
-                    try:
-                        request_payload = json.loads(body)
-                    except json.JSONDecodeError as exc:
-                        status = 400
-                        return {"error": f"Invalid JSON: {exc}"}, status
-
-                if agent_target is not None:
-                    if not isinstance(request_payload, dict):
-                        status = 400
-                        return {"error": "Agent request body must be a JSON object"}, status
-                    args = request_payload.get("args", [])
-                    kwargs = request_payload.get("kwargs", {})
-                    if not isinstance(args, list) or not isinstance(kwargs, dict):
-                        status = 400
-                        return {
-                            "error": "Agent request body must be {'args': [...], 'kwargs': {...}}"
-                        }, status
-
-                    try:
-                        auth_claims, auth_subject = await self._authenticate_request(
-                            request_headers
-                        )
-                    except RuntimeAuthFailure as exc:
-                        status = exc.status_code
-                        return {"error": exc.message}, status
-
-                    try:
-                        agent_name, identity, handler_name = agent_target
-                        del auth_claims, auth_subject
-                        result = await self.invoke_agent(
-                            agent_name, identity, handler_name, *args, **kwargs
-                        )
-                        status = 200
-                        return result, status
-                    except KeyError as exc:
-                        status = 404
-                        return {"error": str(exc)}, status
-                    except TypeError as exc:
-                        status = 422
-                        return {"error": f"Bad arguments for agent route {path!r}: {exc}"}, status
-                    except Exception as exc:  # noqa: BLE001
-                        telemetry_error = exc
-                        status = 500
-                        return {"error": str(exc), "traceback": traceback.format_exc()}, status
-
-                if not isinstance(request_payload, dict):
-                    status = 400
-                    return {"error": "Request body must be a JSON object"}, status
-
-                kwargs = dict(request_payload)
-                is_schedule_invocation = kwargs.pop("_skaal_trigger", None) is not None
-                if fn_name is None and is_schedule_invocation:
-                    schedule_name = path.strip("/")
-                    if schedule_name in getattr(self.app, "_schedules", {}):
-                        fn_name = schedule_name
-
-                if fn_name is None:
-                    status = 404
-                    return {"error": f"No function route for {path!r}"}, status
-                if fn_name not in funcs:
-                    status = 404
-                    return {"error": f"No function {fn_name!r}. Available: {sorted(funcs)}"}, status
-
-                try:
-                    auth_claims, auth_subject = await self._authenticate_request(request_headers)
-                except RuntimeAuthFailure as exc:
-                    status = exc.status_code
-                    return {"error": exc.message}, status
-
-                fn = funcs[fn_name]
-                if is_schedule_invocation:
-                    sig = inspect.signature(fn)
-                    if "ctx" in sig.parameters:
-                        from datetime import timezone
-
-                        from skaal.schedule import ScheduleContext
-
-                        kwargs["ctx"] = ScheduleContext(
-                            fired_at=__import__("datetime").datetime.now(timezone.utc)
-                        )
-
-                invoker = self._invokers.get(fn_name)
-                try:
-                    if invoker is not None:
-                        result = await self.invoke(
-                            fn_name,
-                            kwargs,
-                            headers=request_headers,
-                            auth_claims=auth_claims,
-                            auth_subject=auth_subject,
-                            trace_id=request_span.trace_id,
-                            span_id=request_span.span_id,
-                        )
-                    else:
-                        result = (
-                            await fn(**kwargs) if inspect.iscoroutinefunction(fn) else fn(**kwargs)
-                        )
-                    status = 200
-                    return result, status
-                except TypeError as exc:
-                    status = 422
-                    return {"error": f"Bad arguments for {fn_name!r}: {exc}"}, status
-                except Exception as exc:  # noqa: BLE001
-                    telemetry_error = exc
-                    status = 500
-                    return {"error": str(exc), "traceback": traceback.format_exc()}, status
-
-            status = 405
-            return {"error": f"Method {method} not allowed"}, status
-        finally:
-            self._telemetry.request_finished(
-                request_span,
-                status_code=status,
-                error=telemetry_error,
-            )
 
     async def _handle_connection(self, reader: Any, writer: Any) -> None:
         """Handle a single raw TCP connection with HTTP/1.0-style request parsing.
@@ -1028,51 +688,6 @@ class LocalRuntime:
                 await self._serve_skaal()
         finally:
             await self.shutdown()
-
-    async def _start_engines(self) -> None:
-        """Spin up all pattern engines (EventLog / Projection / Saga / Outbox)."""
-        from skaal.runtime.engines import start_engines_for
-
-        if self._engines:
-            return
-        self._engines = await start_engines_for(self.app, self)
-
-    @property
-    def functions(self) -> dict[str, Any]:
-        """Expose the handler registry to pattern engines (read-only view)."""
-        return self._function_cache
-
-    @property
-    def stores(self) -> dict[str, Any]:
-        """Expose storage classes by name to pattern engines."""
-        return self._stores
-
-    async def shutdown(self) -> None:
-        """
-        Shut down the runtime by closing all backend connections.
-
-        Called automatically when serve() exits. Can also be called explicitly
-        to clean up resources.
-        """
-        import contextlib
-
-        for engine in self._engines:
-            with contextlib.suppress(Exception):
-                await engine.stop()
-        self._engines = []
-        self._started = False
-        self._readiness_state = "stopped"
-
-        for backend in self._backends.values():
-            with contextlib.suppress(Exception):
-                await backend.close()
-        for backend in self._agent_backends.values():
-            with contextlib.suppress(Exception):
-                await backend.close()
-        self._agent_backends.clear()
-        with contextlib.suppress(Exception):
-            self._telemetry.shutdown()
-        self.app._unbind_runtime(self)
 
     async def _serve_skaal(self) -> None:
         """Expose @app.function() as POST /{name} endpoints via uvicorn + Starlette.
