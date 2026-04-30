@@ -538,7 +538,7 @@ class LocalRuntime:
 
         try:
             if method == "GET" and path in ("/", ""):
-                public = sorted(self._public_functions())
+                public = sorted({*self._public_functions(), *self.app._functions})
                 status = 200
                 return {
                     "app": self.app.name,
@@ -565,6 +565,23 @@ class LocalRuntime:
                     return self._readiness_payload(), status
 
                 fn_name = self._invocation_target(path)
+                kwargs: dict[str, Any] = {}
+                if body:
+                    try:
+                        kwargs = json.loads(body)
+                        if not isinstance(kwargs, dict):
+                            status = 400
+                            return {"error": "Request body must be a JSON object"}, status
+                    except json.JSONDecodeError as exc:
+                        status = 400
+                        return {"error": f"Invalid JSON: {exc}"}, status
+
+                is_schedule_invocation = kwargs.pop("_skaal_trigger", None) is not None
+                if fn_name is None and is_schedule_invocation:
+                    schedule_name = path.strip("/")
+                    if schedule_name in getattr(self.app, "_schedules", {}):
+                        fn_name = schedule_name
+
                 if fn_name is None:
                     status = 404
                     return {"error": f"No function route for {path!r}"}, status
@@ -579,18 +596,6 @@ class LocalRuntime:
                     return {"error": exc.message}, status
 
                 fn = funcs[fn_name]
-                kwargs: dict[str, Any] = {}
-                if body:
-                    try:
-                        kwargs = json.loads(body)
-                        if not isinstance(kwargs, dict):
-                            status = 400
-                            return {"error": "Request body must be a JSON object"}, status
-                    except json.JSONDecodeError as exc:
-                        status = 400
-                        return {"error": f"Invalid JSON: {exc}"}, status
-
-                is_schedule_invocation = kwargs.pop("_skaal_trigger", None) is not None
                 if is_schedule_invocation:
                     sig = inspect.signature(fn)
                     if "ctx" in sig.parameters:

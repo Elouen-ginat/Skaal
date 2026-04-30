@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from skaal.plan import ComponentSpec, ComputeSpec, PatternSpec, PlanFile, StorageSpec
@@ -69,7 +70,7 @@ def _policy_to_dict(policy: Any) -> dict[str, Any] | None:
     if dataclasses.is_dataclass(policy) and not isinstance(policy, type):
         return dataclasses.asdict(policy)
     # Fallback: assume a dict-ish payload
-    return dict(policy) if hasattr(policy, "keys") else None
+    return dict(policy) if isinstance(policy, Mapping) else None
 
 
 def _storage_constraints_from_pattern(pattern_meta: dict[str, Any]) -> dict[str, Any]:
@@ -252,7 +253,7 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
         if not (callable(obj) and hasattr(obj, "__skaal_compute__")):
             continue
 
-        compute_constraint = obj.__skaal_compute__
+        compute_constraint = getattr(obj, "__skaal_compute__")
         try:
             instance_type, reason = encode_compute(
                 qname, compute_constraint, compute_backends, target=target

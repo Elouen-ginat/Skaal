@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import logging
 from pathlib import Path
 from textwrap import dedent
 
@@ -13,6 +15,18 @@ from skaal.types import StackProfile as DeployStackProfile
 
 def _write_pyproject(tmp_path: Path, body: str) -> None:
     (tmp_path / "pyproject.toml").write_text(dedent(body))
+
+
+def _capture_skaal_logs(
+    level: int,
+) -> tuple[io.StringIO, logging.Logger, list[logging.Handler], int]:
+    stream = io.StringIO()
+    logger = logging.getLogger("skaal")
+    previous_handlers = list(logger.handlers)
+    previous_level = logger.level
+    logger.addHandler(logging.StreamHandler(stream))
+    logger.setLevel(level)
+    return stream, logger, previous_handlers, previous_level
 
 
 def test_no_profile_returns_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,7 +386,10 @@ def test_run_hooks_propagates_failure(tmp_path: Path) -> None:
         _run_hooks([bad], cwd=tmp_path)
 
 
-def test_stacks_cli_lists_profiles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stacks_cli_lists_profiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`skaal stacks` prints one row per declared profile."""
     from typer.testing import CliRunner
 
@@ -398,10 +415,17 @@ def test_stacks_cli_lists_profiles(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(stacks_app, [])
+    stream, logger, previous_handlers, previous_level = _capture_skaal_logs(logging.INFO)
+    try:
+        result = CliRunner().invoke(stacks_app, [])
+    finally:
+        logger.handlers = previous_handlers
+        logger.setLevel(previous_level)
+
     assert result.exit_code == 0, result.stdout
-    assert "p-dev" in result.stdout
-    assert "p-prd" in result.stdout
-    assert "dev-proj" in result.stdout
-    assert "prd-proj" in result.stdout
-    assert "europe-west4" in result.stdout
+    output = stream.getvalue()
+    assert "p-dev" in output
+    assert "p-prd" in output
+    assert "dev-proj" in output
+    assert "prd-proj" in output
+    assert "europe-west4" in output
