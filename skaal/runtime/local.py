@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
 import traceback
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MiB — reject oversized request bodies
 log = logging.getLogger("skaal.runtime")
 _SKAAL_INVOKE_PREFIX = "/_skaal/invoke/"
+_SKAAL_AGENT_PREFIX = "/_skaal/agents/"
 
 
 def _format_banner(title: str, lines: list[str]) -> str:
@@ -63,6 +65,7 @@ class LocalRuntime:
         telemetry: "TelemetryConfig | None" = None,
         telemetry_runtime: "RuntimeTelemetry | None" = None,
         auth_http_client: "httpx.AsyncClient | None" = None,
+        kv_backend_factory: Callable[[str], Any] | None = None,
     ) -> None:
         from skaal.runtime.auth import JwtVerifier, resolve_gateway_auth
         from skaal.runtime.telemetry import RuntimeTelemetry, resolve_telemetry_config
@@ -72,10 +75,14 @@ class LocalRuntime:
         self.port = port
         self._backends: dict[str, Any] = {}
         self._backend_overrides = backend_overrides or {}
+        self._kv_backend_factory = kv_backend_factory or (lambda _namespace: LocalMap())
         self._started = False
         self._startup_lock: Any | None = None
         self._startup_error: str | None = None
         self._readiness_state: ReadinessState = "starting"
+        self._agent_backends: dict[str, Any] = {}
+        self._agent_routes = self._collect_agents()
+        self._agent_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._patch_storage()
         self._patch_channels()
         # Cache the function map so it's not rebuilt on every HTTP request
@@ -209,7 +216,16 @@ class LocalRuntime:
             return RedisBackend(url=redis_url, namespace=qname.replace(".", "_").lower())
 
         backends = cls._build_backends(app, _make_backend)
-        return cls(app, host=host, port=port, backend_overrides=backends)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: RedisBackend(
+                url=redis_url,
+                namespace=namespace.replace(".", "_").lower(),
+            ),
+        )
 
     @classmethod
     def from_sqlite(
@@ -231,7 +247,13 @@ class LocalRuntime:
             return SqliteBackend(Path(db_path), namespace=qname)
 
         backends = cls._build_backends(app, _make_backend)
-        return cls(app, host=host, port=port, backend_overrides=backends)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: SqliteBackend(Path(db_path), namespace=namespace),
+        )
 
     @classmethod
     def from_firestore(
@@ -270,7 +292,17 @@ class LocalRuntime:
             )
 
         backends = cls._build_backends(app, _make_backend)
-        return cls(app, host=host, port=port, backend_overrides=backends)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: FirestoreBackend(
+                collection=namespace.replace(".", "_").lower(),
+                project=project,
+                database=database,
+            ),
+        )
 
     @classmethod
     def from_postgres(
@@ -302,7 +334,18 @@ class LocalRuntime:
             return PostgresBackend(dsn=dsn, namespace=qname, min_size=min_size, max_size=max_size)
 
         backends = cls._build_backends(app, _make_backend)
-        return cls(app, host=host, port=port, backend_overrides=backends)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: PostgresBackend(
+                dsn=dsn,
+                namespace=namespace,
+                min_size=min_size,
+                max_size=max_size,
+            ),
+        )
 
     @classmethod
     def from_dynamodb(
@@ -328,7 +371,16 @@ class LocalRuntime:
             )
 
         backends = cls._build_backends(app, _make_backend)
-        return cls(app, host=host, port=port, backend_overrides=backends)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: DynamoBackend(
+                table_name=f"{table_name}_{namespace.replace('.', '_').lower()}",
+                region=region,
+            ),
+        )
 
     def wire_channels_redis(
         self,
@@ -377,6 +429,72 @@ class LocalRuntime:
     def _collect_schedules(self) -> dict[str, Any]:
         """Flat map of name → callable for all ``@app.schedule()`` functions."""
         return dict(getattr(self.app, "_schedules", {}))
+
+    def _collect_agents(self) -> dict[str, tuple[str, type[Any]]]:
+        agents: dict[str, tuple[str, type[Any]]] = {}
+        short_names: dict[str, list[str]] = {}
+        for qname, obj in self.app._collect_all().items():
+            if not (isinstance(obj, type) and hasattr(obj, "__skaal_agent__")):
+                continue
+            agents[qname] = (qname, obj)
+            short_names.setdefault(obj.__name__, []).append(qname)
+
+        for short_name, qualified_names in short_names.items():
+            if len(qualified_names) == 1:
+                qualified_name = qualified_names[0]
+                agents[short_name] = agents[qualified_name]
+
+        return agents
+
+    @staticmethod
+    def _agent_invocation_target(path: str) -> tuple[str, str, str] | None:
+        if not path.startswith(_SKAAL_AGENT_PREFIX):
+            return None
+        parts = path[len(_SKAAL_AGENT_PREFIX) :].split("/")
+        if len(parts) != 3 or not all(parts):
+            return None
+        return parts[0], parts[1], parts[2]
+
+    @staticmethod
+    def _agent_handlers(agent_cls: type[Any]) -> dict[str, Any]:
+        return {
+            name: member
+            for name, member in inspect.getmembers(agent_cls)
+            if callable(member) and getattr(member, "__skaal_handler__", False)
+        }
+
+    def _agent_lock(self, agent_name: str, identity: str) -> asyncio.Lock:
+        key = (agent_name, identity)
+        lock = self._agent_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._agent_locks[key] = lock
+        return lock
+
+    def _agent_backend_name(self, agent_name: str) -> str:
+        return f"{self.app.name}.__skaal_agents__.{agent_name}"
+
+    def _agent_backend(self, agent_name: str) -> Any:
+        backend_name = self._agent_backend_name(agent_name)
+        backend = self._agent_backends.get(backend_name)
+        if backend is not None:
+            return backend
+
+        backend = self._backend_overrides.get(backend_name)
+        if backend is None:
+            backend = self._kv_backend_factory(backend_name)
+        self._agent_backends[backend_name] = backend
+        return backend
+
+    @staticmethod
+    def _decode_agent_state(raw_state: Any) -> dict[str, Any] | None:
+        if raw_state is None:
+            return None
+        if isinstance(raw_state, str):
+            raw_state = json.loads(raw_state)
+        if not isinstance(raw_state, dict):
+            raise TypeError("Persisted agent state must be a JSON object")
+        return raw_state
 
     def _public_functions(self) -> dict[str, Any]:
         return {
@@ -489,6 +607,51 @@ class LocalRuntime:
             ),
         )
 
+    async def invoke_agent(
+        self,
+        agent_name: str,
+        identity: Any,
+        handler_name: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        resolved = self._agent_routes.get(agent_name)
+        if resolved is None:
+            raise KeyError(f"No agent {agent_name!r}. Available: {sorted(self._agent_routes)}")
+
+        qualified_name, agent_cls = resolved
+        handler = self._agent_handlers(agent_cls).get(handler_name)
+        if handler is None:
+            raise KeyError(
+                f"No handler {handler_name!r} on agent {agent_name!r}. "
+                f"Available: {sorted(self._agent_handlers(agent_cls))}"
+            )
+
+        identity_key = str(identity)
+        persistent = bool(getattr(agent_cls, "__skaal_agent__", {}).get("persistent", True))
+        backend = self._agent_backend(qualified_name) if persistent else None
+
+        async with self._agent_lock(qualified_name, identity_key):
+            agent = agent_cls()
+            setattr(agent, "identity", identity_key)
+            persisted_state = self._decode_agent_state(
+                await backend.get(identity_key) if backend is not None else None
+            )
+            agent._load_state(persisted_state)
+            bound_handler = getattr(agent, handler_name)
+            try:
+                result = bound_handler(*args, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+            except Exception:
+                if backend is not None:
+                    await backend.set(identity_key, persisted_state or {})
+                raise
+
+            if backend is not None:
+                await backend.set(identity_key, agent._serialize_state())
+            return result
+
     def invoke_stream(
         self,
         function_name: str,
@@ -545,7 +708,16 @@ class LocalRuntime:
                     "endpoints": [
                         {"path": f"{_SKAAL_INVOKE_PREFIX}{n}", "function": n} for n in public
                     ],
-                    "storage": list(self._backends.keys()),
+                    "agents": [
+                        {
+                            "path": f"{_SKAAL_AGENT_PREFIX}{name}/{{identity}}/{{handler}}",
+                            "agent": name,
+                            "handlers": sorted(self._agent_handlers(agent_cls)),
+                        }
+                        for name, (qualified_name, agent_cls) in sorted(self._agent_routes.items())
+                        if name == qualified_name
+                    ],
+                    "storage": list(self._stores.keys()),
                 }, status
 
             if method == "GET" and path == "/health":
@@ -553,9 +725,9 @@ class LocalRuntime:
                 return {"status": "ok", "app": self.app.name}, status
 
             if method == "GET" and path == "/ready":
-                payload = self._readiness_payload()
+                readiness_payload = self._readiness_payload()
                 status = 200 if self._readiness_state == "ready" else 503
-                return payload, status
+                return readiness_payload, status
 
             if method == "POST":
                 try:
@@ -565,17 +737,59 @@ class LocalRuntime:
                     return self._readiness_payload(), status
 
                 fn_name = self._invocation_target(path)
-                kwargs: dict[str, Any] = {}
+                agent_target = self._agent_invocation_target(path)
+                request_payload: Any = {}
                 if body:
                     try:
-                        kwargs = json.loads(body)
-                        if not isinstance(kwargs, dict):
-                            status = 400
-                            return {"error": "Request body must be a JSON object"}, status
+                        request_payload = json.loads(body)
                     except json.JSONDecodeError as exc:
                         status = 400
                         return {"error": f"Invalid JSON: {exc}"}, status
 
+                if agent_target is not None:
+                    if not isinstance(request_payload, dict):
+                        status = 400
+                        return {"error": "Agent request body must be a JSON object"}, status
+                    args = request_payload.get("args", [])
+                    kwargs = request_payload.get("kwargs", {})
+                    if not isinstance(args, list) or not isinstance(kwargs, dict):
+                        status = 400
+                        return {
+                            "error": "Agent request body must be {'args': [...], 'kwargs': {...}}"
+                        }, status
+
+                    try:
+                        auth_claims, auth_subject = await self._authenticate_request(
+                            request_headers
+                        )
+                    except RuntimeAuthFailure as exc:
+                        status = exc.status_code
+                        return {"error": exc.message}, status
+
+                    try:
+                        agent_name, identity, handler_name = agent_target
+                        del auth_claims, auth_subject
+                        result = await self.invoke_agent(
+                            agent_name, identity, handler_name, *args, **kwargs
+                        )
+                        status = 200
+                        return result, status
+                    except KeyError as exc:
+                        status = 404
+                        return {"error": str(exc)}, status
+                    except TypeError as exc:
+                        status = 422
+                        return {"error": f"Bad arguments for agent route {path!r}: {exc}"}, status
+                    except Exception as exc:  # noqa: BLE001
+                        telemetry_error = exc
+                        status = 500
+                        return {"error": str(exc), "traceback": traceback.format_exc()}, status
+
+                if not isinstance(request_payload, dict):
+                    status = 400
+                    return {"error": "Request body must be a JSON object"}, status
+
+                kwargs = dict(request_payload)
                 is_schedule_invocation = kwargs.pop("_skaal_trigger", None) is not None
                 if fn_name is None and is_schedule_invocation:
                     schedule_name = path.strip("/")
@@ -852,6 +1066,10 @@ class LocalRuntime:
         for backend in self._backends.values():
             with contextlib.suppress(Exception):
                 await backend.close()
+        for backend in self._agent_backends.values():
+            with contextlib.suppress(Exception):
+                await backend.close()
+        self._agent_backends.clear()
         with contextlib.suppress(Exception):
             self._telemetry.shutdown()
         self.app._unbind_runtime(self)
