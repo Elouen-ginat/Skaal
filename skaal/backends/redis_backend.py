@@ -10,28 +10,14 @@ from typing import Any, Callable, List
 from skaal.errors import SkaalConflict, SkaalUnavailable
 from skaal.storage import (
     _cursor_identity,
-    _decode_cursor,
     _encode_cursor,
     _field_value,
     _get_backend_indexes,
     _normalize_limit,
     _sort_token,
+    _validate_cursor,
 )
 from skaal.types.storage import Page
-
-
-def _validate_cursor(
-    cursor: str | None,
-    *,
-    mode: str,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    decoded = _decode_cursor(cursor)
-    expected = {"mode": mode, **(extra or {})}
-    for key, value in expected.items():
-        if decoded and decoded.get(key) != value:
-            raise ValueError("Cursor does not match this query")
-    return decoded
 
 
 class RedisBackend:

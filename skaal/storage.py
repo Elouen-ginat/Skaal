@@ -135,6 +135,20 @@ def _decode_cursor(cursor: str | None) -> dict[str, Any]:
     return decoded
 
 
+def _validate_cursor(
+    cursor: str | None,
+    *,
+    mode: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    decoded = _decode_cursor(cursor)
+    expected = {"mode": mode, **(extra or {})}
+    for key, value in expected.items():
+        if decoded and decoded.get(key) != value:
+            raise ValueError("Cursor does not match this query")
+    return decoded
+
+
 def _sort_token(value: Any) -> tuple[int, Any]:
     if value is None:
         return (0, "")
@@ -181,10 +195,7 @@ def _page_items(
 ) -> Page[T]:
     limit = _normalize_limit(limit)
     expected = {"mode": mode, **(extra or {})}
-    decoded = _decode_cursor(cursor)
-    for key, value in expected.items():
-        if decoded and decoded.get(key) != value:
-            raise ValueError("Cursor does not match this query")
+    decoded = _validate_cursor(cursor, mode=mode, extra=extra)
     offset = int(decoded.get("offset", 0)) if decoded else 0
     if offset < 0:
         raise ValueError("Cursor offset must be >= 0")
