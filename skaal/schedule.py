@@ -11,9 +11,11 @@ Cloud mapping
 
 from __future__ import annotations
 
+import inspect
 import re
-from datetime import datetime
-from typing import Union
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime, timezone
+from typing import Any, Union
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -168,4 +170,83 @@ class ScheduleContext(BaseModel):
 # Union alias for type annotations
 Schedule = Union[Every, Cron]
 
-__all__ = ["Cron", "Every", "Schedule", "ScheduleContext"]
+
+def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
+    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    if isinstance(trigger, Every):
+        return IntervalTrigger(seconds=trigger.seconds, timezone=timezone)
+    return CronTrigger.from_crontab(trigger.expression, timezone=timezone)
+
+
+def build_scheduled_job(
+    fn: Callable[..., Any],
+    *,
+    name: str,
+    emit_to: Any = None,
+    logger: Any | None = None,
+    log_lifecycle: bool = False,
+) -> Callable[[], Awaitable[None]]:
+    async def _job() -> None:
+        ctx = ScheduleContext(fired_at=datetime.now(timezone.utc))
+        if logger is not None and log_lifecycle:
+            logger.info("[skaal/schedule] %s fired at %s", name, ctx.fired_at.isoformat())
+        try:
+            if "ctx" in inspect.signature(fn).parameters:
+                result = await fn(ctx=ctx) if inspect.iscoroutinefunction(fn) else fn(ctx=ctx)
+            else:
+                result = await fn() if inspect.iscoroutinefunction(fn) else fn()
+            if emit_to is not None and result is not None:
+                await emit_to.send(result)
+            if logger is not None and log_lifecycle:
+                logger.info("[skaal/schedule] %s completed", name)
+        except Exception as exc:  # noqa: BLE001
+            if logger is not None:
+                prefix = "[skaal/schedule]" if log_lifecycle else "[schedule/%s]"
+                if log_lifecycle:
+                    logger.warning("%s %s ERROR: %s", prefix, name, exc)
+                else:
+                    logger.warning(prefix, name, exc)
+
+    return _job
+
+
+def create_async_scheduler(
+    scheduled: Mapping[str, Any],
+    *,
+    event_loop: Any | None = None,
+    logger: Any | None = None,
+    log_lifecycle: bool = False,
+) -> Any:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    scheduler = (
+        AsyncIOScheduler(event_loop=event_loop) if event_loop is not None else AsyncIOScheduler()
+    )
+
+    for name, fn in scheduled.items():
+        meta = fn.__skaal_schedule__
+        scheduler.add_job(
+            build_scheduled_job(
+                fn,
+                name=name,
+                emit_to=meta.get("emit_to"),
+                logger=logger,
+                log_lifecycle=log_lifecycle,
+            ),
+            build_apscheduler_trigger(meta["trigger"], timezone=meta.get("timezone", "UTC")),
+        )
+
+    return scheduler
+
+
+__all__ = [
+    "Cron",
+    "Every",
+    "Schedule",
+    "ScheduleContext",
+    "build_apscheduler_trigger",
+    "build_scheduled_job",
+    "create_async_scheduler",
+]

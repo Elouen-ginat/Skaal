@@ -718,7 +718,6 @@ class LocalRuntime(BaseRuntime):
         Also starts an APScheduler ``AsyncIOScheduler`` for any functions
         registered with ``@app.schedule()``.
         """
-        from datetime import timezone
 
         try:
             import uvicorn
@@ -772,57 +771,9 @@ class LocalRuntime(BaseRuntime):
         scheduler = None
         if scheduled:
             try:
-                from apscheduler.schedulers.asyncio import AsyncIOScheduler
-                from apscheduler.triggers.cron import CronTrigger
-                from apscheduler.triggers.interval import IntervalTrigger
+                from skaal.schedule import create_async_scheduler
 
-                from skaal.schedule import Every, ScheduleContext
-
-                scheduler = AsyncIOScheduler()
-
-                for name, fn in scheduled.items():
-                    meta = fn.__skaal_schedule__
-                    trigger = meta["trigger"]
-                    emit_to = meta.get("emit_to")
-                    tz = meta.get("timezone", "UTC")
-
-                    if isinstance(trigger, Every):
-                        ap_trigger = IntervalTrigger(
-                            seconds=cast(Any, trigger.seconds), timezone=tz
-                        )
-                    else:
-                        ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
-
-                    # Capture loop variables explicitly to avoid closure issues.
-                    def _make_job(
-                        _fn: Any = fn,
-                        _emit_to: Any = emit_to,
-                        _name: str = name,
-                    ) -> Any:
-                        async def _job() -> None:
-                            sig = inspect.signature(_fn)
-                            ctx = ScheduleContext(
-                                fired_at=__import__("datetime").datetime.now(timezone.utc)
-                            )
-                            try:
-                                if "ctx" in sig.parameters:
-                                    result = (
-                                        await _fn(ctx=ctx)
-                                        if inspect.iscoroutinefunction(_fn)
-                                        else _fn(ctx=ctx)
-                                    )
-                                else:
-                                    result = (
-                                        await _fn() if inspect.iscoroutinefunction(_fn) else _fn()
-                                    )
-                                if _emit_to is not None and result is not None:
-                                    await _emit_to.send(result)
-                            except Exception as exc:  # noqa: BLE001
-                                log.warning("[schedule/%s] ERROR: %s", _name, exc)
-
-                        return _job
-
-                    scheduler.add_job(_make_job(), ap_trigger)
+                scheduler = create_async_scheduler(scheduled, logger=log)
 
                 scheduler.start()
             except ImportError:
@@ -869,11 +820,7 @@ class LocalRuntime(BaseRuntime):
             _asyncio.set_event_loop(loop)
 
             try:
-                from apscheduler.schedulers.asyncio import AsyncIOScheduler
-                from apscheduler.triggers.cron import CronTrigger
-                from apscheduler.triggers.interval import IntervalTrigger
-
-                from skaal.schedule import Every, ScheduleContext
+                from skaal.schedule import create_async_scheduler
             except ImportError:
                 log.warning(
                     "[skaal/scheduler] WARNING: apscheduler not installed"
@@ -882,47 +829,12 @@ class LocalRuntime(BaseRuntime):
                 )
                 return
 
-            scheduler = AsyncIOScheduler(event_loop=loop)
-
-            for name, fn in scheduled.items():
-                meta = fn.__skaal_schedule__
-                trigger = meta["trigger"]
-                emit_to = meta.get("emit_to")
-                tz = meta.get("timezone", "UTC")
-
-                if isinstance(trigger, Every):
-                    ap_trigger = IntervalTrigger(seconds=cast(Any, trigger.seconds), timezone=tz)
-                else:
-                    ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
-
-                def _make_job(
-                    _fn: Any = fn,
-                    _emit_to: Any = emit_to,
-                    _name: str = name,
-                ) -> Any:
-                    async def _job() -> None:
-                        from datetime import timezone as _tz
-
-                        ctx = ScheduleContext(fired_at=__import__("datetime").datetime.now(_tz.utc))
-                        log.info("[skaal/schedule] %s fired at %s", _name, ctx.fired_at.isoformat())
-                        try:
-                            if "ctx" in inspect.signature(_fn).parameters:
-                                result = (
-                                    await _fn(ctx=ctx)
-                                    if inspect.iscoroutinefunction(_fn)
-                                    else _fn(ctx=ctx)
-                                )
-                            else:
-                                result = await _fn() if inspect.iscoroutinefunction(_fn) else _fn()
-                            if _emit_to is not None and result is not None:
-                                await _emit_to.send(result)
-                            log.info("[skaal/schedule] %s completed", _name)
-                        except Exception as exc:  # noqa: BLE001
-                            log.warning("[skaal/schedule] %s ERROR: %s", _name, exc)
-
-                    return _job
-
-                scheduler.add_job(_make_job(), ap_trigger)
+            scheduler = create_async_scheduler(
+                scheduled,
+                event_loop=loop,
+                logger=log,
+                log_lifecycle=True,
+            )
 
             scheduler.start()
             log.info("[skaal/scheduler] started %s job(s): %s", len(scheduled), list(scheduled))
