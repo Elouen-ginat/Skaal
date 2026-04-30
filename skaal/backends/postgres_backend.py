@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable, List, cast
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
+from skaal.serialization import decode_json_value
 from skaal.storage import (
     _cursor_identity,
     _decode_cursor,
@@ -33,7 +34,7 @@ def _validate_cursor(
 
 
 def _decode_jsonb(raw: Any) -> Any:
-    return json.loads(raw) if isinstance(raw, str) else raw
+    return decode_json_value(raw)
 
 
 class PostgresBackend:

@@ -53,6 +53,8 @@ from typing import (
 if TYPE_CHECKING:
     from skaal.backends.base import StorageBackend
 
+from skaal.serialization import deserialize_value as _deserialize
+from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
 from skaal.types.storage import Page, SecondaryIndex
 
@@ -67,44 +69,6 @@ def _is_pydantic(t: Any) -> bool:
         return isinstance(t, type) and issubclass(t, BaseModel)
     except ImportError:
         return False
-
-
-def _serialize(value: Any, value_type: type | None) -> Any:
-    """Convert *value* to a backend-storable form."""
-    if value_type is None:
-        return value
-    try:
-        from pydantic import BaseModel
-
-        if isinstance(value_type, type) and issubclass(value_type, BaseModel):
-            if isinstance(value, BaseModel):
-                return value.model_dump()
-            if isinstance(value, dict):
-                return value_type.model_validate(value).model_dump()
-    except ImportError:
-        pass
-    return value
-
-
-def _deserialize(raw: Any, value_type: type | None) -> Any:
-    """Reconstruct a typed value from the raw backend representation."""
-    if raw is None or value_type is None:
-        return raw
-    try:
-        from pydantic import BaseModel
-
-        if isinstance(value_type, type) and issubclass(value_type, BaseModel):
-            if isinstance(raw, value_type):
-                return raw
-            if isinstance(raw, (str, bytes)):
-                raw = json.loads(raw)
-            if isinstance(raw, dict):
-                from skaal.types.schema import apply_migrations
-
-                return value_type.model_validate(apply_migrations(raw, value_type))
-    except ImportError:
-        pass
-    return raw
 
 
 def _primary_key_field(model: type) -> str:

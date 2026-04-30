@@ -54,7 +54,7 @@ class RedisStreamChannel:
 
     async def connect(self) -> None:
         """Create the async Redis client."""
-        import redis.asyncio as aioredis  # type: ignore[import-untyped]
+        import redis.asyncio as aioredis
 
         self._client = aioredis.from_url(self.url, decode_responses=True)
 
