@@ -619,7 +619,7 @@ class LocalRuntime:
                     tz = meta.get("timezone", "UTC")
 
                     if isinstance(trigger, Every):
-                        ap_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=tz)
+                        ap_trigger = IntervalTrigger(seconds=cast(Any, trigger.seconds), timezone=tz)
                     else:
                         ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
 
@@ -721,7 +721,7 @@ class LocalRuntime:
                 tz = meta.get("timezone", "UTC")
 
                 if isinstance(trigger, Every):
-                    ap_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=tz)
+                    ap_trigger = IntervalTrigger(seconds=cast(Any, trigger.seconds), timezone=tz)
                 else:
                     ap_trigger = CronTrigger.from_crontab(trigger.expression, timezone=tz)
 
