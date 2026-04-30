@@ -57,6 +57,7 @@ def test_gcp_artifacts_skip_mesh_bundle_and_uv_source(tmp_path: Path) -> None:
     )
 
     pyproject_text = (output_dir / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"skaal[serve,runtime,gcp]"' in pyproject_text
     assert "skaal-mesh" in pyproject_text
     assert "[tool.uv.sources]" not in pyproject_text
     assert not (output_dir / "mesh").exists()
@@ -80,6 +81,7 @@ def test_aws_artifacts_record_mesh_runtime_metadata(tmp_path: Path) -> None:
     meta = json.loads((output_dir / "skaal-meta.json").read_text(encoding="utf-8"))
     pulumi_yaml = (output_dir / "Pulumi.yaml").read_text(encoding="utf-8")
 
+    assert '"skaal[runtime,aws]"' in pyproject_text
     assert "skaal-mesh" in pyproject_text
     assert meta["lambda_architecture"] == "arm64"
     assert meta["lambda_runtime"] == "python3.12"

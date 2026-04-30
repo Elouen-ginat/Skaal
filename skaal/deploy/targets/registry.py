@@ -3,10 +3,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeAlias
-
-import docker.errors as docker_errors
 
 import skaal.deploy.targets.aws as aws_target
 import skaal.deploy.targets.gcp as gcp_target
@@ -14,8 +13,6 @@ import skaal.deploy.targets.local as local_target
 from skaal.deploy._progress import ProgressSink
 from skaal.deploy.builders.local import local_image_name
 from skaal.deploy.errors import DeployError
-from skaal.deploy.packaging import build_and_push_image, package_lambda
-from skaal.deploy.packaging.local import build_local_image
 from skaal.deploy.pulumi import (
     DeploymentContext,
     PackageStep,
@@ -24,7 +21,6 @@ from skaal.deploy.pulumi import (
     RunnerPlan,
 )
 from skaal.deploy.pulumi.meta import read_meta
-from skaal.deploy.pulumi.runner import AutomationRunner
 from skaal.deploy.target import DeployTarget
 from skaal.types import AppLike, ConfigOverrides, StackOutputs, StackProfile, TargetName
 
@@ -55,6 +51,7 @@ class GenerateArtifacts(Protocol):
 
 
 BuildConfigStep: TypeAlias = Callable[[DeploymentContext, str], ConfigOverrides]
+RunnerFactory: TypeAlias = Callable[[], PulumiRunner]
 
 
 @dataclass(frozen=True)
@@ -62,11 +59,18 @@ class TargetStrategy:
     name: TargetName
     default_region: str
     generate: GenerateArtifacts
-    runner: PulumiRunner
+    runner_factory: RunnerFactory
     build_config: BuildConfigStep
     package: PackageStep | None = None
     post_up: PostUpStep | None = None
     output_keys: tuple[str, ...] = ()
+
+
+@lru_cache(maxsize=1)
+def _runner_factory() -> PulumiRunner:
+    from skaal.deploy.pulumi.runner import AutomationRunner
+
+    return AutomationRunner(progress_sink=_PROGRESS_SINK)
 
 
 def _aws_config(context: DeploymentContext, default_region: str) -> ConfigOverrides:
@@ -90,6 +94,8 @@ def _local_config(context: DeploymentContext, default_region: str) -> ConfigOver
 
 
 def _aws_package(context: DeploymentContext) -> ConfigOverrides:
+    from skaal.deploy.packaging.lambda_pkg import package_lambda
+
     meta = read_meta(context.artifacts_dir)
     packaging_log.info("Packaging Lambda ...")
     package_lambda(
@@ -103,6 +109,10 @@ def _aws_package(context: DeploymentContext) -> ConfigOverrides:
 
 
 def _local_package(context: DeploymentContext) -> ConfigOverrides:
+    import docker.errors as docker_errors
+
+    from skaal.deploy.packaging.local import build_local_image
+
     docker_log.info("Building local app image ...")
     image_name = local_image_name(context.app_name)
     try:
@@ -124,6 +134,8 @@ def _local_package(context: DeploymentContext) -> ConfigOverrides:
 
 
 def _gcp_post_up(context: DeploymentContext, output: "Callable[[str], str]") -> bool:
+    from skaal.deploy.packaging.gcp_push import build_and_push_image
+
     if not context.gcp_project:
         raise ValueError(
             "GCP project is required for --target=gcp. Pass --gcp-project PROJECT or set SKAAL_GCP_PROJECT."
@@ -153,13 +165,11 @@ def _gcp_post_up(context: DeploymentContext, output: "Callable[[str], str]") -> 
     return True
 
 
-_runner = AutomationRunner(progress_sink=_PROGRESS_SINK)
-
 _AWS_STRATEGY = TargetStrategy(
     name="aws",
     default_region="us-east-1",
     generate=aws_target.generate_artifacts,
-    runner=_runner,
+    runner_factory=_runner_factory,
     build_config=_aws_config,
     package=_aws_package,
     output_keys=("apiUrl",),
@@ -168,7 +178,7 @@ _GCP_STRATEGY = TargetStrategy(
     name="gcp",
     default_region="us-central1",
     generate=gcp_target.generate_artifacts,
-    runner=_runner,
+    runner_factory=_runner_factory,
     build_config=_gcp_config,
     post_up=_gcp_post_up,
     output_keys=("serviceUrl", "imageRepository"),
@@ -177,7 +187,7 @@ _LOCAL_STRATEGY = TargetStrategy(
     name="local",
     default_region="",
     generate=local_target.generate_artifacts,
-    runner=_runner,
+    runner_factory=_runner_factory,
     build_config=_local_config,
     package=_local_package,
     output_keys=("appUrl",),
@@ -244,7 +254,7 @@ class PulumiDeployTarget(DeployTarget):
         config = dict(self._strategy.build_config(context, self.default_region))
         if config_overrides:
             config.update(config_overrides)
-        outputs = self._strategy.runner.deploy(
+        outputs = self._strategy.runner_factory().deploy(
             RunnerPlan(
                 context=context,
                 config=config,
@@ -268,7 +278,7 @@ class PulumiDeployTarget(DeployTarget):
         return outputs
 
     def destroy_stack(self, artifacts_dir: Path, *, stack: str, yes: bool) -> None:
-        self._strategy.runner.destroy(artifacts_dir, stack=stack, yes=yes)
+        self._strategy.runner_factory().destroy(artifacts_dir, stack=stack, yes=yes)
 
 
 _aws = PulumiDeployTarget(_AWS_STRATEGY)

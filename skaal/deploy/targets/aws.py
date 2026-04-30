@@ -67,13 +67,16 @@ def generate_artifacts(
             if dependency not in handler_extra_deps:
                 handler_extra_deps.append(dependency)
 
-    user_packages = collect_user_packages(source_module, project_root=output_dir.parent)
-    base_deps = ["skaal[aws]"]
-    if wsgi_attribute:
-        base_deps.append("mangum>=0.17")
-    if enable_mesh:
-        base_deps.append("skaal-mesh")
-    dependencies = list(dict.fromkeys(base_deps + handler_extra_deps + user_packages))
+    variants = ["wsgi"] if wsgi_attribute else []
+    features = ["mesh"] if enable_mesh else []
+    user_packages = collect_user_packages(
+        source_module,
+        project_root=output_dir.parent,
+        target="aws",
+        variants=variants,
+        features=features,
+    )
+    dependencies = list(dict.fromkeys(user_packages + handler_extra_deps))
 
     pyproject_path = output_dir / "pyproject.toml"
     pyproject_path.write_text(to_pyproject_toml(app.name, dependencies), encoding="utf-8")

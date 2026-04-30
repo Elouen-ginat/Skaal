@@ -78,22 +78,21 @@ def generate_artifacts(
     dockerfile_path.write_text(render("gcp/Dockerfile", cmd_args=cmd_args), encoding="utf-8")
     generated.append(dockerfile_path)
 
-    infra_deps: list[str] = ["skaal[gcp]"]
-    if is_wsgi:
-        infra_deps.append("gunicorn>=22.0")
-    else:
-        infra_deps += ["uvicorn[standard]>=0.29", "starlette>=0.36"]
-    if enable_mesh:
-        infra_deps.append("skaal-mesh")
+    variants = ["wsgi"] if is_wsgi else []
+    features = ["mesh"] if enable_mesh else []
     seen_deps: set[str] = set()
+    dependencies = collect_user_packages(
+        source_module,
+        project_root=project_root,
+        target="gcp",
+        variants=variants,
+        features=features,
+    )
     for spec in plan.storage.values():
         for dependency in get_handler(spec).extra_deps:
             if dependency not in seen_deps:
                 seen_deps.add(dependency)
-                infra_deps.append(dependency)
-    dependencies = list(
-        dict.fromkeys(infra_deps + collect_user_packages(source_module, project_root=project_root))
-    )
+                dependencies.append(dependency)
 
     pyproject_path = output_dir / "pyproject.toml"
     pyproject_path.write_text(to_pyproject_toml(app.name, dependencies), encoding="utf-8")

@@ -17,7 +17,7 @@ def test_package_aws_uses_platform_specific_mesh_wheel(tmp_path: Path) -> None:
 name = "demo"
 version = "0.1.0"
 dependencies = [
-    "skaal[aws]",
+    "skaal[runtime,aws]",
     "skaal-mesh",
 ]
 """.strip(),
@@ -38,7 +38,7 @@ dependencies = [
         )
 
     install_commands = [call.args[0] for call in fake_run.call_args_list]
-    assert any("skaal[aws]" in cmd for cmd in install_commands)
+    assert any("skaal[runtime,aws]" in cmd for cmd in install_commands)
 
     mesh_cmd = next(cmd for cmd in install_commands if "skaal-mesh" in cmd)
     assert "--platform" in mesh_cmd

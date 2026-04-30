@@ -3,7 +3,7 @@ File upload API — FastAPI mounted over Skaal blob storage.
 
 Run locally:
 
-    pip install "skaal[examples]"
+    pip install "skaal[serve,fastapi]"
     skaal run examples.file_upload_api:app
 
 Then try:

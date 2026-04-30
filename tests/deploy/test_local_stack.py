@@ -147,6 +147,9 @@ def test_generate_artifacts_writes_dockerignore(tmp_path: Path):
         ".pulumi/\n.pulumi-state/\n__pycache__/\n.pytest_cache/\n"
     )
     assert '"resources"' in local_spec_path.read_text(encoding="utf-8")
+    generated_pyproject = (output_dir / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"skaal[serve,runtime]"' in generated_pyproject
+    assert '"apscheduler>=3.10' not in generated_pyproject
 
 
 def test_generate_artifacts_includes_declared_module_build_dependencies(tmp_path: Path):

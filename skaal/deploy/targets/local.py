@@ -170,29 +170,32 @@ def generate_artifacts(
                 shutil.copy2(src, skaal_bundle_dir / extra)
         generated.append(skaal_bundle_dir)
 
-    infra_deps = ["skaal", "gunicorn>=22.0", "apscheduler>=3.10"]
-    if not is_wsgi:
-        infra_deps += ["uvicorn[standard]>=0.29", "starlette>=0.36"]
     build_mesh_in_docker = False
+    mesh_dep: str | None = None
+    extra_features: list[str] = []
     if enable_mesh:
         mesh_dep = _bundle_local_mesh_wheel(project_root, output_dir) if dev else None
         if mesh_dep:
-            infra_deps.append(mesh_dep)
+            extra_features = []
         elif dev and (project_root / "mesh" / "Cargo.toml").exists():
             build_mesh_in_docker = True
             _copy_mesh_source(project_root, output_dir)
             generated.append(output_dir / "_mesh_src")
         else:
-            infra_deps.append("skaal-mesh")
+            extra_features.append("mesh")
     seen_deps: set[str] = set()
+    declared_deps = collect_user_packages(
+        source_module,
+        project_root=project_root,
+        target="local",
+        features=extra_features,
+    )
+    dependencies = list(dict.fromkeys(declared_deps + ([mesh_dep] if mesh_dep else [])))
     for spec in plan.storage.values():
         for dependency in get_handler(spec, local=True).extra_deps:
             if dependency not in seen_deps:
                 seen_deps.add(dependency)
-                infra_deps.append(dependency)
-    dependencies = list(
-        dict.fromkeys(infra_deps + collect_user_packages(source_module, project_root=project_root))
-    )
+                dependencies.append(dependency)
     uv_sources: dict[str, str] = {}
     if dev and skaal_src_dir.is_dir():
         uv_sources["skaal"] = "./_skaal"

@@ -7,7 +7,7 @@ Skaal lets you describe your application's storage and compute needs as constrai
 ## Quickstart
 
 ```bash
-pip install skaal
+pip install "skaal[serve]"
 ```
 
 ```bash
@@ -35,6 +35,8 @@ skaal plan --app myapp:app --catalog catalogs/local.toml
 # Run locally
 skaal run --app myapp:app
 ```
+
+Install `skaal[runtime]` as well when your app uses schedules, JWT auth, or OpenTelemetry.
 
 ## HTTP APIs
 
@@ -67,11 +69,11 @@ Use `catalogs/local.toml` for local filesystem-backed blobs, `catalogs/aws.toml`
 
 ```bash
 # Deploy to AWS
-pip install "skaal[aws]"
+pip install "skaal[deploy,aws]"
 skaal deploy --app myapp:app --target aws --catalog catalogs/aws.toml
 
 # Deploy to GCP
-pip install "skaal[gcp]"
+pip install "skaal[deploy,gcp]"
 skaal deploy --app myapp:app --target gcp --catalog catalogs/gcp.toml
 ```
 
@@ -86,9 +88,15 @@ skaal deploy --app myapp:app --target gcp --catalog catalogs/gcp.toml
 
 | Extra | Installs |
 |-------|----------|
-| `skaal` | Core (local SQLite + Redis) |
-| `skaal[aws]` | + boto3, Pulumi AWS, asyncpg |
-| `skaal[gcp]` | + google-cloud-firestore/storage, Cloud SQL connector, Pulumi GCP |
+| `skaal` | Core planning, solver, storage APIs, local data backends |
+| `skaal[serve]` | + local HTTP serving (`skaal run`, ASGI/WSGI mounting) |
+| `skaal[runtime]` | + schedules, JWT auth, OpenTelemetry runtime hooks |
+| `skaal[deploy]` | + Docker and Pulumi deployment tooling |
+| `skaal[aws]` | + AWS storage/runtime provider packages |
+| `skaal[gcp]` | + GCP storage/runtime provider packages |
+| `skaal[fastapi]` | + FastAPI and multipart upload support |
+| `skaal[dash]` | + Dash UI dependencies |
+| `skaal[examples]` | + all bundled example app dependencies |
 | `skaal[mesh]` | + prebuilt `skaal-mesh` wheel for the distributed runtime |
 | `skaal[examples]` | + Dash, FastAPI, dash-bootstrap-components |
 
