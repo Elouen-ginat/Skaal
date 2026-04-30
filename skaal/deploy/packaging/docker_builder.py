@@ -23,7 +23,6 @@ def build_image(
             tag=tag,
             rm=True,
             forcerm=True,
-            decode=True,
         )
         for chunk in log_stream:
             if progress is not None:

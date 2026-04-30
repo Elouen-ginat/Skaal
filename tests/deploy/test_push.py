@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from skaal.deploy.packaging.docker_builder import build_image
 from skaal.deploy.packaging.gcp_push import build_and_push_image
 from skaal.deploy.packaging.local import build_local_image
 from skaal.deploy.pulumi import DeploymentContext, RunnerPlan
@@ -58,7 +59,8 @@ def test_workspace_options_creates_state_dir(tmp_path: Path):
 def test_build_local_image_uses_docker_builder(monkeypatch, tmp_path: Path):
     calls: list[tuple[Path, str]] = []
 
-    def fake_build_image(*, context_dir: Path, tag: str):
+    def fake_build_image(*, context_dir: Path, tag: str, progress=None):
+        del progress
         calls.append((context_dir, tag))
         return "sha256:test-image"
 
@@ -68,6 +70,43 @@ def test_build_local_image_uses_docker_builder(monkeypatch, tmp_path: Path):
 
     assert image_ref == "sha256:test-image"
     assert calls == [(tmp_path.resolve(), "skaal-test:local")]
+
+
+def test_build_image_uses_high_level_decoded_log_stream(monkeypatch, tmp_path: Path):
+    chunks: list[dict[str, object]] = []
+    captured_kwargs: dict[str, object] = {}
+
+    class _FakeImages:
+        def build(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(id="sha256:test-image"), iter([
+                {"stream": "Step 1/2"},
+                {"stream": "Step 2/2"},
+            ])
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.images = _FakeImages()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("skaal.deploy.packaging.docker_builder.docker.from_env", lambda: _FakeClient())
+
+    image_ref = build_image(
+        context_dir=tmp_path,
+        tag="skaal-test:local",
+        progress=chunks.append,
+    )
+
+    assert image_ref == "sha256:test-image"
+    assert captured_kwargs == {
+        "path": str(tmp_path),
+        "tag": "skaal-test:local",
+        "rm": True,
+        "forcerm": True,
+    }
+    assert chunks == [{"stream": "Step 1/2"}, {"stream": "Step 2/2"}]
 
 
 def test_gcp_push_uses_google_auth_and_docker_builder(monkeypatch, tmp_path: Path):
@@ -115,6 +154,7 @@ def test_gcp_push_uses_google_auth_and_docker_builder(monkeypatch, tmp_path: Pat
             {
                 "context_dir": tmp_path.resolve(),
                 "tag": "us-central1-docker.pkg.dev/demo-project/repo-name/demo-app:latest",
+                "progress": None,
             },
         ),
         (
@@ -122,6 +162,7 @@ def test_gcp_push_uses_google_auth_and_docker_builder(monkeypatch, tmp_path: Pat
             {
                 "repository": "us-central1-docker.pkg.dev/demo-project/repo-name/demo-app",
                 "tag": "latest",
+                "progress": None,
             },
         ),
     ]
