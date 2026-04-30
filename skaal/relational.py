@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator, cast
-from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-_RELATIONAL_BACKENDS: WeakKeyDictionary[type, Any] = WeakKeyDictionary()
+_RELATIONAL_BACKEND_ATTR = "__skaal_relational_backend__"
 
 
 def _require_sqlmodel() -> type:
@@ -61,13 +60,13 @@ def _schema_hints(model_cls: type) -> dict[str, Any]:
 def wire_relational_model(model_cls: type, backend: Any) -> None:
     """Bind *backend* to a relational model class."""
     validate_relational_model(model_cls)
-    _RELATIONAL_BACKENDS[model_cls] = backend
+    setattr(model_cls, _RELATIONAL_BACKEND_ATTR, backend)
 
 
 def get_backend(model_cls: type) -> Any:
     """Return the backend currently wired to *model_cls*."""
     validate_relational_model(model_cls)
-    backend = _RELATIONAL_BACKENDS.get(model_cls)
+    backend = getattr(model_cls, _RELATIONAL_BACKEND_ATTR, None)
     if backend is None:
         raise NotImplementedError(
             f"{model_cls.__name__} relational model not wired. Use LocalRuntime or deploy first."

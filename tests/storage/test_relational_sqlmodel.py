@@ -42,6 +42,8 @@ async def test_relational_sqlite_round_trip_creates_real_tables(tmp_path: Path) 
     db_path = tmp_path / "relational.db"
     runtime = LocalRuntime.from_sqlite(app, db_path=db_path)
 
+    assert hasattr(User, "__skaal_relational_backend__")
+
     await ensure_relational_schema(User)
 
     async with open_relational_session(User) as session:
