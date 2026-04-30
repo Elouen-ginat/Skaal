@@ -105,7 +105,7 @@ class_name      = "GCSBlobBackend"
 module          = "gcs_blob_backend"
 env_prefix      = "SKAAL_GCS_BUCKET"
 uses_namespace  = true
-extra_deps      = ["google-cloud-storage>=2.16"]
+extra_deps      = ["gcsfs>=2025.3.0"]
 
 [storage.firestore.wire]
 class_name  = "FirestoreBackend"

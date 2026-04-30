@@ -15,7 +15,7 @@ def _s3_wire() -> dict[str, object]:
         "module": "s3_blob_backend",
         "env_prefix": "SKAAL_S3_BUCKET",
         "uses_namespace": True,
-        "extra_deps": ["boto3>=1.34"],
+        "extra_deps": ["s3fs>=2025.3.0"],
     }
 
 
@@ -25,7 +25,7 @@ def _gcs_wire() -> dict[str, object]:
         "module": "gcs_blob_backend",
         "env_prefix": "SKAAL_GCS_BUCKET",
         "uses_namespace": True,
-        "extra_deps": ["google-cloud-storage>=2.16"],
+        "extra_deps": ["gcsfs>=2025.3.0"],
     }
 
 
