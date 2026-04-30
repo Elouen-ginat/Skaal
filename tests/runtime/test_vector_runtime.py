@@ -43,3 +43,16 @@ def test_from_postgres_uses_pgvector_for_vector_store() -> None:
     backend = rt._backends["vector-runtime.Notes"]
     assert isinstance(backend, PgVectorBackend)
     assert backend._pgvector_dsn() == "postgresql+psycopg://user:pass@localhost/vector_db"
+
+
+def test_from_backend_postgres_uses_pgvector_for_vector_store() -> None:
+    from skaal.backends.pgvector_backend import PgVectorBackend
+
+    rt = LocalRuntime.from_backend(
+        _make_vector_app(),
+        "postgres",
+        dsn="postgresql://user:pass@localhost/vector_db",
+    )
+
+    backend = rt._backends["vector-runtime.Notes"]
+    assert isinstance(backend, PgVectorBackend)

@@ -55,6 +55,16 @@ def test_runtime_from_sqlite(counter_app, tmp_path):
     assert all(isinstance(b, SqliteBackend) for b in backends)
 
 
+def test_runtime_from_backend_sqlite(counter_app, tmp_path):
+    """from_backend('sqlite') resolves the named plugin and builds SqliteBackend instances."""
+    from skaal.backends.sqlite_backend import SqliteBackend
+
+    db = tmp_path / "generic.db"
+    rt = LocalRuntime.from_backend(counter_app, "sqlite", db_path=db)
+    backends = list(rt._backends.values())
+    assert all(isinstance(b, SqliteBackend) for b in backends)
+
+
 def test_runtime_backend_override(counter_app):
     """Explicit backend_overrides replace default LocalMap."""
     from skaal.backends.local_backend import LocalMap

@@ -186,11 +186,108 @@ class LocalRuntime(BaseRuntime):
         Returns:
             Dict mapping fully-qualified names to backend instances.
         """
-        return {
-            qname: backend_factory(qname, obj)
-            for qname, obj in app._collect_all().items()
-            if isinstance(obj, type) and hasattr(obj, "__skaal_storage__")
-        }
+        backends: dict[str, Any] = {}
+        for qname, obj in app._collect_all().items():
+            if not (isinstance(obj, type) and hasattr(obj, "__skaal_storage__")):
+                continue
+            backend = backend_factory(qname, obj)
+            if backend is not None:
+                backends[qname] = backend
+        return backends
+
+    @staticmethod
+    def _normalized_backend_namespace(namespace: str) -> str:
+        return namespace.replace(".", "_").lower()
+
+    @staticmethod
+    def _plugin_backend(name: str) -> type[Any]:
+        from skaal import plugins
+
+        return cast(type[Any], plugins.get_backend(name))
+
+    @classmethod
+    def _make_backend_instance(cls, name: str, namespace: str, **config: Any) -> Any:
+        backend_cls = cls._plugin_backend(name)
+
+        if name == "sqlite":
+            db_path = Path(cast(str | Path, config["db_path"]))
+            return backend_cls(db_path, namespace=namespace)
+        if name == "redis":
+            return backend_cls(
+                url=cast(str, config["redis_url"]),
+                namespace=cls._normalized_backend_namespace(namespace),
+            )
+        if name == "firestore":
+            return backend_cls(
+                collection=cls._normalized_backend_namespace(namespace),
+                project=config.get("project"),
+                database=cast(str, config.get("database", "(default)")),
+            )
+        if name == "postgres":
+            return backend_cls(
+                dsn=cast(str, config["dsn"]),
+                namespace=namespace,
+                min_size=cast(int, config.get("min_size", 1)),
+                max_size=cast(int, config.get("max_size", 5)),
+            )
+        if name == "dynamodb":
+            table_name = cast(str, config["table_name"])
+            return backend_cls(
+                table_name=f"{table_name}_{cls._normalized_backend_namespace(namespace)}",
+                region=cast(str, config.get("region", "us-east-1")),
+            )
+        raise ValueError(f"LocalRuntime.from_backend() does not know how to configure {name!r}.")
+
+    @classmethod
+    def _make_vector_backend_instance(cls, name: str, namespace: str, **config: Any) -> Any:
+        if name == "sqlite":
+            chroma_cls = cls._plugin_backend("chroma")
+            db_path = Path(cast(str | Path, config["db_path"]))
+            chroma_path = db_path.parent / f"{db_path.stem}_chroma"
+            return chroma_cls(chroma_path, namespace=namespace)
+        if name == "postgres":
+            pgvector_cls = cls._plugin_backend("pgvector")
+            return pgvector_cls(dsn=cast(str, config["dsn"]), namespace=namespace)
+        raise ValueError(
+            f"LocalRuntime.from_backend({name!r}) does not support @app.vector models."
+        )
+
+    @classmethod
+    def from_backend(
+        cls,
+        app: Any,
+        name: str,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        **config: Any,
+    ) -> "LocalRuntime":
+        """Create a ``LocalRuntime`` from a named backend plugin plus backend config."""
+        from skaal.blob import is_blob_model
+        from skaal.relational import is_relational_model
+        from skaal.vector import is_vector_model
+
+        def _make_backend(qname: str, obj: Any) -> Any | None:
+            if is_blob_model(obj):
+                return None
+            if is_vector_model(obj):
+                return cls._make_vector_backend_instance(name, qname, **config)
+            if is_relational_model(obj) and name not in {"sqlite", "postgres"}:
+                raise ValueError(
+                    f"LocalRuntime.from_backend({name!r}) does not support @app.relational models."
+                )
+            return cls._make_backend_instance(name, qname, **config)
+
+        backends = cls._build_backends(app, _make_backend)
+        return cls(
+            app,
+            host=host,
+            port=port,
+            backend_overrides=backends,
+            kv_backend_factory=lambda namespace: cls._make_backend_instance(
+                name, namespace, **config
+            ),
+        )
 
     @classmethod
     def from_redis(
@@ -201,27 +298,12 @@ class LocalRuntime(BaseRuntime):
         port: int = 8000,
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` using Redis backends for all storage classes."""
-        from skaal.backends.redis_backend import RedisBackend
-        from skaal.relational import is_relational_model
-        from skaal.vector import is_vector_model
-
-        def _make_backend(qname: str, obj: Any) -> RedisBackend:
-            if is_relational_model(obj) or is_vector_model(obj):
-                raise ValueError(
-                    "LocalRuntime.from_redis() does not support @app.relational or @app.vector models."
-                )
-            return RedisBackend(url=redis_url, namespace=qname.replace(".", "_").lower())
-
-        backends = cls._build_backends(app, _make_backend)
-        return cls(
+        return cls.from_backend(
             app,
+            "redis",
             host=host,
             port=port,
-            backend_overrides=backends,
-            kv_backend_factory=lambda namespace: RedisBackend(
-                url=redis_url,
-                namespace=namespace.replace(".", "_").lower(),
-            ),
+            redis_url=redis_url,
         )
 
     @classmethod
@@ -233,23 +315,12 @@ class LocalRuntime(BaseRuntime):
         port: int = 8000,
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` backed by SQLite."""
-        from skaal.backends.chroma_backend import ChromaVectorBackend
-        from skaal.backends.sqlite_backend import SqliteBackend
-        from skaal.vector import is_vector_model
-
-        def _make_backend(qname: str, obj: Any) -> Any:
-            if is_vector_model(obj):
-                chroma_path = Path(db_path).parent / f"{Path(db_path).stem}_chroma"
-                return ChromaVectorBackend(chroma_path, namespace=qname)
-            return SqliteBackend(Path(db_path), namespace=qname)
-
-        backends = cls._build_backends(app, _make_backend)
-        return cls(
+        return cls.from_backend(
             app,
+            "sqlite",
             host=host,
             port=port,
-            backend_overrides=backends,
-            kv_backend_factory=lambda namespace: SqliteBackend(Path(db_path), namespace=namespace),
+            db_path=db_path,
         )
 
     @classmethod
@@ -273,32 +344,13 @@ class LocalRuntime(BaseRuntime):
                       Application Default Credentials.
             database: Firestore database name.  Defaults to ``"(default)"``.
         """
-        from skaal.backends.firestore_backend import FirestoreBackend
-        from skaal.relational import is_relational_model
-        from skaal.vector import is_vector_model
-
-        def _make_backend(qname: str, obj: Any) -> FirestoreBackend:
-            if is_relational_model(obj) or is_vector_model(obj):
-                raise ValueError(
-                    "LocalRuntime.from_firestore() does not support @app.relational or @app.vector models."
-                )
-            return FirestoreBackend(
-                collection=qname.replace(".", "_").lower(),
-                project=project,
-                database=database,
-            )
-
-        backends = cls._build_backends(app, _make_backend)
-        return cls(
+        return cls.from_backend(
             app,
+            "firestore",
             host=host,
             port=port,
-            backend_overrides=backends,
-            kv_backend_factory=lambda namespace: FirestoreBackend(
-                collection=namespace.replace(".", "_").lower(),
-                project=project,
-                database=database,
-            ),
+            project=project,
+            database=database,
         )
 
     @classmethod
@@ -321,27 +373,14 @@ class LocalRuntime(BaseRuntime):
             min_size: Connection pool minimum size.
             max_size: Connection pool maximum size.
         """
-        from skaal.backends.pgvector_backend import PgVectorBackend
-        from skaal.backends.postgres_backend import PostgresBackend
-        from skaal.vector import is_vector_model
-
-        def _make_backend(qname: str, obj: Any) -> Any:
-            if is_vector_model(obj):
-                return PgVectorBackend(dsn=dsn, namespace=qname)
-            return PostgresBackend(dsn=dsn, namespace=qname, min_size=min_size, max_size=max_size)
-
-        backends = cls._build_backends(app, _make_backend)
-        return cls(
+        return cls.from_backend(
             app,
+            "postgres",
             host=host,
             port=port,
-            backend_overrides=backends,
-            kv_backend_factory=lambda namespace: PostgresBackend(
-                dsn=dsn,
-                namespace=namespace,
-                min_size=min_size,
-                max_size=max_size,
-            ),
+            dsn=dsn,
+            min_size=min_size,
+            max_size=max_size,
         )
 
     @classmethod
@@ -354,29 +393,13 @@ class LocalRuntime(BaseRuntime):
         port: int = 8000,
     ) -> "LocalRuntime":
         """Create a ``LocalRuntime`` backed by DynamoDB."""
-        from skaal.backends.dynamodb_backend import DynamoBackend
-        from skaal.relational import is_relational_model
-        from skaal.vector import is_vector_model
-
-        def _make_backend(qname: str, obj: Any) -> DynamoBackend:
-            if is_relational_model(obj) or is_vector_model(obj):
-                raise ValueError(
-                    "LocalRuntime.from_dynamodb() does not support @app.relational or @app.vector models."
-                )
-            return DynamoBackend(
-                table_name=f"{table_name}_{qname.replace('.', '_').lower()}", region=region
-            )
-
-        backends = cls._build_backends(app, _make_backend)
-        return cls(
+        return cls.from_backend(
             app,
+            "dynamodb",
             host=host,
             port=port,
-            backend_overrides=backends,
-            kv_backend_factory=lambda namespace: DynamoBackend(
-                table_name=f"{table_name}_{namespace.replace('.', '_').lower()}",
-                region=region,
-            ),
+            table_name=table_name,
+            region=region,
         )
 
     def wire_channels_redis(
