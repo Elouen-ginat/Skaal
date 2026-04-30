@@ -227,7 +227,7 @@ async def test_runtime_storage_persists_across_calls():
 async def test_local_runtime_wires_blob_store(tmp_path):
     app = App("blob-runtime")
 
-    @app.blob(read_latency="< 50ms", durability="durable")
+    @app.storage(kind="blob", read_latency="< 50ms", durability="durable")
     class Uploads(BlobStore):
         pass
 

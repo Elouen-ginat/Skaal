@@ -258,7 +258,8 @@ class RecentAuditEvents(Store[AuditEvent]):
 # ── Relational ────────────────────────────────────────────────────────────────
 
 
-@skaal_app.relational(
+@skaal_app.storage(
+    kind="relational",
     read_latency="< 20ms",
     durability="persistent",
     collocate_with="task-dashboard.Tasks",
@@ -285,7 +286,8 @@ class TaskComments(SQLModel, table=True):
 # ── Vector ────────────────────────────────────────────────────────────────────
 
 
-@skaal_app.vector(
+@skaal_app.storage(
+    kind="vector",
     dim=64,
     metric="cosine",
     read_latency="< 30ms",
@@ -1180,7 +1182,7 @@ dash_app.layout = dbc.Container(
                                 [
                                     html.H5("Semantic Search", className="mt-3"),
                                     html.P(
-                                        "Backed by @app.vector — cosine similarity over "
+                                        'Backed by @app.storage(kind="vector") — cosine similarity over '
                                         "task titles, descriptions, and tags.",
                                         className="text-muted small",
                                     ),
@@ -1207,7 +1209,7 @@ dash_app.layout = dbc.Container(
                                 [
                                     html.H5("Task Comments", className="mt-3"),
                                     html.P(
-                                        "Backed by @app.relational — SQL rows "
+                                        'Backed by @app.storage(kind="relational") — SQL rows '
                                         "collocated with Tasks.",
                                         className="text-muted small",
                                     ),

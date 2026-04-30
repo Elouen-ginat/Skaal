@@ -249,7 +249,7 @@ class LocalRuntime(BaseRuntime):
             pgvector_cls = cls._plugin_backend("pgvector")
             return pgvector_cls(dsn=cast(str, config["dsn"]), namespace=namespace)
         raise ValueError(
-            f"LocalRuntime.from_backend({name!r}) does not support @app.vector models."
+            f'LocalRuntime.from_backend({name!r}) does not support @app.storage(kind="vector") models.'
         )
 
     @classmethod
@@ -274,7 +274,7 @@ class LocalRuntime(BaseRuntime):
                 return cls._make_vector_backend_instance(name, qname, **config)
             if is_relational_model(obj) and name not in {"sqlite", "postgres"}:
                 raise ValueError(
-                    f"LocalRuntime.from_backend({name!r}) does not support @app.relational models."
+                    f'LocalRuntime.from_backend({name!r}) does not support @app.storage(kind="relational") models.'
                 )
             return cls._make_backend_instance(name, qname, **config)
 

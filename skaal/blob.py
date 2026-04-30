@@ -24,7 +24,7 @@ def is_blob_model(obj: Any) -> bool:
 
 def validate_blob_model(store_cls: type) -> None:
     if not isinstance(store_cls, type) or not issubclass(store_cls, BlobStore):
-        raise TypeError("@app.blob requires a skaal.BlobStore subclass.")
+        raise TypeError('@app.storage(kind="blob") requires a skaal.BlobStore subclass.')
 
 
 class BlobStore:

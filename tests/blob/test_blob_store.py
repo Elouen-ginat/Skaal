@@ -12,7 +12,7 @@ from skaal.runtime.local import LocalRuntime
 def _make_blob_app(tmp_path: Path) -> tuple[App, LocalRuntime, type[BlobStore]]:
     app = App("blob-demo")
 
-    @app.blob(read_latency="< 50ms", durability="durable")
+    @app.storage(kind="blob", read_latency="< 50ms", durability="durable")
     class Uploads(BlobStore):
         pass
 

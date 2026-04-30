@@ -1,11 +1,11 @@
-"""Core user-facing decorators: @storage, @relational, @vector, @compute, @scale, @handler, @shared."""
+"""Core user-facing decorators: @storage, @compute, @scale, @handler, @shared."""
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, Callable, Literal, TypeVar, cast, overload
 
-from skaal.blob import BlobStore, validate_blob_model
+from skaal.blob import validate_blob_model
 from skaal.types import (
     AccessPattern,
     Compute,
@@ -24,6 +24,7 @@ from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimitPolicy, Retry
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
 E = TypeVar("E", bound=Enum)
+StorageKind = Literal["kv", "blob", "relational", "vector"]
 
 
 def _coerce_enum(value: E | str | None, enum_type: type[E]) -> E | None:
@@ -77,13 +78,117 @@ def _build_storage_metadata(
     }
 
 
+def _normalize_storage_kind(kind: StorageKind | str) -> StorageKind:
+    normalized = kind.strip().lower()
+    if normalized not in {"kv", "blob", "relational", "vector"}:
+        raise ValueError(f"Unsupported storage kind: {kind!r}")
+    return cast(StorageKind, normalized)
+
+
+def _default_access_pattern(kind: StorageKind) -> AccessPattern:
+    if kind == "blob":
+        return AccessPattern.BULK_READ
+    if kind == "relational":
+        return AccessPattern.TRANSACTIONAL
+    if kind == "vector":
+        return AccessPattern.BULK_READ
+    return AccessPattern.RANDOM_READ
+
+
+def _storage_schema(
+    cls: C,
+    *,
+    kind: StorageKind,
+    dim: int | None,
+    metric: str,
+) -> dict[str, Any]:
+    if kind == "blob":
+        validate_blob_model(cls)
+        try:
+            from skaal.storage import _schema_hints
+
+            return _schema_hints(cls)
+        except Exception:  # noqa: BLE001
+            return {}
+
+    if kind == "relational":
+        from skaal.relational import _schema_hints as relational_schema_hints
+        from skaal.relational import validate_relational_model
+
+        validate_relational_model(cls)
+        return relational_schema_hints(cls)
+
+    if kind == "vector":
+        from skaal.vector import _schema_hints as vector_schema_hints
+        from skaal.vector import validate_vector_model
+
+        validate_vector_model(cls)
+        if dim is None or dim <= 0:
+            raise ValueError('@app.storage(kind="vector") requires dim > 0.')
+        setattr(cls, "__skaal_vector_dimensions__", dim)
+        setattr(cls, "__skaal_vector_metric__", metric.lower())
+        return vector_schema_hints(cls)
+
+    try:
+        from skaal.storage import _schema_hints
+
+        return _schema_hints(cls)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@overload
 def storage(
     *,
+    kind: Literal["vector"],
+    dim: int,
+    metric: str = "cosine",
     read_latency: Latency | str | None = None,
     write_latency: Latency | str | None = None,
     durability: Durability | str = Durability.PERSISTENT,
     size_hint: str | None = None,
-    access_pattern: AccessPattern | str = AccessPattern.RANDOM_READ,
+    access_pattern: AccessPattern | str | None = None,
+    write_throughput: Throughput | str | None = None,
+    residency: str | None = None,
+    retention: str | None = None,
+    auto_optimize: bool = False,
+    decommission_policy: DecommissionPolicy | None = None,
+    collocate_with: str | None = None,
+    indexes: list[SecondaryIndex] | None = None,
+) -> Callable[[C], C]: ...
+
+
+@overload
+def storage(
+    *,
+    kind: StorageKind | str = "kv",
+    dim: None = None,
+    metric: str = "cosine",
+    read_latency: Latency | str | None = None,
+    write_latency: Latency | str | None = None,
+    durability: Durability | str = Durability.PERSISTENT,
+    size_hint: str | None = None,
+    access_pattern: AccessPattern | str | None = None,
+    write_throughput: Throughput | str | None = None,
+    residency: str | None = None,
+    retention: str | None = None,
+    auto_optimize: bool = False,
+    decommission_policy: DecommissionPolicy | None = None,
+    collocate_with: str | None = None,
+    indexes: list[SecondaryIndex] | None = None,
+) -> Callable[[C], C]: ...
+
+
+def storage(
+    *,
+    kind: StorageKind | str = "kv",
+    dim: int | None = None,
+    metric: str = "cosine",
+    read_latency: Latency | str | None = None,
+    write_latency: Latency | str | None = None,
+    durability: Durability | str = Durability.PERSISTENT,
+    size_hint: str | None = None,
+    access_pattern: AccessPattern | str | None = None,
     write_throughput: Throughput | str | None = None,
     residency: str | None = None,
     retention: str | None = None,
@@ -93,169 +198,28 @@ def storage(
     indexes: list[SecondaryIndex] | None = None,
 ) -> Callable[[C], C]:
     """Declare infrastructure constraints for a storage variable or Store class."""
+    normalized_kind = _normalize_storage_kind(kind)
 
     def decorator(cls: C) -> C:
-        # Collect schema hints from Store subclasses
-        try:
-            from skaal.storage import _schema_hints
-
-            schema = _schema_hints(cls)
-        except Exception:  # noqa: BLE001
-            schema = {}
+        schema = _storage_schema(cls, kind=normalized_kind, dim=dim, metric=metric)
 
         return _apply_metadata(
             cls,
             "__skaal_storage__",
             _build_storage_metadata(
-                kind="kv",
+                kind=normalized_kind,
                 read_latency=read_latency,
                 write_latency=write_latency,
                 durability=durability,
                 size_hint=size_hint,
-                access_pattern=access_pattern,
+                access_pattern=access_pattern or _default_access_pattern(normalized_kind),
                 write_throughput=write_throughput,
                 residency=residency,
-                retention=retention,
+                retention=retention if normalized_kind in {"kv", "blob"} else None,
                 auto_optimize=auto_optimize,
                 decommission_policy=decommission_policy,
                 collocate_with=collocate_with,
-                indexes=indexes,
-                schema=schema,
-            ),
-        )
-
-    return decorator
-
-
-def blob(
-    *,
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    access_pattern: AccessPattern | str = AccessPattern.BULK_READ,
-    write_throughput: Throughput | str | None = None,
-    residency: str | None = None,
-    retention: str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
-) -> Callable[[C], C]:
-    """Declare infrastructure constraints for a blob storage class."""
-
-    outer = storage(
-        read_latency=read_latency,
-        write_latency=write_latency,
-        durability=durability,
-        size_hint=size_hint,
-        access_pattern=access_pattern,
-        write_throughput=write_throughput,
-        residency=residency,
-        retention=retention,
-        auto_optimize=auto_optimize,
-        decommission_policy=decommission_policy,
-        collocate_with=collocate_with,
-    )
-
-    def decorator(cls: C) -> C:
-        if not isinstance(cls, type) or not issubclass(cls, BlobStore):
-            raise TypeError("@app.blob requires a skaal.BlobStore subclass.")
-        validate_blob_model(cls)
-        annotated = outer(cls)
-        getattr(annotated, "__skaal_storage__", {})["kind"] = "blob"
-        return cast(C, annotated)
-
-    return decorator
-
-
-def relational(
-    *,
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    write_throughput: Throughput | str | None = None,
-    residency: str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
-) -> Callable[[C], C]:
-    """Declare infrastructure constraints for a SQLModel relational table."""
-
-    def decorator(cls: C) -> C:
-        from skaal.relational import _schema_hints, validate_relational_model
-
-        validate_relational_model(cls)
-        schema = _schema_hints(cls)
-
-        return _apply_metadata(
-            cls,
-            "__skaal_storage__",
-            _build_storage_metadata(
-                kind="relational",
-                read_latency=read_latency,
-                write_latency=write_latency,
-                durability=durability,
-                size_hint=size_hint,
-                access_pattern=AccessPattern.TRANSACTIONAL,
-                write_throughput=write_throughput,
-                residency=residency,
-                retention=None,
-                auto_optimize=auto_optimize,
-                decommission_policy=decommission_policy,
-                collocate_with=collocate_with,
-                schema=schema,
-            ),
-        )
-
-    return decorator
-
-
-def vector(
-    *,
-    dim: int,
-    metric: str = "cosine",
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    write_throughput: Throughput | str | None = None,
-    residency: str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
-) -> Callable[[C], C]:
-    """Declare infrastructure constraints for a typed vector store."""
-
-    def decorator(cls: C) -> C:
-        from skaal.vector import _schema_hints, validate_vector_model
-
-        validate_vector_model(cls)
-
-        normalized_metric = metric.lower()
-        if dim <= 0:
-            raise ValueError("@app.vector requires dim > 0.")
-
-        setattr(cls, "__skaal_vector_dimensions__", dim)
-        setattr(cls, "__skaal_vector_metric__", normalized_metric)
-        schema = _schema_hints(cls)
-
-        return _apply_metadata(
-            cls,
-            "__skaal_storage__",
-            _build_storage_metadata(
-                kind="vector",
-                read_latency=read_latency,
-                write_latency=write_latency,
-                durability=durability,
-                size_hint=size_hint,
-                access_pattern=AccessPattern.BULK_READ,
-                write_throughput=write_throughput,
-                residency=residency,
-                retention=None,
-                auto_optimize=auto_optimize,
-                decommission_policy=decommission_policy,
-                collocate_with=collocate_with,
+                indexes=indexes if normalized_kind == "kv" else None,
                 schema=schema,
             ),
         )

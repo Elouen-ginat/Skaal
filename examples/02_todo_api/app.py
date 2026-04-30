@@ -112,7 +112,7 @@ class Todos(Store[Todo]):
     """
 
 
-@app.relational(read_latency="< 20ms", durability="persistent")
+@app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
 class Comments(SQLModel, table=True):
     """Structured todo comments stored in the relational tier."""
 
@@ -125,7 +125,8 @@ class Comments(SQLModel, table=True):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-@app.vector(
+@app.storage(
+    kind="vector",
     dim=64,
     metric="cosine",
     read_latency="< 30ms",

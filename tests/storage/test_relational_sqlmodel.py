@@ -15,7 +15,7 @@ from skaal.runtime.local import LocalRuntime
 def _make_relational_app() -> tuple[App, type[SQLModel]]:
     app = App("relational-demo")
 
-    @app.relational(read_latency="< 20ms", durability="persistent")
+    @app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
     class User(SQLModel, table=True):
         __tablename__ = "users"
 
@@ -33,7 +33,7 @@ def test_relational_decorator_requires_sqlmodel_table() -> None:
         pass
 
     with pytest.raises(TypeError):
-        app.relational()(Plain)
+        app.storage(kind="relational")(Plain)
 
 
 @pytest.mark.asyncio

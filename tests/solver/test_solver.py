@@ -244,7 +244,7 @@ def test_solve_serialization_roundtrip(tmp_path):
 def test_solve_blob_resource_keeps_blob_kind() -> None:
     app = App("blob-solver")
 
-    @app.blob(read_latency="< 500ms", durability="durable")
+    @app.storage(kind="blob", read_latency="< 500ms", durability="durable")
     class Uploads(BlobStore):
         pass
 

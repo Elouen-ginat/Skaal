@@ -16,7 +16,7 @@ class Note(BaseModel):
 def _make_vector_app() -> App:
     app = App("vector-runtime")
 
-    @app.vector(dim=32, read_latency="< 20ms", durability="persistent")
+    @app.storage(kind="vector", dim=32, read_latency="< 20ms", durability="persistent")
     class Notes(VectorStore[Note]):
         pass
 

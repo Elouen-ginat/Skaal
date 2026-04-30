@@ -26,7 +26,7 @@ app = App("file-upload-api")
 api = FastAPI(title="Skaal File Upload API")
 
 
-@app.blob(read_latency="< 500ms", durability="durable")
+@app.storage(kind="blob", read_latency="< 500ms", durability="durable")
 class Uploads(BlobStore):
     pass
 

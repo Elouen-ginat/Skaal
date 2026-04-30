@@ -7,9 +7,8 @@ from collections.abc import AsyncIterator, Mapping
 from types import SimpleNamespace
 
 # TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, cast, overload
 
-from skaal.blob import BlobStore
 from skaal.types import (
     AccessPattern,
     BeforeInvoke,
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
+StorageKind = Literal["kv", "blob", "relational", "vector"]
 
 
 class ModuleExport:
@@ -118,11 +118,14 @@ class Module:
         self,
         cls_to_decorate: C,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
+        access_pattern: AccessPattern | str | None = ...,
         write_throughput: Throughput | str | None = ...,
         residency: str | None = ...,
         retention: str | None = ...,
@@ -137,11 +140,14 @@ class Module:
         self,
         cls_to_decorate: None = ...,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
+        access_pattern: AccessPattern | str | None = ...,
         write_throughput: Throughput | str | None = ...,
         residency: str | None = ...,
         retention: str | None = ...,
@@ -155,11 +161,14 @@ class Module:
         self,
         cls_to_decorate: C | None = None,
         *,
+        kind: StorageKind | str = "kv",
+        dim: int | None = None,
+        metric: str = "cosine",
         read_latency: Latency | str | None = None,
         write_latency: Latency | str | None = None,
         durability: Durability | str = Durability.PERSISTENT,
         size_hint: str | None = None,
-        access_pattern: AccessPattern | str = AccessPattern.RANDOM_READ,
+        access_pattern: AccessPattern | str | None = None,
         write_throughput: Throughput | str | None = None,
         residency: str | None = None,
         retention: str | None = None,
@@ -180,7 +189,11 @@ class Module:
         """
         from skaal.decorators import storage as _storage_dec
 
-        outer = _storage_dec(
+        storage_decorator = cast(Callable[..., Any], _storage_dec)
+        outer = storage_decorator(
+            kind=kind,
+            dim=dim,
+            metric=metric,
             read_latency=read_latency,
             write_latency=write_latency,
             durability=durability,
@@ -193,234 +206,6 @@ class Module:
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
             indexes=indexes,
-        )
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
-
-    @overload
-    def blob(
-        self,
-        cls_to_decorate: C,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        retention: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def blob(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        retention: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def blob(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        access_pattern: AccessPattern | str = AccessPattern.BULK_READ,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        retention: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a blob storage class with infrastructure constraints."""
-        from skaal.decorators import blob as _blob_dec
-
-        outer = _blob_dec(
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            access_pattern=access_pattern,
-            write_throughput=write_throughput,
-            residency=residency,
-            retention=retention,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-        )
-
-        def decorator(cls: C) -> C:
-            if not isinstance(cls, type) or not issubclass(cls, BlobStore):
-                raise TypeError("@app.blob requires a skaal.BlobStore subclass.")
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return cast(C, annotated)
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
-
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: C,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def relational(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a SQLModel relational table with infrastructure constraints."""
-        from skaal.decorators import relational as _relational_dec
-
-        outer = _relational_dec(
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-        )
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: C,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def vector(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        dim: int,
-        metric: str = "cosine",
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a typed vector store with infrastructure constraints."""
-        from skaal.decorators import vector as _vector_dec
-
-        outer = _vector_dec(
-            dim=dim,
-            metric=metric,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
         )
 
         def decorator(cls: C) -> C:

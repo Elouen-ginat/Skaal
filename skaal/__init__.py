@@ -22,14 +22,11 @@ from skaal.components import (
     ScheduleTrigger,
 )
 from skaal.decorators import (
-    blob,
     compute,
     handler,
-    relational,
     scale,
     shared,
     storage,
-    vector,
 )
 from skaal.module import Module, ModuleExport
 from skaal.patterns import EventLog, Outbox, Projection, Saga, SagaStep
@@ -70,15 +67,12 @@ __all__ = [
     "Channel",
     "sync_run",
     # Decorators
-    "blob",
     "agent",
     "compute",
     "handler",
-    "relational",
     "scale",
     "shared",
     "storage",
-    "vector",
     "open_relational_session",
     "ensure_relational_schema",
     # Patterns

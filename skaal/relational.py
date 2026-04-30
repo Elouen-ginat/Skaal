@@ -26,9 +26,11 @@ def validate_relational_model(model_cls: type) -> None:
     """Raise if *model_cls* is not a concrete ``SQLModel`` table model."""
     SQLModel = _require_sqlmodel()
     if not isinstance(model_cls, type) or not issubclass(model_cls, SQLModel):
-        raise TypeError("@app.relational requires a SQLModel subclass.")
+        raise TypeError('@app.storage(kind="relational") requires a SQLModel subclass.')
     if getattr(model_cls, "__table__", None) is None:
-        raise TypeError("@app.relational requires a concrete SQLModel table (`table=True`).")
+        raise TypeError(
+            '@app.storage(kind="relational") requires a concrete SQLModel table (`table=True`).'
+        )
 
 
 def is_relational_model(obj: Any) -> bool:
