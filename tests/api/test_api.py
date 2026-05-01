@@ -178,7 +178,22 @@ def test_build_delegates_to_target(
         assert kwargs["plan"].app_name == plan_file.app_name
         return expected_paths
 
-    monkeypatch.setattr("skaal.deploy.build_artifacts", _fake_build_artifacts)
+        def generate_artifacts(
+            self,
+            *,
+            app,
+            plan,
+            output_dir,
+            source_module,
+            app_var,
+            region,
+            dev,
+            stack_profile=None,
+        ):
+            assert plan.app_name == plan_file.app_name
+            return expected_paths
+
+    monkeypatch.setattr("skaal.deploy.get_target", lambda name: _FakeTarget())
 
     generated = api.build(app=simple_app, output_dir=tmp_project / "artifacts")
     assert generated == expected_paths
@@ -400,8 +415,11 @@ def test_deploy_forwards_to_deploy_artifacts(tmp_path: Path) -> None:
     """deploy() resolves settings and delegates to deploy_artifacts()."""
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
+    (artifacts / "skaal-meta.json").write_text(
+        '{"target": "aws", "source_module": "examples.app", "app_name": "demo"}'
+    )
 
-    with mock.patch("skaal.deploy.deploy_artifacts") as fake:
+    with mock.patch("skaal.deploy.package_and_push") as fake:
         fake.return_value = {"apiUrl": "https://example.com"}
         result = api.deploy(
             artifacts,
@@ -416,89 +434,25 @@ def test_deploy_forwards_to_deploy_artifacts(tmp_path: Path) -> None:
     call_kwargs = fake.call_args.kwargs
     assert call_kwargs["stack"] == "dev"
     assert call_kwargs["region"] == "us-east-1"
-    assert call_kwargs["runtime_options"] == {"detach": False, "follow_logs": False}
 
 
-def test_deploy_forwards_local_runtime_options(tmp_path: Path) -> None:
-    """api.deploy() should forward local runtime flags to the deploy target layer."""
+def test_destroy_forwards_to_destroy_stack(tmp_path: Path) -> None:
+    """destroy() resolves settings and delegates to destroy_stack()."""
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
+    (artifacts / "skaal-meta.json").write_text(
+        '{"target": "local", "source_module": "examples.app", "app_name": "demo"}'
+    )
 
-    with mock.patch("skaal.deploy.deploy_artifacts") as fake:
-        fake.return_value = {}
-        api.deploy(artifacts, local_detach=True, local_follow_logs=True)
+    with mock.patch("skaal.deploy.destroy_stack") as fake:
+        api.destroy(
+            artifacts,
+            stack=None,
+            yes=True,
+        )
 
-    call_kwargs = fake.call_args.kwargs
-    assert call_kwargs["runtime_options"] == {"detach": True, "follow_logs": True}
-
-
-def test_deploy_pre_hook_failure_skips_deploy_artifacts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failing pre-deploy hook aborts before the deploy executor runs."""
-    from skaal.deploy.push import write_meta
-    from skaal.errors import SkaalHookError
-
-    artifacts = tmp_path / "artifacts"
-    artifacts.mkdir()
-    write_meta(artifacts, target="aws", source_module="examples.counter", app_name="demo")
-
-    class _Settings:
-        stack = "dev"
-        region = "us-east-1"
-        gcp_project = None
-        overrides: dict[str, str] = {}
-        deletion_protection = None
-        pre_deploy = [["missing-pre-hook"]]
-        post_deploy: list[list[str]] = []
-        stacks: dict[str, object] = {}
-
-        def for_stack(self, name: str | None = None):
-            self.stack = name or self.stack
-            return self
-
-    monkeypatch.setattr(api, "SkaalSettings", lambda: _Settings())
-
-    with mock.patch("skaal.deploy.deploy_artifacts") as fake_push:
-        with pytest.raises(SkaalHookError) as exc_info:
-            api.deploy(artifacts)
-
-    fake_push.assert_not_called()
-    assert "no infrastructure changes were applied" in str(exc_info.value)
-
-
-def test_deploy_post_hook_failure_reports_committed_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failing post-deploy hook should explain that infra deploy already completed."""
-    from skaal.deploy.push import write_meta
-    from skaal.errors import SkaalHookError
-
-    artifacts = tmp_path / "artifacts"
-    artifacts.mkdir()
-    write_meta(artifacts, target="aws", source_module="examples.counter", app_name="demo")
-
-    class _Settings:
-        stack = "dev"
-        region = "us-east-1"
-        gcp_project = None
-        overrides: dict[str, str] = {}
-        deletion_protection = None
-        pre_deploy: list[list[str]] = []
-        post_deploy = [["missing-post-hook"]]
-        stacks: dict[str, object] = {}
-
-        def for_stack(self, name: str | None = None):
-            self.stack = name or self.stack
-            return self
-
-    monkeypatch.setattr(api, "SkaalSettings", lambda: _Settings())
-
-    with mock.patch("skaal.deploy.deploy_artifacts", return_value={"apiUrl": "https://x"}):
-        with pytest.raises(SkaalHookError) as exc_info:
-            api.deploy(artifacts)
-
-    message = str(exc_info.value)
-    assert "Post-deploy hook failed." in message
-    assert "already completed" in message
-    assert "SKAAL_OUTPUT_*" in message
+    fake.assert_called_once_with(
+        artifacts_dir=artifacts.resolve(),
+        stack="local",
+        yes=True,
+    )

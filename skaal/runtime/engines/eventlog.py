@@ -19,7 +19,8 @@ from skaal.runtime.engines.base import register_engine
 class EventLogEngine:
     def __init__(self, log: EventLog[Any]) -> None:
         self.log = log
-        self._observer: Any | None = None
+        self._started = False
+        self._failures = 0
 
     async def start(self, context: Any) -> None:
         self._observer = getattr(context, "observer", None)
@@ -36,11 +37,11 @@ class EventLogEngine:
                 # Connection errors surface lazily on first append/subscribe;
                 # the engine stays startable so tests with unavailable servers
                 # still proceed.
+                self._failures += 1
                 pass
 
     async def stop(self) -> None:
-        if self._observer is not None:
-            self._observer.engine_stopped(self._engine_name())
+        self._started = False
 
-    def _engine_name(self) -> str:
-        return f"eventlog:{id(self.log)}"
+    def snapshot_telemetry(self) -> dict[str, int | bool]:
+        return {"running": self._started, "failures": self._failures}

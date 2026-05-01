@@ -181,8 +181,7 @@ _LAMBDA_RUNTIMES = {
 
 class LambdaDeployConfig(ComputeDeployConfig):
     runtime: str = "python3.11"
-    vpc_id: str | None = None
-    subnet_ids: list[str] = Field(default_factory=list)
+    architecture: Literal["x86_64", "arm64"] = "x86_64"
     timeout: int = Field(
         default=30,
         ge=1,
@@ -350,16 +349,14 @@ class CloudRunDeployConfig(ComputeDeployConfig):
         return v
 
 
-# ── Local Docker Compose compute ──────────────────────────────────────────────
+# ── Local Docker compute ──────────────────────────────────────────────────────
 
 
 class LocalStackDeployConfig(ComputeDeployConfig):
-    """Configuration for local Docker Compose deployments.
+    """Configuration for local Docker deployments.
 
     Attributes:
         port: HTTP port to expose for the app container.
-        app_service_name: Name of the app service in docker-compose.yml.
-        container_name: Docker container name for the app service.
     """
 
     port: int = Field(default=8000, ge=1, le=65535)
@@ -402,7 +399,7 @@ _COMPUTE_CONFIGS: dict[str, type[ComputeDeployConfig]] = {
     "aws": LambdaDeployConfig,
     "gcp-cloudrun": CloudRunDeployConfig,
     "gcp": CloudRunDeployConfig,
-    "local-compose": LocalStackDeployConfig,
+    "local-docker": LocalStackDeployConfig,
 }
 
 

@@ -8,6 +8,19 @@ from typing import Any, AsyncIterator, Callable, List, cast
 from skaal.backends._spec import BackendSpec, Wiring
 from skaal.deploy.kinds import StorageKind
 from skaal.errors import SkaalConflict, SkaalUnavailable
+from skaal.serialization import decode_json_value
+from skaal.storage import (
+    _cursor_identity,
+    _encode_cursor,
+    _get_backend_indexes,
+    _normalize_limit,
+    _validate_cursor,
+)
+from skaal.types.storage import Page
+
+
+def _decode_jsonb(raw: Any) -> Any:
+    return decode_json_value(raw)
 
 _LOCAL_POSTGRES_DSN = "postgresql://skaal_user:skaal_pass@postgres/skaal_db"
 
@@ -131,10 +144,35 @@ class PostgresBackend:
             )
         result = []
         for row in rows:
-            raw = row["value"]
-            value = json.loads(raw) if isinstance(raw, str) else raw
-            result.append((row["key"], value))
+            val = _decode_jsonb(row["value"])
+            result.append((row["key"], val))
         return result
+
+    async def list_page(self, *, limit: int, cursor: str | None):
+        await self._ensure_connected()
+        limit = _normalize_limit(limit)
+        decoded = _validate_cursor(cursor, mode="list")
+        last_key = decoded.get("last_key")
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT key, value
+                FROM skaal_kv
+                WHERE ns = $1 AND ($2::text IS NULL OR key > $2)
+                ORDER BY key
+                LIMIT $3
+                """,
+                self.namespace,
+                last_key,
+                limit + 1,
+            )
+        page_rows = rows[:limit]
+        has_more = len(rows) > limit
+        items = [(row["key"], _decode_jsonb(row["value"])) for row in page_rows]
+        next_cursor = None
+        if has_more and page_rows:
+            next_cursor = _encode_cursor({"mode": "list", "last_key": page_rows[-1]["key"]})
+        return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
     async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
         await self._ensure_connected()
@@ -146,10 +184,150 @@ class PostgresBackend:
             )
         result = []
         for row in rows:
-            raw = row["value"]
-            value = json.loads(raw) if isinstance(raw, str) else raw
-            result.append((row["key"], value))
+            val = _decode_jsonb(row["value"])
+            result.append((row["key"], val))
         return result
+
+    async def scan_page(self, prefix: str = "", *, limit: int, cursor: str | None):
+        await self._ensure_connected()
+        limit = _normalize_limit(limit)
+        decoded = _validate_cursor(cursor, mode="scan", extra={"prefix": prefix})
+        last_key = decoded.get("last_key")
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT key, value
+                FROM skaal_kv
+                WHERE ns = $1 AND key LIKE $2 AND ($3::text IS NULL OR key > $3)
+                ORDER BY key
+                LIMIT $4
+                """,
+                self.namespace,
+                f"{prefix}%",
+                last_key,
+                limit + 1,
+            )
+        page_rows = rows[:limit]
+        has_more = len(rows) > limit
+        items = [(row["key"], _decode_jsonb(row["value"])) for row in page_rows]
+        next_cursor = None
+        if has_more and page_rows:
+            next_cursor = _encode_cursor(
+                {"mode": "scan", "prefix": prefix, "last_key": page_rows[-1]["key"]}
+            )
+        return Page(items=items, next_cursor=next_cursor, has_more=has_more)
+
+    async def query_index(
+        self,
+        index_name: str,
+        key: Any,
+        *,
+        limit: int,
+        cursor: str | None,
+    ):
+        await self._ensure_connected()
+        limit = _normalize_limit(limit)
+        indexes = _get_backend_indexes(self)
+        index = indexes.get(index_name)
+        if index is None:
+            raise ValueError(f"No secondary index named {index_name!r}")
+
+        decoded = _validate_cursor(
+            cursor,
+            mode="index",
+            extra={"index_name": index_name, "key": _cursor_identity(key)},
+        )
+        partition_path = [index.partition_key]
+        partition_value = json.dumps(key)
+
+        if index.sort_key is None:
+            last_key = decoded.get("last_key")
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT key, value
+                    FROM skaal_kv
+                    WHERE ns = $1
+                      AND (value #> $2::text[]) = $3::jsonb
+                      AND ($4::text IS NULL OR key > $4)
+                    ORDER BY key
+                    LIMIT $5
+                    """,
+                    self.namespace,
+                    partition_path,
+                    partition_value,
+                    last_key,
+                    limit + 1,
+                )
+            page_rows = rows[:limit]
+            has_more = len(rows) > limit
+            items = [_decode_jsonb(row["value"]) for row in page_rows]
+            next_cursor = None
+            if has_more and page_rows:
+                next_cursor = _encode_cursor(
+                    {
+                        "mode": "index",
+                        "index_name": index_name,
+                        "key": _cursor_identity(key),
+                        "last_key": page_rows[-1]["key"],
+                    }
+                )
+            return Page(items=items, next_cursor=next_cursor, has_more=has_more)
+
+        sort_path = [index.sort_key]
+        if decoded.get("has_last_sort"):
+            last_sort = json.dumps(decoded.get("last_sort"))
+            last_key = decoded.get("last_key")
+            query = """
+                SELECT key, value, (value #> $4::text[]) AS sort_value
+                FROM skaal_kv
+                WHERE ns = $1
+                  AND (value #> $2::text[]) = $3::jsonb
+                  AND (
+                    (value #> $4::text[]) > $5::jsonb
+                    OR ((value #> $4::text[]) = $5::jsonb AND key > $6)
+                  )
+                ORDER BY sort_value, key
+                LIMIT $7
+            """
+            params = [
+                self.namespace,
+                partition_path,
+                partition_value,
+                sort_path,
+                last_sort,
+                last_key,
+                limit + 1,
+            ]
+        else:
+            query = """
+                SELECT key, value, (value #> $4::text[]) AS sort_value
+                FROM skaal_kv
+                WHERE ns = $1
+                  AND (value #> $2::text[]) = $3::jsonb
+                ORDER BY sort_value, key
+                LIMIT $5
+            """
+            params = [self.namespace, partition_path, partition_value, sort_path, limit + 1]
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        page_rows = rows[:limit]
+        has_more = len(rows) > limit
+        items = [_decode_jsonb(row["value"]) for row in page_rows]
+        next_cursor = None
+        if has_more and page_rows:
+            next_cursor = _encode_cursor(
+                {
+                    "mode": "index",
+                    "index_name": index_name,
+                    "key": _cursor_identity(key),
+                    "has_last_sort": True,
+                    "last_sort": _decode_jsonb(page_rows[-1]["sort_value"]),
+                    "last_key": page_rows[-1]["key"],
+                }
+            )
+        return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         await self._ensure_connected()

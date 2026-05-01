@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from skaal import App
@@ -10,6 +11,10 @@ from skaal.decorators import handler
 from skaal.runtime.local import LocalRuntime
 from skaal.storage import Store
 from skaal.types import Persistent
+
+
+def _invoke_path(app: App, function_name: str) -> str:
+    return f"/_skaal/invoke/{app.name}.{function_name}"
 
 
 @pytest.fixture
@@ -53,6 +58,16 @@ def test_runtime_from_sqlite(counter_app, tmp_path):
     assert all(isinstance(b, SqliteBackend) for b in backends)
 
 
+def test_runtime_from_backend_sqlite(counter_app, tmp_path):
+    """from_backend('sqlite') resolves the named plugin and builds SqliteBackend instances."""
+    from skaal.backends.sqlite_backend import SqliteBackend
+
+    db = tmp_path / "generic.db"
+    rt = LocalRuntime.from_backend(counter_app, "sqlite", db_path=db)
+    backends = list(rt._backends.values())
+    assert all(isinstance(b, SqliteBackend) for b in backends)
+
+
 def test_runtime_backend_override(counter_app):
     """Explicit backend_overrides replace default LocalMap."""
     from skaal.backends.kv.local_map import LocalMap
@@ -75,16 +90,16 @@ async def test_runtime_dispatch_get(counter_app):
 
 @pytest.mark.asyncio
 async def test_runtime_dispatch_increment(counter_app):
-    """POST /increment increments the counter."""
+    """POST /_skaal/invoke/<fn> increments the counter."""
     import json
 
     rt = LocalRuntime(counter_app)
     body = json.dumps({"name": "hits"}).encode()
-    result, status = await rt._dispatch("POST", "/increment", body)
+    result, status = await rt._dispatch("POST", _invoke_path(counter_app, "increment"), body)
     assert status == 200
     assert result["value"] == 1
 
-    result2, _ = await rt._dispatch("POST", "/increment", body)
+    result2, _ = await rt._dispatch("POST", _invoke_path(counter_app, "increment"), body)
     assert result2["value"] == 2
 
 
@@ -92,7 +107,7 @@ async def test_runtime_dispatch_increment(counter_app):
 async def test_runtime_dispatch_missing_function(counter_app):
     """POST to unknown function returns 404."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("POST", "/nonexistent", b"{}")
+    result, status = await rt._dispatch("POST", "/_skaal/invoke/runtime-extras.nonexistent", b"{}")
     assert status == 404
 
 
@@ -109,7 +124,7 @@ async def test_runtime_dispatch_health(counter_app):
 async def test_runtime_dispatch_bad_method(counter_app):
     """DELETE returns 405."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("DELETE", "/increment", b"")
+    result, status = await rt._dispatch("DELETE", _invoke_path(counter_app, "increment"), b"")
     assert status == 405
 
 
@@ -125,79 +140,32 @@ def test_from_postgres_creates_backends(counter_app):
 
 
 @pytest.mark.asyncio
-async def test_runtime_exposes_agent_and_state_services() -> None:
-    app = App("agent-runtime")
-
-    @app.agent()
-    class Counter(Agent):
-        total: Persistent[int] = 0
-        transient: int = 0
-
-        @handler
-        async def increment(self, delta: int = 1) -> dict[str, int]:
-            self.total += delta
-            self.transient += 1
-            return {"total": self.total, "transient": self.transient}
-
-    rt = LocalRuntime(app)
-
-    declared = await rt.agents.list_agents(function_name="Counter")
-    assert any(record.agent_id == "agent-runtime.Counter" for record in declared)
-
-    first = await rt.route_agent("Counter", "counter-1", "increment", {"delta": 2})
-    second = await rt.route_agent("Counter", "counter-1", "increment", {"delta": 3})
-
-    assert first == {"total": 2, "transient": 1}
-    assert second == {"total": 5, "transient": 1}
-    assert await rt.state.get("agent:agent-runtime.Counter:counter-1:state") == {"total": 5}
-
-
-def test_build_asgi_mounts_skaal_under_prefix_for_asgi_apps() -> None:
-    try:
-        from starlette.applications import Starlette
-        from starlette.responses import PlainTextResponse
-        from starlette.routing import Route
-        from starlette.testclient import TestClient
-    except ImportError:
-        pytest.skip("starlette test client not installed")
+async def test_build_asgi_preserves_mounted_fastapi_routes() -> None:
+    from fastapi import FastAPI
 
     app = App("mounted-asgi")
+    api = FastAPI()
 
     @app.function()
-    async def ping() -> dict[str, bool]:
+    async def greet(name: str) -> dict:
+        return {"hello": name}
+
+    @api.get("/chat")
+    async def chat() -> dict:
         return {"ok": True}
 
-    async def homepage(_request):
-        return PlainTextResponse("ui")
-
-    app.mount_asgi(Starlette(routes=[Route("/", homepage)]), attribute="ui")
+    app.mount_asgi(api, attribute="api")
     rt = LocalRuntime(app)
+    asgi_app = rt.build_asgi()
 
-    with TestClient(rt.build_asgi()) as client:
-        assert client.get("/").text == "ui"
-        assert client.get("/health").json() == {"status": "ok", "app": "mounted-asgi"}
-        assert client.post("/_skaal/ping", json={}).json() == {"ok": True}
+    transport = httpx.ASGITransport(app=asgi_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        chat_response = await client.get("/chat")
+        invoke_response = await client.post(
+            "/_skaal/invoke/mounted-asgi.greet", json={"name": "copilot"}
+        )
 
-
-def test_build_asgi_mounts_skaal_under_prefix_for_wsgi_apps() -> None:
-    try:
-        from starlette.testclient import TestClient
-    except ImportError:
-        pytest.skip("starlette test client not installed")
-
-    app = App("mounted-wsgi")
-
-    @app.function()
-    async def ping() -> dict[str, bool]:
-        return {"ok": True}
-
-    def wsgi_app(_environ, start_response):
-        start_response("200 OK", [("Content-Type", "text/plain")])
-        return [b"dashboard"]
-
-    app.mount_wsgi(wsgi_app, attribute="dashboard.server")
-    rt = LocalRuntime(app)
-
-    with TestClient(rt.build_asgi()) as client:
-        assert client.get("/").text == "dashboard"
-        assert client.post("/_skaal/ping", json={}).json() == {"ok": True}
+    assert chat_response.status_code == 200
+    assert chat_response.json() == {"ok": True}
+    assert invoke_response.status_code == 200
+    assert invoke_response.json() == {"hello": "copilot"}

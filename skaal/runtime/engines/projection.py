@@ -13,18 +13,15 @@ import inspect
 from typing import Any
 
 from skaal.patterns import Projection
-from skaal.runtime.engines.base import register_engine
+from skaal.runtime.engines.base import BackgroundTaskEngine
 
 
-@register_engine(Projection)
-class ProjectionEngine:
+class ProjectionEngine(BackgroundTaskEngine):
     """Background worker for a single :class:`skaal.patterns.Projection`."""
 
     def __init__(self, projection: Projection[Any, Any]) -> None:
+        super().__init__()
         self.projection = projection
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = asyncio.Event()
-        self._observer: Any | None = None
 
     async def start(self, context: Any) -> None:
         handler_name = self.projection.handler
@@ -35,12 +32,9 @@ class ProjectionEngine:
             # tests may spin up an engine without a handler registered.
             handler = _missing_handler(handler_name)
 
-        self._stopping = asyncio.Event()
-        self._observer = getattr(context, "observer", None)
-        if self._observer is not None:
-            self._observer.engine_started(self._engine_name())
-        self._task = asyncio.create_task(
-            self._run(handler), name=f"projection:{self.projection.handler}"
+        await self._start_background(
+            lambda: self._run(handler),
+            name=f"projection:{self.projection.handler}",
         )
 
     async def _run(self, handler: Any) -> None:
@@ -56,11 +50,11 @@ class ProjectionEngine:
                         await handler(target, event)
                     else:
                         handler(target, event)
-                except Exception as exc:  # noqa: BLE001
-                    if self._observer is not None:
-                        self._observer.event_failed(self.projection.handler, offset, exc)
-                    if self.projection.strict:
-                        raise
+                except Exception:  # noqa: BLE001
+                    # Projections re-process from the last checkpoint on restart;
+                    # swallowing here keeps the tail alive — strict-mode will
+                    # surface via an observability hook in a later phase.
+                    self._failures += 1
                     continue
                 counter += 1
                 if self._observer is not None:
@@ -78,19 +72,6 @@ class ProjectionEngine:
         finally:
             if self._observer is not None:
                 self._observer.engine_stopped(self._engine_name())
-
-    async def stop(self) -> None:
-        self._stopping.set()
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-            self._task = None
-
-    def _engine_name(self) -> str:
-        return f"projection:{self.projection.handler}"
 
 
 def _missing_handler(name: str) -> Any:

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from skaal.app import App
-from skaal.deploy.builders.aws_stack import _build_pulumi_stack as build_aws_stack
-from skaal.deploy.builders.gcp_stack import _build_pulumi_stack as build_gcp_stack
-from skaal.deploy.wiring import build_runtime_wiring
+from skaal.deploy.backends.wiring import build_wiring, build_wiring_aws
+from skaal.deploy.builders.aws import build_pulumi_stack as build_aws_stack
+from skaal.deploy.builders.gcp import build_pulumi_stack as build_gcp_stack
 from skaal.plan import PlanFile, StorageSpec
 
 

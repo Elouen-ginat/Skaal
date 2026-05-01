@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any, Literal, Union
 from skaal.errors import SkaalHookError
 from skaal.plan import PLAN_FILE_NAME, ComputeSpec, PlanFile, StorageSpec
 from skaal.settings import SkaalSettings
-from skaal.types.runtime import RuntimeInstance, RuntimePlanSource
+from skaal.types import StackProfile
 
 if TYPE_CHECKING:
     from skaal.app import App
@@ -376,7 +376,7 @@ def build(
         ValueError:        If the plan references an unknown deploy target or
                            has no source module and *app* was not provided.
     """
-    from skaal.deploy import build_artifacts
+    from skaal.deploy import get_target
 
     cfg = SkaalSettings().for_stack(stack)
     resolved_out = Path(output_dir) if output_dir is not None else cfg.out
@@ -411,13 +411,15 @@ def build(
     )
 
 
-def _build_stack_profile(cfg: SkaalSettings) -> dict[str, Any]:
+def _build_stack_profile(cfg: SkaalSettings) -> StackProfile:
     """Extract the stack-profile fields that build generators consume.
 
     Returns only the non-empty fields so tests and generators can use the
     truthiness of the dict to decide whether to emit stack-specific config.
     """
-    profile: dict[str, Any] = {}
+    profile: StackProfile = {}
+    if cfg.enable_mesh:
+        profile["enable_mesh"] = True
     if cfg.env:
         profile["env"] = dict(cfg.env)
     if cfg.invokers:
@@ -448,7 +450,6 @@ def deploy(
 
     Returns:
         Dict of Pulumi stack outputs (e.g. ``{"apiUrl": "https://..."}``).
-        Empty dict for the local target.
 
     Raises:
         FileNotFoundError: If *artifacts_dir* does not exist or is missing
@@ -456,15 +457,10 @@ def deploy(
         ValueError:        If the target is unknown or required settings (e.g.
                            ``gcp_project`` for GCP) are missing.
     """
-    from skaal.deploy import deploy_artifacts
-    from skaal.deploy.push import read_meta
+    from skaal.deploy import package_and_push
+    from skaal.deploy.pulumi.meta import read_meta
 
     base = SkaalSettings()
-    resolved_stack = stack or base.stack
-    cfg = base.for_stack(resolved_stack)
-    resolved_region = region or cfg.region
-    resolved_gcp_project = gcp_project or cfg.gcp_project
-
     resolved_dir = Path(artifacts_dir).resolve()
     if not resolved_dir.is_dir():
         raise FileNotFoundError(
@@ -472,11 +468,14 @@ def deploy(
             "Run `skaal.api.build(...)` first."
         )
 
+    meta = read_meta(resolved_dir)
+    resolved_stack = stack or ("local" if meta.get("target") == "local" else base.stack)
+    cfg = base.for_stack(resolved_stack)
+    resolved_region = region or cfg.region
+    resolved_gcp_project = gcp_project or cfg.gcp_project
+
     if resolved_gcp_project is None:
-        try:
-            target = read_meta(resolved_dir).get("target")
-        except FileNotFoundError:
-            target = None
+        target = meta.get("target")
         if target in ("gcp", "gcp-cloudrun"):
             known = sorted(base.stacks)
             hint = (
@@ -525,6 +524,43 @@ def deploy(
     )
 
     return outputs
+
+
+def destroy(
+    artifacts_dir: Path | str = "artifacts",
+    *,
+    stack: str | None = None,
+    yes: bool = True,
+) -> None:
+    """Destroy previously-deployed artifacts via Pulumi.
+
+    Equivalent to ``skaal destroy``. Reads ``skaal-meta.json`` from
+    *artifacts_dir* to detect the target platform.
+
+    Raises:
+        FileNotFoundError: If *artifacts_dir* does not exist or is missing
+                           ``skaal-meta.json``.
+        ValueError:        If the target is unknown.
+    """
+    from skaal.deploy import destroy_stack
+    from skaal.deploy.pulumi.meta import read_meta
+
+    base = SkaalSettings()
+    resolved_dir = Path(artifacts_dir).resolve()
+    if not resolved_dir.is_dir():
+        raise FileNotFoundError(
+            f"Artifacts directory {resolved_dir} does not exist. "
+            "Run `skaal.api.build(...)` first."
+        )
+
+    meta = read_meta(resolved_dir)
+    resolved_stack = stack or ("local" if meta.get("target") == "local" else base.stack)
+
+    destroy_stack(
+        artifacts_dir=resolved_dir,
+        stack=resolved_stack,
+        yes=yes,
+    )
 
 
 def _run_hooks(

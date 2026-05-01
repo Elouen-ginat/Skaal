@@ -32,7 +32,7 @@ dependency_sets = ["sqlite-driver"]
 display_name = "SQLite (local file)"
 read_latency  = { min = 0.1, max = 10.0, unit = "ms" }
 write_latency = { min = 0.5, max = 20.0, unit = "ms" }
-durability    = ["persistent"]
+durability    = ["persistent", "durable"]
 max_size_gb   = 500
 storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "random-write", "transactional", "sequential"]
@@ -70,12 +70,29 @@ dependency_sets = ["chroma-runtime"]
 display_name = "Chroma (local file)"
 read_latency  = { min = 1.0, max = 20.0, unit = "ms" }
 write_latency = { min = 2.0, max = 40.0, unit = "ms" }
-durability    = ["persistent"]
+durability    = ["persistent", "durable"]
 max_size_gb   = 500
 storage_kinds = ["vector"]
 access_patterns = ["random-read", "bulk-read"]
 cost_per_gb_month = 0.0
 notes = "Persistent local vector storage via Chroma."
+
+[storage.local-blob.wire]
+class_name     = "FileBlobBackend"
+module         = "file_blob_backend"
+uses_namespace = true
+path_default   = "/app/data/blobs"
+
+[storage.local-blob]
+display_name = "Local filesystem blob storage"
+read_latency  = { min = 0.5, max = 20.0, unit = "ms" }
+write_latency = { min = 1.0, max = 50.0, unit = "ms" }
+durability    = ["persistent", "durable"]
+max_size_gb   = 500
+storage_kinds = ["blob"]
+access_patterns = ["bulk-read", "append-only", "worm"]
+cost_per_gb_month = 0.0
+notes = "Blob storage backed by the local filesystem. Local planning treats it as durable for single-node development."
 
 [compute.local-process]
 display_name = "Local Python process"

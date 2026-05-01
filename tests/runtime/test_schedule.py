@@ -10,7 +10,13 @@ import pytest
 from skaal import App
 from skaal.components import ScheduleTrigger
 from skaal.runtime.local import LocalRuntime
-from skaal.schedule import Cron, Every, ScheduleContext
+from skaal.schedule import (
+    Cron,
+    Every,
+    ScheduleContext,
+    build_apscheduler_trigger,
+    build_scheduled_job,
+)
 
 # ── Every — interval parsing ───────────────────────────────────────────────────
 
@@ -121,6 +127,27 @@ def test_schedule_context_frozen():
     ctx = ScheduleContext(fired_at=datetime.now(timezone.utc))
     with pytest.raises(Exception):
         ctx.fired_at = datetime.now(timezone.utc)  # type: ignore[misc]
+
+
+def test_build_apscheduler_trigger_interval() -> None:
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    trigger = build_apscheduler_trigger(Every(interval="5m"), timezone="UTC")
+    assert isinstance(trigger, IntervalTrigger)
+
+
+@pytest.mark.asyncio
+async def test_build_scheduled_job_injects_context() -> None:
+    received: list[ScheduleContext] = []
+
+    async def scheduled(ctx: ScheduleContext) -> None:
+        received.append(ctx)
+
+    job = build_scheduled_job(scheduled, name="scheduled")
+    await job()
+
+    assert len(received) == 1
+    assert isinstance(received[0], ScheduleContext)
 
 
 # ── @app.schedule() decorator ─────────────────────────────────────────────────

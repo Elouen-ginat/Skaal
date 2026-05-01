@@ -22,17 +22,20 @@ Then::
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
 import typer
 
-from skaal.errors import SkaalDeployError
+from skaal.cli._errors import cli_error_boundary
 
 app = typer.Typer(help="Package and deploy previously-built artifacts.")
+log = logging.getLogger("skaal.cli")
 
 
 @app.callback(invoke_without_command=True)
+@cli_error_boundary
 def deploy(
     artifacts_dir: Path = typer.Option(
         Path("artifacts"),
@@ -86,33 +89,18 @@ def deploy(
     AWS  — installs deps, packages handler.py + source, runs pulumi up.
     GCP  — runs pulumi up (infra), builds + pushes Docker image, runs pulumi up.
 
-    Prerequisites:
-      AWS: AWS credentials configured, Pulumi CLI installed.
-      GCP: gcloud authenticated, Docker installed, Pulumi CLI installed.
+        Prerequisites:
+            AWS: AWS credentials configured.
+            GCP: Application Default Credentials configured and a reachable Docker daemon.
     """
     from skaal import api
     from skaal.deploy.reporting import TyperReporter
 
-    try:
-        api.deploy(
-            artifacts_dir=artifacts_dir,
-            stack=stack,
-            region=region,
-            gcp_project=gcp_project,
-            yes=yes,
-            local_detach=detach,
-            local_follow_logs=follow_logs,
-            reporter=TyperReporter(),
-        )
-    except FileNotFoundError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    except ValueError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    except SkaalDeployError as exc:
-        typer.echo(f"Deploy failed:\n{exc}", err=True)
-        raise typer.Exit(1) from exc
-    except Exception as exc:  # noqa: BLE001
-        typer.echo(f"Deploy failed: {exc}", err=True)
-        raise typer.Exit(1) from exc
+    log.debug("Deploying artifacts from %s", artifacts_dir)
+    api.deploy(
+        artifacts_dir=artifacts_dir,
+        stack=stack,
+        region=region,
+        gcp_project=gcp_project,
+        yes=yes,
+    )

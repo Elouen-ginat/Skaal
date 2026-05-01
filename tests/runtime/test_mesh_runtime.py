@@ -78,7 +78,9 @@ class TestMeshRuntime:
         assert "mesh" in result
 
         # Function invocation through the dispatch path.
-        result, status = await rt._dispatch("POST", "/greet", json.dumps({"name": "mesh"}).encode())
+        result, status = await rt._dispatch(
+            "POST", "/_skaal/invoke/mesh-test.greet", json.dumps({"name": "mesh"}).encode()
+        )
         assert status == 200
         assert result == {"hello": "mesh"}
 

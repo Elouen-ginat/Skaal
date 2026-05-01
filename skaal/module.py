@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import weakref
+from collections.abc import AsyncIterator, Mapping
+from types import SimpleNamespace
+
 # TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, cast, overload
 
 from skaal.types import (
     AccessPattern,
+    BeforeInvoke,
     Bulkhead,
     CircuitBreaker,
     Compute,
@@ -16,6 +21,7 @@ from skaal.types import (
     RateLimitPolicy,
     RetryPolicy,
     Scale,
+    SecondaryIndex,
     Throughput,
 )
 
@@ -24,7 +30,7 @@ if TYPE_CHECKING:
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
-BucketName = Literal["storage", "agents", "functions", "channels"]
+StorageKind = Literal["kv", "blob", "relational", "vector"]
 
 
 class ModuleExport:
@@ -102,6 +108,8 @@ class Module:
         self._schedules: dict[str, Any] = {}
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}  # namespace → mounted module
+        self._before_invoke: list[BeforeInvoke] = []
+        self._runtime_ref: weakref.ReferenceType[Any] | None = None
 
     # ── Registration decorators ────────────────────────────────────────────
 
@@ -130,17 +138,21 @@ class Module:
         self,
         cls_to_decorate: C,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
+        access_pattern: AccessPattern | str | None = ...,
         write_throughput: Throughput | str | None = ...,
         residency: str | None = ...,
         retention: str | None = ...,
         auto_optimize: bool = ...,
         decommission_policy: DecommissionPolicy | None = ...,
         collocate_with: str | None = ...,
+        indexes: list[SecondaryIndex] | None = ...,
     ) -> C: ...
 
     @overload
@@ -148,34 +160,42 @@ class Module:
         self,
         cls_to_decorate: None = ...,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
+        access_pattern: AccessPattern | str | None = ...,
         write_throughput: Throughput | str | None = ...,
         residency: str | None = ...,
         retention: str | None = ...,
         auto_optimize: bool = ...,
         decommission_policy: DecommissionPolicy | None = ...,
         collocate_with: str | None = ...,
+        indexes: list[SecondaryIndex] | None = ...,
     ) -> Callable[[C], C]: ...
 
     def storage(
         self,
         cls_to_decorate: C | None = None,
         *,
+        kind: StorageKind | str = "kv",
+        dim: int | None = None,
+        metric: str = "cosine",
         read_latency: Latency | str | None = None,
         write_latency: Latency | str | None = None,
         durability: Durability | str = Durability.PERSISTENT,
         size_hint: str | None = None,
-        access_pattern: AccessPattern | str = AccessPattern.RANDOM_READ,
+        access_pattern: AccessPattern | str | None = None,
         write_throughput: Throughput | str | None = None,
         residency: str | None = None,
         retention: str | None = None,
         auto_optimize: bool = False,
         decommission_policy: DecommissionPolicy | None = None,
         collocate_with: str | None = None,
+        indexes: list[SecondaryIndex] | None = None,
     ) -> C | Callable[[C], C]:
         """Register a storage class with infrastructure constraints.
 
@@ -189,9 +209,11 @@ class Module:
         """
         from skaal.decorators import storage as _storage_dec
 
-        return self._register_storage(
-            _storage_dec,
-            cls_to_decorate,
+        storage_decorator = cast(Callable[..., Any], _storage_dec)
+        outer = storage_decorator(
+            kind=kind,
+            dim=dim,
+            metric=metric,
             read_latency=read_latency,
             write_latency=write_latency,
             durability=durability,
@@ -203,140 +225,7 @@ class Module:
             auto_optimize=auto_optimize,
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
-        )
-
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: C,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def relational(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a SQLModel relational table with infrastructure constraints."""
-        from skaal.decorators import relational as _relational_dec
-
-        return self._register_storage(
-            _relational_dec,
-            cls_to_decorate,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-        )
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: C,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def vector(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        dim: int,
-        metric: str = "cosine",
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a typed vector store with infrastructure constraints."""
-        from skaal.decorators import vector as _vector_dec
-
-        return self._register_storage(
-            _vector_dec,
-            cls_to_decorate,
-            dim=dim,
-            metric=metric,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
+            indexes=indexes,
         )
 
     @overload
@@ -572,6 +461,23 @@ class Module:
         self._patterns[name] = p
         return p
 
+    def add_before_invoke(self, hook: BeforeInvoke) -> BeforeInvoke:
+        """Register a hook that runs before every resilience-wrapped invocation."""
+        self._before_invoke.append(hook)
+        return hook
+
+    async def invoke(self, fn: str | Callable[..., Any], **kwargs: Any) -> Any:
+        """Invoke a registered function through the active runtime's resilience stack."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return await runtime.invoke(function_name, kwargs)
+
+    def invoke_stream(self, fn: str | Callable[..., Any], **kwargs: Any) -> AsyncIterator[Any]:
+        """Invoke a registered async iterator function through the active runtime."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return runtime.invoke_stream(function_name, kwargs)
+
     # ── Export / import API ────────────────────────────────────────────────
 
     def export(self, *symbols: Any) -> ModuleExport:
@@ -727,6 +633,77 @@ class Module:
                 result[f"{sub_prefix}{bare}"] = obj
 
         return result
+
+    def _bind_runtime(self, runtime: Any) -> None:
+        self._runtime_ref = weakref.ref(runtime)
+        for submodule in self._submodules.values():
+            submodule._bind_runtime(runtime)
+
+    def _unbind_runtime(self, runtime: Any) -> None:
+        if self._runtime_ref is not None and self._runtime_ref() is runtime:
+            self._runtime_ref = None
+        for submodule in self._submodules.values():
+            submodule._unbind_runtime(runtime)
+
+    def _require_runtime(self) -> Any:
+        runtime = self._runtime_ref() if self._runtime_ref is not None else None
+        if runtime is None:
+            raise RuntimeError(
+                "No active Skaal runtime is bound to this app. "
+                "Start or construct a runtime before calling app.invoke(...)."
+            )
+        return runtime
+
+    async def _prepare_invoke_kwargs(
+        self,
+        function_name: str,
+        kwargs: dict[str, Any],
+        *,
+        is_stream: bool,
+        attempt: int,
+        headers: Mapping[str, str] | None = None,
+        auth_claims: Mapping[str, Any] | None = None,
+        auth_subject: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+    ) -> dict[str, Any]:
+        ctx = SimpleNamespace(
+            function_name=function_name,
+            kwargs=dict(kwargs),
+            is_stream=is_stream,
+            attempt=attempt,
+            headers=dict(headers or {}),
+            auth_claims=dict(auth_claims or {}) or None,
+            auth_subject=auth_subject,
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+        for hook in self._before_invoke:
+            await hook(ctx)
+        return ctx.kwargs
+
+    def _resolve_invokable(self, fn: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        invokables = {
+            name: obj
+            for name, obj in self._collect_all().items()
+            if callable(obj)
+            and (hasattr(obj, "__skaal_compute__") or hasattr(obj, "__skaal_schedule__"))
+        }
+
+        if isinstance(fn, str):
+            direct = invokables.get(fn)
+            if direct is not None:
+                return fn, direct
+            for function_name, obj in invokables.items():
+                if getattr(obj, "__name__", None) == fn:
+                    return function_name, obj
+            raise KeyError(f"No invokable function named {fn!r}")
+
+        for function_name, obj in invokables.items():
+            if obj is fn:
+                return function_name, obj
+
+        raise KeyError(f"Callable {fn!r} is not registered with module {self.name!r}")
 
     # ── Introspection ──────────────────────────────────────────────────────
 
