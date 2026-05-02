@@ -61,6 +61,13 @@ from skaal.types.observability import (
     TelemetryExporter,
 )
 from skaal.types.schema import apply_migrations, migrate_from
+from skaal.types.solver import (
+    CandidateReport,
+    Diagnosis,
+    RelaxSuggestion,
+    ResourceKind,
+    Violation,
+)
 from skaal.types.storage import Page, SecondaryIndex
 
 __all__ = [
@@ -115,6 +122,12 @@ __all__ = [
     "BeforeInvoke",
     "InvokeContext",
     "StreamFn",
+    # solver / diagnostics
+    "CandidateReport",
+    "Diagnosis",
+    "RelaxSuggestion",
+    "ResourceKind",
+    "Violation",
     # storage
     "Page",
     "SecondaryIndex",
@@ -130,4 +143,26 @@ __all__ = [
     # schema
     "apply_migrations",
     "migrate_from",
+    # runtime
+    "AgentsService",
+    "AsyncClosable",
+    "BackendOverrides",
+    "ConstructorKwargs",
+    "DispatchResult",
+    "MeshClient",
+    "RuntimeObserver",
+    "RuntimeApp",
+    "RuntimeCallable",
+    "RuntimeInstance",
+    "RuntimeInvoker",
+    "RuntimeKwargs",
+    "RuntimeMode",
+    "RuntimePayload",
+    "RuntimePlanSource",
+    "RuntimeServices",
+    "RuntimeWireParams",
+    "StateService",
+    "StorageClassMap",
+    "StorageKindName",
+    "SupportsAsyncSend",
 ]
