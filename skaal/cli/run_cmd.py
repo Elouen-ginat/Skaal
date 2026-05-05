@@ -134,7 +134,17 @@ def _argv_tail(
     node_id: str,
 ) -> list[str]:
     """Forward flags onto the supervised child process."""
-    argv: list[str] = [target, "--host", host, "--port", str(port), "--db", db, "--node-id", node_id]
+    argv: list[str] = [
+        target,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--db",
+        db,
+        "--node-id",
+        node_id,
+    ]
     if redis:
         argv += ["--redis", redis]
     if persist:

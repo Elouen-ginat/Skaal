@@ -48,9 +48,7 @@ class BaseRuntime(ABC):
         self._patch_channels()
         self._function_cache = self._collect_functions()
         self._engines: list[Any] = []
-        self._secret_specs = {
-            name: ref.to_spec() for name, ref in app._collect_secrets().items()
-        }
+        self._secret_specs = {name: ref.to_spec() for name, ref in app._collect_secrets().items()}
         self.secrets = SecretRegistry(self._secret_specs)
         app.secrets = self.secrets
 

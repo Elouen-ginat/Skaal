@@ -73,7 +73,14 @@ def _check_residency(value: Any, spec: dict[str, Any]) -> bool:
 
 
 def _check_retention(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("retention", [])
+    if value is None or getattr(value, "policy", None) != "expire":
+        return True
+    if not spec.get("supports_ttl", False):
+        return False
+    duration = getattr(value, "duration", None)
+    seconds = getattr(duration, "seconds", None)
+    cap = spec.get("max_ttl_seconds")
+    return seconds is None or cap is None or seconds <= cap
 
 
 _CONSTRAINT_CHECKERS: dict[str, ConstraintChecker] = {
@@ -107,7 +114,7 @@ _CONSTRAINT_FORMATTERS: dict[str, ConstraintFormatter] = {
     "size_hint": lambda v: f"size_hint={v} GB",
     "consistency": lambda v: f"consistency={_enum_value(v)}",
     "residency": lambda v: f"residency={_enum_value(v)}",
-    "retention": lambda v: f"retention={_enum_value(v)}",
+    "retention": lambda v: f"retention={v} (per-row TTL)",
 }
 
 

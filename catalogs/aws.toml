@@ -12,6 +12,7 @@ storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub"]
 cost_per_gb_month = 3.50   # USD, approximate cache.r6g.large
 requires_vpc  = true
+supports_ttl  = true
 regions = ["all"]
 notes = "Preferred for read_latency < 5ms + persistent; requires VPC"
 
@@ -25,6 +26,7 @@ storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "sequential", "transactional"]
 cost_per_gb_month = 0.12
 requires_vpc  = true
+supports_ttl  = true
 regions = ["all"]
 notes = "Default for strong-consistency relational workloads; always runs inside a VPC"
 
@@ -125,6 +127,7 @@ storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write"]
 cost_per_gb_month = 0.25
 serverless    = true
+supports_ttl  = true
 regions = ["all"]
 notes = "Key-value at scale with single-digit ms latency; serverless-native, no VPC"
 

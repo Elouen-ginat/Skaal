@@ -37,10 +37,12 @@ from skaal.secrets import Secret, SecretRegistry
 from skaal.storage import Store
 from skaal.sync import run as sync_run
 from skaal.types import (
+    TTL,
     BeforeInvoke,
     BlobObject,
     Bulkhead,
     CircuitBreaker,
+    Duration,
     EngineTelemetrySnapshot,
     InvokeContext,
     Page,
@@ -51,6 +53,7 @@ from skaal.types import (
     RelationalMigrationStatus,
     RelationalMigrationStep,
     RelationalRevision,
+    Retention,
     RetryPolicy,
     SecondaryIndex,
     TelemetryConfig,
@@ -108,10 +111,12 @@ __all__ = [
     # Resilience types
     "Bulkhead",
     "CircuitBreaker",
+    "Duration",
     "EngineTelemetrySnapshot",
     "InvokeContext",
     "RateLimitPolicy",
     "ReadinessState",
+    "Retention",
     "RelationalMigrationOp",
     "RelationalMigrationPlan",
     "RelationalMigrationStatus",
@@ -123,6 +128,7 @@ __all__ = [
     "Secret",
     "SecretRegistry",
     "TelemetryConfig",
+    "TTL",
     # Type namespace
     "types",
 ]

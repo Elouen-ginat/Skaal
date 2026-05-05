@@ -9,7 +9,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Protocol, TypeAlias, runtime_checkable
+
+
+@runtime_checkable
+class RelationalModelType(Protocol):
+    __tablename__: str
+
+
+@runtime_checkable
+class SupportsSqlalchemyUrl(Protocol):
+    def _sqlalchemy_url(self) -> str: ...
+
+
+@runtime_checkable
+class SupportsSqlalchemyDsn(Protocol):
+    def _sqlalchemy_dsn(self) -> str: ...
+
+
+RelationalMigrationBackend: TypeAlias = SupportsSqlalchemyUrl | SupportsSqlalchemyDsn
 
 
 class RelationalMigrationOp(StrEnum):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import Any
@@ -36,8 +38,8 @@ class FakeRedisPipeline:
     def multi(self) -> None:
         return None
 
-    def set(self, key: str, value: str) -> None:
-        self._ops.append(("set", (key, value), {}))
+    def set(self, key: str, value: str, **kwargs: Any) -> None:
+        self._ops.append(("set", (key, value), kwargs))
 
     def delete(self, key: str) -> None:
         self._ops.append(("delete", (key,), {}))
@@ -64,19 +66,37 @@ class FakeRedis:
         self.values: dict[str, str] = {}
         self.zsets: dict[str, set[str]] = {}
         self.lists: dict[str, list[str]] = {}
+        self.expiry: dict[str, float] = {}
+
+    def _purge(self, key: str | None = None) -> None:
+        now = time.time()
+        keys = [key] if key is not None else list(self.expiry)
+        for candidate in keys:
+            if candidate is None:
+                continue
+            deadline = self.expiry.get(candidate)
+            if deadline is not None and deadline <= now:
+                self.values.pop(candidate, None)
+                self.expiry.pop(candidate, None)
 
     def pipeline(self, transaction: bool = True) -> FakeRedisPipeline:
         return FakeRedisPipeline(self)
 
     async def get(self, key: str) -> str | None:
+        self._purge(key)
         return self.values.get(key)
 
-    async def set(self, key: str, value: str) -> None:
+    async def set(self, key: str, value: str, px: int | None = None) -> None:
         self.values[key] = value
+        if px is None:
+            self.expiry.pop(key, None)
+        else:
+            self.expiry[key] = time.time() + (px / 1000)
 
     async def delete(self, key: str) -> None:
         self.values.pop(key, None)
         self.lists.pop(key, None)
+        self.expiry.pop(key, None)
 
     async def zadd(self, key: str, mapping: dict[str, float]) -> None:
         self.zsets.setdefault(key, set()).update(mapping.keys())
@@ -122,6 +142,8 @@ class FakeRedis:
         return members[start : start + num]
 
     async def mget(self, *keys: str) -> list[str | None]:
+        for key in keys:
+            self._purge(key)
         return [self.values.get(key) for key in keys]
 
     async def lrange(self, key: str, start: int, end: int) -> list[str]:
@@ -352,6 +374,24 @@ async def test_redis_backend_native_pages_and_indexes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_redis_backend_hides_expired_keys_from_pages() -> None:
+    backend = RedisBackend(namespace="test")
+    client = FakeRedis()
+
+    async def _fake_connected() -> FakeRedis:
+        return client
+
+    backend._ensure_connected = _fake_connected  # type: ignore[method-assign]
+
+    await backend.set("ephemeral", {"value": 1}, ttl=0.02)
+    await backend.set("stable", {"value": 2})
+    await asyncio.sleep(0.05)
+
+    page = await backend.list_page(limit=10, cursor=None)
+    assert [key for key, _ in page.items] == ["stable"]
+
+
+@pytest.mark.asyncio
 async def test_dynamo_backend_native_pages_and_indexes() -> None:
     backend = DynamoBackend("test-table")
     backend._client = FakeDynamoClient()
@@ -377,6 +417,21 @@ async def test_dynamo_backend_native_pages_and_indexes() -> None:
     index_page = await backend.query_index("by_team", "alpha", limit=2, cursor=None)
     assert [item["score"] for item in index_page.items] == [2, 10]
     assert index_page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_dynamo_backend_filters_expired_items() -> None:
+    backend = DynamoBackend("test-table")
+    backend._client = FakeDynamoClient()
+    backend._run = _immediate_run  # type: ignore[method-assign]
+
+    await backend.set("ephemeral", {"value": 1}, ttl=0.02)
+    await backend.set("stable", {"value": 2})
+    await asyncio.sleep(0.05)
+
+    assert await backend.get("ephemeral") is None
+    page = await backend.list_page(limit=10, cursor=None)
+    assert [key for key, _ in page.items] == ["stable"]
 
 
 @pytest.mark.asyncio
@@ -410,3 +465,18 @@ async def test_firestore_backend_native_pages_and_indexes() -> None:
     )
     assert [item["score"] for item in second_index_page.items] == [30]
     assert second_index_page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_firestore_backend_filters_expired_items() -> None:
+    backend = FirestoreBackend("tasks")
+    backend._client = FakeFirestoreClient()
+    backend._run = _immediate_run  # type: ignore[method-assign]
+
+    await backend.set("ephemeral", {"value": 1}, ttl=0.02)
+    await backend.set("stable", {"value": 2})
+    await asyncio.sleep(0.05)
+
+    assert await backend.get("ephemeral") is None
+    page = await backend.list_page(limit=10, cursor=None)
+    assert [key for key, _ in page.items] == ["stable"]

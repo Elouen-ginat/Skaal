@@ -19,8 +19,9 @@ say "DB_DSN came from aws-secrets-manager" without printing the value —
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeAlias, runtime_checkable
+from typing import AsyncContextManager, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -134,6 +135,38 @@ class SecretResolver(Protocol):
     async def resolve(self, spec: SecretSpec) -> ResolvedSecret: ...
 
     async def close(self) -> None: ...
+
+
+class AwsSecretValueResponse(TypedDict, total=False):
+    SecretString: str
+    SecretBinary: bytes
+
+
+class AwsSecretsManagerClient(Protocol):
+    async def get_secret_value(self, *, SecretId: str) -> AwsSecretValueResponse: ...
+
+
+class AwsSecretsManagerSession(Protocol):
+    def client(
+        self,
+        service_name: Literal["secretsmanager"],
+        *,
+        region_name: str | None = None,
+    ) -> AsyncContextManager[AwsSecretsManagerClient]: ...
+
+
+class GcpSecretPayload(Protocol):
+    data: bytes
+
+
+class GcpSecretVersionResponse(Protocol):
+    payload: GcpSecretPayload
+
+
+class GcpSecretManagerClient(Protocol):
+    async def access_secret_version(self, *, name: str) -> GcpSecretVersionResponse: ...
+
+    def close(self) -> Awaitable[object] | None: ...
 
 
 __all__ = [

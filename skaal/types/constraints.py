@@ -16,7 +16,7 @@ class _StrictStrEnum(str, Enum):
 
     @classmethod
     def _missing_(cls, value: Any) -> None:
-        valid = [m.value for m in cls]  # type: ignore[var-annotated]
+        valid = [m.value for m in cls]
         suggestions = difflib.get_close_matches(str(value), valid, n=1)
         hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
         raise ValueError(

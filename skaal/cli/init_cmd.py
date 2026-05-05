@@ -45,18 +45,14 @@ def init(
     here: bool = typer.Option(
         False, "--here", help="Scaffold into the current directory instead of ./<name>."
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite existing files."
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing files."),
 ) -> None:
     """Create a starter Skaal project at ``./<name>`` (or in cwd with ``--here``)."""
     resolved = name or (Path.cwd().name if here else None)
     if resolved is None:
         raise ValueError("missing project name (or pass --here to use the current directory).")
     if not resolved.isidentifier():
-        raise ValueError(
-            f"'{resolved}' is not a valid Python identifier (use letters, digits, _)."
-        )
+        raise ValueError(f"'{resolved}' is not a valid Python identifier (use letters, digits, _).")
 
     root = Path.cwd() if here else Path.cwd() / resolved
     root.mkdir(parents=True, exist_ok=True)

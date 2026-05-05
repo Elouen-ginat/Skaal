@@ -74,6 +74,13 @@ def test_storage_backend_spec():
     assert spec.durability == ["ephemeral", "persistent"]
     assert spec.cost_per_gb_month == 3.5
     assert spec.requires_vpc is False
+    assert spec.supports_ttl is False
+
+
+def test_storage_backend_spec_rejects_legacy_retention() -> None:
+    raw = _minimal_raw()["storage"]["fast-redis"] | {"retention": ["30m"]}
+    with pytest.raises(ValueError, match="supports_ttl"):
+        StorageBackendSpec(**raw)
 
 
 def test_compute_backend_spec():

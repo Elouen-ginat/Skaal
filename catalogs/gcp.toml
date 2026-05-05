@@ -11,6 +11,7 @@ storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub"]
 cost_per_gb_month = 3.20
 requires_vpc  = true
+supports_ttl  = true
 regions = ["all"]
 
 [storage.memorystore-redis.deploy]
@@ -38,6 +39,7 @@ storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "sequential", "transactional"]
 cost_per_gb_month = 0.17
 requires_vpc  = true
+supports_ttl  = true
 regions = ["all"]
 
 [storage.cloud-sql-postgres.deploy]
@@ -121,6 +123,7 @@ max_size_gb   = 0
 storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write"]
 cost_per_gb_month = 0.18
+supports_ttl  = true
 regions = ["all"]
 notes = "Document store; eventual or strong consistency selectable"
 

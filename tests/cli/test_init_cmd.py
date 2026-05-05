@@ -41,9 +41,7 @@ def test_init_creates_full_layout(runner: CliRunner, tmp_path: Path) -> None:
     assert (root / "README.md").is_file()
 
 
-def test_init_pyproject_is_valid_toml_with_skaal_section(
-    runner: CliRunner, tmp_path: Path
-) -> None:
+def test_init_pyproject_is_valid_toml_with_skaal_section(runner: CliRunner, tmp_path: Path) -> None:
     _run(runner, tmp_path, "demo")
     data = tomllib.loads((tmp_path / "demo" / "pyproject.toml").read_text())
     assert data["tool"]["skaal"]["app"] == "demo.app:app"

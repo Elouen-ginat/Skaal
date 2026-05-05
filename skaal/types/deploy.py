@@ -59,6 +59,21 @@ class GatewayConfig(TypedDict, total=False):
     cors_origins: list[str]
 
 
+class CloudRunSecretKeyRef(TypedDict):
+    name: str
+    key: str
+
+
+class CloudRunEnvValueSource(TypedDict):
+    secretKeyRef: CloudRunSecretKeyRef
+
+
+class CloudRunEnvVar(TypedDict, total=False):
+    name: Required[str]
+    value: str
+    valueFrom: CloudRunEnvValueSource
+
+
 class AppLike(Protocol):
     name: str
     _mounts: dict[str, str]

@@ -8,9 +8,15 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import cast
 
 from skaal.errors import SecretMissingError, require_extra
-from skaal.types.secret import ResolvedSecret, SecretProvider, SecretSpec
+from skaal.types.secret import (
+    AwsSecretsManagerSession,
+    ResolvedSecret,
+    SecretProvider,
+    SecretSpec,
+)
 
 _LOG = logging.getLogger("skaal.secrets.aws")
 
@@ -24,7 +30,7 @@ class AwsSecretsManagerResolver:
         self._region = (
             region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
         )
-        self._session: object | None = None
+        self._session: AwsSecretsManagerSession | None = None
 
     @require_extra("secrets-aws", ["aioboto3"], feature="AWS Secrets Manager")
     async def resolve(self, spec: SecretSpec) -> ResolvedSecret:
@@ -32,14 +38,12 @@ class AwsSecretsManagerResolver:
         if not secret_id:
             return ResolvedSecret(name=spec.name, value=None, provider=self.provider)
 
-        import aioboto3  # type: ignore[import-not-found]
+        import aioboto3
 
         if self._session is None:
-            self._session = aioboto3.Session()
+            self._session = cast(AwsSecretsManagerSession, aioboto3.Session())
 
-        async with self._session.client(  # type: ignore[attr-defined]
-            "secretsmanager", region_name=self._region
-        ) as client:
+        async with self._session.client("secretsmanager", region_name=self._region) as client:
             try:
                 response = await client.get_secret_value(SecretId=secret_id)
             except Exception as exc:  # noqa: BLE001 — wrap with Skaal context
