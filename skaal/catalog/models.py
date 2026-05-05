@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class LatencyRange(BaseModel):
@@ -25,6 +25,8 @@ class StorageBackendSpec(BaseModel):
     access_patterns: list[str] = Field(default_factory=list)
     cost_per_gb_month: float = 0.0
     requires_vpc: bool = False
+    supports_ttl: bool = False
+    max_ttl_seconds: int | None = None
     regions: list[str] = Field(default_factory=lambda: ["all"])
     notes: str = ""
     # Deployment-time provisioning parameters (not used by the solver).
@@ -38,6 +40,16 @@ class StorageBackendSpec(BaseModel):
     # Tells deploy generators which Python class to instantiate and how to
     # connect it.  Validated as a BackendHandler at catalog load time.
     wire: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_retention(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "retention" in data:
+            raise ValueError(
+                "storage.retention is no longer supported in catalogs; use supports_ttl and "
+                "optional max_ttl_seconds instead."
+            )
+        return data
 
 
 class ComputeBackendSpec(BaseModel):

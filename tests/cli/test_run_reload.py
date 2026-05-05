@@ -94,9 +94,7 @@ def test_supervise_handles_keyboard_interrupt(tmp_path: Path) -> None:
         raise KeyboardInterrupt
         yield  # pragma: no cover  - generator marker
 
-    rc = _reload.supervise(
-        ["python"], [tmp_path], spawn=fake_spawn, watcher=fake_watcher
-    )
+    rc = _reload.supervise(["python"], [tmp_path], spawn=fake_spawn, watcher=fake_watcher)
     assert rc == 0
     assert len(spawned) == 1
     assert spawned[0].signals  # SIGTERM on shutdown

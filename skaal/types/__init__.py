@@ -30,6 +30,9 @@ from skaal.types.deploy import (
     AppLike,
     AuthConfig,
     BackendWiring,
+    CloudRunEnvValueSource,
+    CloudRunEnvVar,
+    CloudRunSecretKeyRef,
     ConfigOverrides,
     DeployMeta,
     DockerBuildConfig,
@@ -53,6 +56,7 @@ from skaal.types.deploy import (
     StackProfile,
     TargetName,
 )
+from skaal.types.duration import TTL, Duration, Retention
 from skaal.types.invoke import BeforeInvoke, InvokeContext, StreamFn
 from skaal.types.observability import (
     EngineTelemetrySnapshot,
@@ -62,14 +66,24 @@ from skaal.types.observability import (
     TelemetryExporter,
 )
 from skaal.types.relational import (
+    RelationalMigrationBackend,
     RelationalMigrationOp,
     RelationalMigrationPlan,
     RelationalMigrationStatus,
     RelationalMigrationStep,
+    RelationalModelType,
     RelationalRevision,
+    SupportsSqlalchemyDsn,
+    SupportsSqlalchemyUrl,
 )
 from skaal.types.schema import apply_migrations, migrate_from
 from skaal.types.secret import (
+    AwsSecretsManagerClient,
+    AwsSecretsManagerSession,
+    AwsSecretValueResponse,
+    GcpSecretManagerClient,
+    GcpSecretPayload,
+    GcpSecretVersionResponse,
     ResolvedSecret,
     SecretGrant,
     SecretProvider,
@@ -95,6 +109,9 @@ __all__ = [
     "Latency",
     "Persistent",
     "Throughput",
+    "Duration",
+    "Retention",
+    "TTL",
     # blob
     "BlobObject",
     # catalog (pre-validation layer; see skaal.catalog.models for the typed Catalog)
@@ -110,6 +127,9 @@ __all__ = [
     "AppLike",
     "AuthConfig",
     "BackendWiring",
+    "CloudRunEnvValueSource",
+    "CloudRunEnvVar",
+    "CloudRunSecretKeyRef",
     "ConfigOverrides",
     "DeployMeta",
     "DockerBuildConfig",
@@ -149,6 +169,12 @@ __all__ = [
     "Violation",
     # secrets
     "ResolvedSecret",
+    "AwsSecretValueResponse",
+    "AwsSecretsManagerClient",
+    "AwsSecretsManagerSession",
+    "GcpSecretManagerClient",
+    "GcpSecretPayload",
+    "GcpSecretVersionResponse",
     "SecretGrant",
     "SecretProvider",
     "SecretRef",
@@ -159,10 +185,14 @@ __all__ = [
     "SecondaryIndex",
     # relational migrations
     "RelationalMigrationOp",
+    "RelationalMigrationBackend",
     "RelationalMigrationPlan",
     "RelationalMigrationStatus",
     "RelationalMigrationStep",
+    "RelationalModelType",
     "RelationalRevision",
+    "SupportsSqlalchemyDsn",
+    "SupportsSqlalchemyUrl",
     # compute
     "Bulkhead",
     "CircuitBreaker",

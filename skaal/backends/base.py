@@ -24,7 +24,7 @@ class StorageBackend(Protocol):
         """Return the value for key, or None if not found."""
         ...
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         """Store value under key."""
         ...
 
@@ -81,7 +81,13 @@ class StorageBackend(Protocol):
         """
         ...
 
-    async def atomic_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        *,
+        ttl: float | None = None,
+    ) -> Any:
         """
         Atomically read the raw value for key, apply fn, write the result back,
         and return the new raw value.

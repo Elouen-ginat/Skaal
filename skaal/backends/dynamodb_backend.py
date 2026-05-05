@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 from typing import Any, Callable, List
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
@@ -53,6 +54,17 @@ class DynamoBackend:
             json.dumps(partition_key, sort_keys=True, default=str).encode("utf-8")
         ).decode("ascii")
         return f"__skaal_idx__:{index_name}:{token}"
+
+    def _ttl_attribute(self, ttl: float | None) -> dict[str, str] | None:
+        if ttl is None:
+            return None
+        return {"N": str(int(time.time() + ttl))}
+
+    def _is_expired_item(self, item: dict[str, Any] | None) -> bool:
+        if item is None:
+            return False
+        expires_at = item.get("expires_at", {}).get("N")
+        return expires_at is not None and float(expires_at) <= time.time()
 
     def _read_index_bucket(
         self, client: Any, index_name: str, partition_key: Any
@@ -131,11 +143,13 @@ class DynamoBackend:
             item = resp.get("Item")
             if item is None:
                 return None
+            if self._is_expired_item(item):
+                return None
             return json.loads(item["value"]["S"])
 
         return await self._run(_get)
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         client = self._get_client()
 
         def _put() -> None:
@@ -146,14 +160,15 @@ class DynamoBackend:
             old_value = (
                 json.loads(current["value"]["S"]) if current and "value" in current else None
             )
-            client.put_item(
-                TableName=self.table_name,
-                Item={
-                    "pk": {"S": key},
-                    "kind": {"S": "item"},
-                    "value": {"S": json.dumps(value)},
-                },
-            )
+            item = {
+                "pk": {"S": key},
+                "kind": {"S": "item"},
+                "value": {"S": json.dumps(value)},
+            }
+            expires_at = self._ttl_attribute(ttl)
+            if expires_at is not None:
+                item["expires_at"] = expires_at
+            client.put_item(TableName=self.table_name, Item=item)
             self._sync_indexes(client, key, old_value, value)
 
         await self._run(_put)
@@ -238,6 +253,8 @@ class DynamoBackend:
                 for item in resp.get("Items", []):
                     if "value" not in item:
                         continue
+                    if self._is_expired_item(item):
+                        continue
                     collected.append((item["pk"]["S"], json.loads(item["value"]["S"])))
                     if len(collected) >= limit + 1:
                         break
@@ -276,25 +293,36 @@ class DynamoBackend:
         def _query() -> Page[Any]:
             entries = self._read_index_bucket(client, index_name, key)
             offset = int(decoded.get("offset", 0)) if decoded else 0
-            page_entries = entries[offset : offset + limit]
-            has_more = offset + len(page_entries) < len(entries)
-            if not page_entries:
+            if not entries:
                 return Page(items=[], next_cursor=None, has_more=False)
 
             batch = client.batch_get_item(
                 RequestItems={
-                    self.table_name: {
-                        "Keys": [{"pk": {"S": entry["pk"]}} for entry in page_entries]
-                    }
+                    self.table_name: {"Keys": [{"pk": {"S": entry["pk"]}} for entry in entries]}
                 }
             )
             items_by_pk = {
-                item["pk"]["S"]: json.loads(item["value"]["S"])
+                item["pk"]["S"]: item
                 for item in batch.get("Responses", {}).get(self.table_name, [])
                 if "value" in item
             }
+            stale_keys = {
+                entry["pk"]
+                for entry in entries
+                if entry["pk"] not in items_by_pk or self._is_expired_item(items_by_pk[entry["pk"]])
+            }
+            if stale_keys:
+                self._write_index_bucket(
+                    client,
+                    index_name,
+                    key,
+                    [entry for entry in entries if entry["pk"] not in stale_keys],
+                )
+            live_entries = [entry for entry in entries if entry["pk"] not in stale_keys]
+            page_entries = live_entries[offset : offset + limit]
+            has_more = len(live_entries) > offset + limit
             ordered_items = [
-                items_by_pk[entry["pk"]] for entry in page_entries if entry["pk"] in items_by_pk
+                json.loads(items_by_pk[entry["pk"]]["value"]["S"]) for entry in page_entries
             ]
             next_cursor = None
             if has_more:
@@ -343,6 +371,7 @@ class DynamoBackend:
         key: str,
         fn: Callable[[Any], Any],
         *,
+        ttl: float | None = None,
         max_retries: int = 8,
     ) -> Any:
         """Atomically read-modify-write using an optimistic ``version`` attribute.
@@ -370,33 +399,32 @@ class DynamoBackend:
                 current: Any = None
                 current_ver = 0
             else:
-                current = json.loads(item["value"]["S"])
+                current = None if self._is_expired_item(item) else json.loads(item["value"]["S"])
                 current_ver = int(item.get("ver", {}).get("N", "0"))
 
             updated = fn(current)
             next_ver = current_ver + 1
+            item_payload = {
+                "pk": {"S": key},
+                "kind": {"S": "item"},
+                "value": {"S": json.dumps(updated)},
+                "ver": {"N": str(next_ver)},
+            }
+            expires_at = self._ttl_attribute(ttl)
+            if expires_at is not None:
+                item_payload["expires_at"] = expires_at
 
             try:
                 if item is None:
                     client.put_item(
                         TableName=self.table_name,
-                        Item={
-                            "pk": {"S": key},
-                            "kind": {"S": "item"},
-                            "value": {"S": json.dumps(updated)},
-                            "ver": {"N": str(next_ver)},
-                        },
+                        Item=item_payload,
                         ConditionExpression="attribute_not_exists(pk)",
                     )
                 else:
                     client.put_item(
                         TableName=self.table_name,
-                        Item={
-                            "pk": {"S": key},
-                            "kind": {"S": "item"},
-                            "value": {"S": json.dumps(updated)},
-                            "ver": {"N": str(next_ver)},
-                        },
+                        Item=item_payload,
                         ConditionExpression="ver = :cur",
                         ExpressionAttributeValues={":cur": {"N": str(current_ver)}},
                     )

@@ -155,6 +155,39 @@ def test_select_backend_blob_kind_aws() -> None:
     assert "kind=blob" in reason
 
 
+def test_select_backend_retention_requires_ttl_capability() -> None:
+    with pytest.raises(UnsatisfiableConstraints):
+        select_backend(
+            "Sessions",
+            {
+                "kind": "kv",
+                "retention": __import__("skaal.types", fromlist=["Retention"]).Retention.parse(
+                    "30m"
+                ),
+            },
+            {
+                "no-ttl": {
+                    "display_name": "No TTL",
+                    "storage_kinds": ["kv"],
+                    "cost_per_gb_month": 0.0,
+                }
+            },
+        )
+
+
+def test_solve_retention_flows_from_decorator_to_backend_selection() -> None:
+    app = App("ttl-solver")
+
+    @app.storage(read_latency="< 5ms", durability="ephemeral", retention="30m")
+    class Sessions:
+        pass
+
+    plan = solve(app, load_catalog(target="local"), target="local")
+    spec = plan.storage["ttl-solver.Sessions"]
+    assert spec.backend == "local-map"
+    assert "retention=30m (per-row TTL)" in spec.reason
+
+
 # ── solve() ───────────────────────────────────────────────────────────────────
 
 

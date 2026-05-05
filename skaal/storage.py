@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 from skaal.serialization import deserialize_value as _deserialize
 from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
+from skaal.types import TTL
 from skaal.types.storage import Page, SecondaryIndex
 
 T = TypeVar("T")
@@ -293,6 +294,7 @@ class Store(Generic[T]):
     __skaal_key_type__: ClassVar[type] = str
     __skaal_value_type__: ClassVar[type | None] = None
     __skaal_key_field__: ClassVar[str] = "id"
+    __skaal_default_ttl_seconds__: ClassVar[float | None] = None
     _backend: ClassVar[StorageBackend | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -312,7 +314,21 @@ class Store(Generic[T]):
         """Bind *backend* to this storage class."""
         cls._backend = backend
         indexes = list(getattr(cls, "__skaal_storage__", {}).get("indexes", []))
+        retention = getattr(cls, "__skaal_storage__", {}).get("retention")
+        cls.__skaal_default_ttl_seconds__ = getattr(retention, "default_ttl_seconds", None)
         _configure_backend_indexes(backend, indexes)
+
+    @classmethod
+    def _effective_ttl_seconds(
+        cls,
+        ttl: TTL | str | float | int | None,
+    ) -> float | None:
+        resolved = TTL.coerce(ttl)
+        if resolved is None:
+            return cls.__skaal_default_ttl_seconds__
+        if resolved.is_never:
+            return None
+        return resolved.seconds
 
     @classmethod
     def _ensure_wired(cls) -> None:
@@ -343,11 +359,21 @@ class Store(Generic[T]):
         return _deserialize(raw, cls.__skaal_value_type__)
 
     @classmethod
-    async def set(cls, key: str, value: T) -> None:
+    async def set(
+        cls,
+        key: str,
+        value: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Store *value* under *key*."""
         cls._ensure_wired()
         assert cls._backend is not None
-        await cls._backend.set(key, _serialize(value, cls.__skaal_value_type__))
+        await cls._backend.set(
+            key,
+            _serialize(value, cls.__skaal_value_type__),
+            ttl=cls._effective_ttl_seconds(ttl),
+        )
 
     @classmethod
     async def delete(cls, key: str) -> None:
@@ -442,9 +468,14 @@ class Store(Generic[T]):
             await cls._backend.close()
 
     @classmethod
-    async def add(cls, item: T) -> None:
+    async def add(
+        cls,
+        item: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Store *item* using its inferred primary key."""
-        await cls.set(cls._extract_key(item), item)
+        await cls.set(cls._extract_key(item), item, ttl=ttl)
 
     @classmethod
     async def remove(cls, key: str) -> None:
@@ -463,14 +494,32 @@ class Store(Generic[T]):
 
     @overload
     @classmethod
-    async def update(cls, key: str, value_or_fn: Callable[[T | None], T]) -> T: ...
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T],
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T: ...
 
     @overload
     @classmethod
-    async def update(cls, key: str, value_or_fn: T) -> T: ...
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T: ...
 
     @classmethod
-    async def update(cls, key: str, value_or_fn: Callable[[T | None], T] | T) -> T:
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T] | T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T:
         """
         Replace the value at *key* or atomically transform it.
 
@@ -487,11 +536,15 @@ class Store(Generic[T]):
                 updated = value_or_fn(current)
                 return _serialize(updated, value_type)
 
-            raw_result = await cls._backend.atomic_update(key, _wrapped)
+            raw_result = await cls._backend.atomic_update(
+                key,
+                _wrapped,
+                ttl=cls._effective_ttl_seconds(ttl),
+            )
             return _deserialize(raw_result, cls.__skaal_value_type__)
 
         payload = _serialize(value_or_fn, cls.__skaal_value_type__)
-        await cls.set(key, value_or_fn)
+        await cls.set(key, value_or_fn, ttl=ttl)
         return _deserialize(payload, cls.__skaal_value_type__)
 
     @classmethod
@@ -500,9 +553,15 @@ class Store(Generic[T]):
         return _sync_run(cls.get(key))
 
     @classmethod
-    def sync_set(cls, key: str, value: T) -> None:
+    def sync_set(
+        cls,
+        key: str,
+        value: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Synchronous wrapper for :meth:`set`."""
-        _sync_run(cls.set(key, value))
+        _sync_run(cls.set(key, value, ttl=ttl))
 
     @classmethod
     def sync_delete(cls, key: str) -> None:
@@ -553,9 +612,14 @@ class Store(Generic[T]):
         return _sync_run(cls.query_index(index_name, key, limit=limit, cursor=cursor))
 
     @classmethod
-    def sync_add(cls, item: T) -> None:
+    def sync_add(
+        cls,
+        item: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Synchronous wrapper for :meth:`add`."""
-        _sync_run(cls.add(item))
+        _sync_run(cls.add(item, ttl=ttl))
 
     @classmethod
     def sync_all(cls) -> _List[T]:
@@ -568,6 +632,12 @@ class Store(Generic[T]):
         return _sync_run(cls.find(prefix))
 
     @classmethod
-    def sync_update(cls, key: str, value_or_fn: Callable[[T | None], T] | T) -> T:
+    def sync_update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T] | T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T:
         """Synchronous wrapper for :meth:`update`."""
-        return _sync_run(cls.update(key, value_or_fn))
+        return _sync_run(cls.update(key, value_or_fn, ttl=ttl))

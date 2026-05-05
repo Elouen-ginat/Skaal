@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Callable, List, cast
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
@@ -86,13 +87,25 @@ class PostgresBackend:
                         ns    TEXT    NOT NULL DEFAULT '',
                         key   TEXT    NOT NULL,
                         value JSONB   NOT NULL,
+                        expires_at TIMESTAMPTZ,
                         PRIMARY KEY (ns, key)
                     )
                     """
                 )
+                await conn.execute(
+                    "ALTER TABLE skaal_kv ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"
+                )
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_skaal_kv_ns_expires_at ON skaal_kv (ns, expires_at)"
+                )
             except asyncpg.exceptions.UniqueViolationError:
                 # Another worker created the table concurrently — safe to ignore.
                 pass
+
+    def _expiry_deadline(self, ttl: float | None) -> datetime | None:
+        if ttl is None:
+            return None
+        return datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
     async def _ensure_connected(self) -> None:
         current_loop = asyncio.get_running_loop()
@@ -123,7 +136,10 @@ class PostgresBackend:
         await self._ensure_connected()
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2",
+                (
+                    "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2 "
+                    "AND (expires_at IS NULL OR expires_at > NOW())"
+                ),
                 self.namespace,
                 key,
             )
@@ -135,18 +151,21 @@ class PostgresBackend:
             return json.loads(raw)
         return raw
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         await self._ensure_connected()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO skaal_kv (ns, key, value)
-                VALUES ($1, $2, $3::jsonb)
-                ON CONFLICT (ns, key) DO UPDATE SET value = excluded.value
+                INSERT INTO skaal_kv (ns, key, value, expires_at)
+                VALUES ($1, $2, $3::jsonb, $4)
+                ON CONFLICT (ns, key) DO UPDATE SET
+                    value = excluded.value,
+                    expires_at = excluded.expires_at
                 """,
                 self.namespace,
                 key,
                 json.dumps(value),
+                self._expiry_deadline(ttl),
             )
 
     async def delete(self, key: str) -> None:
@@ -162,7 +181,10 @@ class PostgresBackend:
         await self._ensure_connected()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT key, value FROM skaal_kv WHERE ns = $1",
+                (
+                    "SELECT key, value FROM skaal_kv WHERE ns = $1 "
+                    "AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY key"
+                ),
                 self.namespace,
             )
         result = []
@@ -181,7 +203,9 @@ class PostgresBackend:
                 """
                 SELECT key, value
                 FROM skaal_kv
-                WHERE ns = $1 AND ($2::text IS NULL OR key > $2)
+                                WHERE ns = $1
+                                    AND (expires_at IS NULL OR expires_at > NOW())
+                                    AND ($2::text IS NULL OR key > $2)
                 ORDER BY key
                 LIMIT $3
                 """,
@@ -201,7 +225,10 @@ class PostgresBackend:
         await self._ensure_connected()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT key, value FROM skaal_kv WHERE ns = $1 AND key LIKE $2",
+                (
+                    "SELECT key, value FROM skaal_kv WHERE ns = $1 AND key LIKE $2 "
+                    "AND (expires_at IS NULL OR expires_at > NOW())"
+                ),
                 self.namespace,
                 f"{prefix}%",
             )
@@ -221,7 +248,10 @@ class PostgresBackend:
                 """
                 SELECT key, value
                 FROM skaal_kv
-                WHERE ns = $1 AND key LIKE $2 AND ($3::text IS NULL OR key > $3)
+                                WHERE ns = $1
+                                    AND key LIKE $2
+                                    AND (expires_at IS NULL OR expires_at > NOW())
+                                    AND ($3::text IS NULL OR key > $3)
                 ORDER BY key
                 LIMIT $4
                 """,
@@ -272,6 +302,7 @@ class PostgresBackend:
                     FROM skaal_kv
                     WHERE ns = $1
                       AND (value #> $2::text[]) = $3::jsonb
+                                            AND (expires_at IS NULL OR expires_at > NOW())
                       AND ($4::text IS NULL OR key > $4)
                     ORDER BY key
                     LIMIT $5
@@ -306,6 +337,7 @@ class PostgresBackend:
                 FROM skaal_kv
                 WHERE ns = $1
                   AND (value #> $2::text[]) = $3::jsonb
+                                    AND (expires_at IS NULL OR expires_at > NOW())
                   AND (
                     (value #> $4::text[]) > $5::jsonb
                     OR ((value #> $4::text[]) = $5::jsonb AND key > $6)
@@ -328,6 +360,7 @@ class PostgresBackend:
                 FROM skaal_kv
                 WHERE ns = $1
                   AND (value #> $2::text[]) = $3::jsonb
+                                    AND (expires_at IS NULL OR expires_at > NOW())
                 ORDER BY sort_value, key
                 LIMIT $5
             """
@@ -358,10 +391,12 @@ class PostgresBackend:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO skaal_kv (ns, key, value)
-                VALUES ($1, $2, to_jsonb($3::int))
+                INSERT INTO skaal_kv (ns, key, value, expires_at)
+                VALUES ($1, $2, to_jsonb($3::int), NULL)
                 ON CONFLICT (ns, key)
-                DO UPDATE SET value = to_jsonb((skaal_kv.value::int + $3::int))
+                DO UPDATE SET
+                    value = to_jsonb((skaal_kv.value::int + $3::int)),
+                    expires_at = NULL
                 RETURNING value
                 """,
                 self.namespace,
@@ -373,7 +408,13 @@ class PostgresBackend:
             return int(json.loads(raw)) if isinstance(raw, str) else int(raw)
         return delta
 
-    async def atomic_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        *,
+        ttl: float | None = None,
+    ) -> Any:
         """Atomically read, apply *fn*, and write the result back.
 
         Uses a serializable transaction + ``SELECT ... FOR UPDATE`` so no
@@ -388,7 +429,10 @@ class PostgresBackend:
             async with self._pool.acquire() as conn:
                 async with conn.transaction(isolation="serializable"):
                     row = await conn.fetchrow(
-                        "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2 FOR UPDATE",
+                        (
+                            "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2 "
+                            "AND (expires_at IS NULL OR expires_at > NOW()) FOR UPDATE"
+                        ),
                         self.namespace,
                         key,
                     )
@@ -400,13 +444,16 @@ class PostgresBackend:
                     updated = fn(current)
                     await conn.execute(
                         """
-                        INSERT INTO skaal_kv (ns, key, value)
-                        VALUES ($1, $2, $3::jsonb)
-                        ON CONFLICT (ns, key) DO UPDATE SET value = excluded.value
+                        INSERT INTO skaal_kv (ns, key, value, expires_at)
+                        VALUES ($1, $2, $3::jsonb, $4)
+                        ON CONFLICT (ns, key) DO UPDATE SET
+                            value = excluded.value,
+                            expires_at = excluded.expires_at
                         """,
                         self.namespace,
                         key,
                         json.dumps(updated),
+                        self._expiry_deadline(ttl),
                     )
                     return updated
         except asyncpg.exceptions.SerializationError as exc:

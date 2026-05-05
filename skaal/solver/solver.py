@@ -86,7 +86,7 @@ def _storage_constraints_from_pattern(pattern_meta: dict[str, Any]) -> dict[str,
         "access_pattern": src.get("access_pattern"),
         "durability": src.get("durability"),
         "write_throughput": src.get("throughput"),
-        "retention": None,  # retention here is a duration string, not an enum
+        "retention": None,
         "read_latency": None,
         "write_latency": None,
         "consistency": None,
@@ -497,9 +497,7 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
     if target_compute_key:
         deploy_config = compute_backends.get(target_compute_key, {}).get("deploy", {})
 
-    secret_specs = {
-        name: ref.to_spec() for name, ref in app._collect_secrets().items()
-    }
+    secret_specs = {name: ref.to_spec() for name, ref in app._collect_secrets().items()}
 
     return PlanFile(
         app_name=app.name,

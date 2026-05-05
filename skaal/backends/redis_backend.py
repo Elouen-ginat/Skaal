@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 from typing import Any, Callable, List
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
@@ -61,6 +62,11 @@ class RedisBackend:
         ).decode("ascii")
         return f"skaal:{self.namespace}:__idx__:{index_name}:{token}"
 
+    def _ttl_px(self, ttl: float | None) -> int | None:
+        if ttl is None:
+            return None
+        return max(1, math.ceil(ttl * 1000))
+
     async def _rewrite_index_bucket(
         self,
         client: Any,
@@ -92,6 +98,52 @@ class RedisBackend:
             keys.append(stripped)
         if keys:
             await client.zadd(self._key_index(), {key: 0 for key in keys})
+
+    async def _remove_stale_key_index_members(self, client: Any, keys: list[str]) -> None:
+        for key in keys:
+            await client.zrem(self._key_index(), key)
+
+    async def _collect_live_key_items(
+        self,
+        client: Any,
+        *,
+        min_value: str,
+        max_value: str,
+        limit: int,
+    ) -> list[tuple[str, Any]]:
+        collected: list[tuple[str, Any]] = []
+        cursor = min_value
+        fetch_size = max(limit * 2, 50)
+
+        while len(collected) < limit + 1:
+            keys = await client.zrangebylex(
+                self._key_index(),
+                cursor,
+                max_value,
+                start=0,
+                num=fetch_size,
+            )
+            if not keys:
+                break
+
+            values = await client.mget(*[self._key(key) for key in keys])
+            stale_keys: list[str] = []
+            for key, value in zip(keys, values):
+                if value is None:
+                    stale_keys.append(key)
+                    continue
+                collected.append((key, json.loads(value)))
+                if len(collected) >= limit + 1:
+                    break
+
+            if stale_keys:
+                await self._remove_stale_key_index_members(client, stale_keys)
+
+            if len(keys) < fetch_size or len(collected) >= limit + 1:
+                break
+            cursor = f"({keys[-1]}"
+
+        return collected
 
     async def _sync_indexes(self, client: Any, key: str, old_value: Any, new_value: Any) -> None:
         for index_name, index in _get_backend_indexes(self).items():
@@ -156,13 +208,17 @@ class RedisBackend:
             return None
         return json.loads(raw)
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         client = await self._ensure_connected()
         full_key = self._key(key)
         raw_old = await client.get(full_key)
         old_value = json.loads(raw_old) if raw_old is not None else None
         pipe = client.pipeline(transaction=True)
-        pipe.set(full_key, json.dumps(value))
+        ttl_px = self._ttl_px(ttl)
+        if ttl_px is None:
+            pipe.set(full_key, json.dumps(value))
+        else:
+            pipe.set(full_key, json.dumps(value), px=ttl_px)
         pipe.zadd(self._key_index(), {key: 0})
         await pipe.execute()
         await self._sync_indexes(client, key, old_value, value)
@@ -187,9 +243,14 @@ class RedisBackend:
             return []
         values = await client.mget(*[self._key(key) for key in keys])
         result = []
+        stale_keys: list[str] = []
         for k, v in zip(keys, values):
             if v is not None:
                 result.append((k, json.loads(v)))
+            else:
+                stale_keys.append(k)
+        if stale_keys:
+            await self._remove_stale_key_index_members(client, stale_keys)
         return result
 
     async def list_page(self, *, limit: int, cursor: str | None):
@@ -199,16 +260,17 @@ class RedisBackend:
         decoded = _validate_cursor(cursor, mode="list")
         last_key = decoded.get("last_key")
         min_value = f"({last_key}" if last_key is not None else "-"
-        keys = await client.zrangebylex(self._key_index(), min_value, "+", start=0, num=limit + 1)
-        page_keys = keys[:limit]
-        has_more = len(keys) > limit
-        values = await client.mget(*[self._key(key) for key in page_keys]) if page_keys else []
-        items = [
-            (key, json.loads(value)) for key, value in zip(page_keys, values) if value is not None
-        ]
+        live_items = await self._collect_live_key_items(
+            client,
+            min_value=min_value,
+            max_value="+",
+            limit=limit,
+        )
+        items = live_items[:limit]
+        has_more = len(live_items) > limit
         next_cursor = None
-        if has_more and page_keys:
-            next_cursor = _encode_cursor({"mode": "list", "last_key": page_keys[-1]})
+        if has_more and items:
+            next_cursor = _encode_cursor({"mode": "list", "last_key": items[-1][0]})
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
     async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
@@ -228,26 +290,21 @@ class RedisBackend:
             last_key = decoded.get("last_key")
             min_value = f"({last_key}" if last_key is not None else f"[{prefix}"
             max_value = f"[{prefix}\uffff"
-            keys = await client.zrangebylex(
-                self._key_index(),
-                min_value,
-                max_value,
-                start=0,
-                num=limit + 1,
+            live_items = await self._collect_live_key_items(
+                client,
+                min_value=min_value,
+                max_value=max_value,
+                limit=limit,
             )
         else:
             return await self.list_page(limit=limit, cursor=cursor)
 
-        page_keys = keys[:limit]
-        has_more = len(keys) > limit
-        values = await client.mget(*[self._key(key) for key in page_keys]) if page_keys else []
-        items = [
-            (key, json.loads(value)) for key, value in zip(page_keys, values) if value is not None
-        ]
+        items = live_items[:limit]
+        has_more = len(live_items) > limit
         next_cursor = None
-        if has_more and page_keys:
+        if has_more and items:
             next_cursor = _encode_cursor(
-                {"mode": "scan", "prefix": prefix, "last_key": page_keys[-1]}
+                {"mode": "scan", "prefix": prefix, "last_key": items[-1][0]}
             )
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
@@ -266,19 +323,40 @@ class RedisBackend:
             mode="index",
             extra={"index_name": index_name, "key": _cursor_identity(key)},
         )
-        offset = int(decoded.get("offset", 0)) if decoded else 0
         bucket_key = self._index_bucket_key(index_name, key)
-        raw_entries = await client.lrange(bucket_key, offset, offset + limit)
+        offset = int(decoded.get("offset", 0)) if decoded else 0
+        raw_entries = await client.lrange(bucket_key, 0, -1)
         entries = [json.loads(entry) for entry in raw_entries]
-        page_entries = entries[:limit]
-        has_more = len(entries) > limit
-        primary_keys = [entry["pk"] for entry in page_entries]
+        primary_keys = [entry["pk"] for entry in entries]
         values = (
             await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
             if primary_keys
             else []
         )
-        items = [json.loads(value) for value in values if value is not None]
+        stale_keys = {entry["pk"] for entry, value in zip(entries, values) if value is None}
+        if stale_keys:
+            await self._rewrite_index_bucket(
+                client,
+                index_name=index_name,
+                partition_key=key,
+                mutator=lambda bucket_entries: [
+                    entry for entry in bucket_entries if entry["pk"] not in stale_keys
+                ],
+            )
+            entries = [entry for entry in entries if entry["pk"] not in stale_keys]
+            primary_keys = [entry["pk"] for entry in entries]
+            values = (
+                await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
+                if primary_keys
+                else []
+            )
+
+        live_entries = [
+            (entry, json.loads(value)) for entry, value in zip(entries, values) if value is not None
+        ]
+        page_entries = live_entries[offset : offset + limit]
+        has_more = len(live_entries) > offset + limit
+        items = [item for _, item in page_entries]
         next_cursor = None
         if has_more:
             next_cursor = _encode_cursor(
@@ -286,7 +364,7 @@ class RedisBackend:
                     "mode": "index",
                     "index_name": index_name,
                     "key": _cursor_identity(key),
-                    "offset": offset + len(page_entries),
+                    "offset": offset + len(items),
                 }
             )
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
@@ -303,6 +381,7 @@ class RedisBackend:
         key: str,
         fn: Callable[[Any], Any],
         *,
+        ttl: float | None = None,
         max_retries: int = 64,
     ) -> Any:
         """Atomically read, apply *fn*, and write back using a Redis pipeline with WATCH.
@@ -327,7 +406,11 @@ class RedisBackend:
                         current = json.loads(raw) if raw is not None else None
                         new_value = fn(current)
                         pipe.multi()
-                        pipe.set(full_key, json.dumps(new_value))
+                        ttl_px = self._ttl_px(ttl)
+                        if ttl_px is None:
+                            pipe.set(full_key, json.dumps(new_value))
+                        else:
+                            pipe.set(full_key, json.dumps(new_value), px=ttl_px)
                         pipe.zadd(self._key_index(), {key: 0})
                         await pipe.execute()
                         await self._sync_indexes(client, key, current, new_value)
