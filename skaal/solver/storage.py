@@ -240,6 +240,11 @@ def select_backend(
         cost_terms.append(If(sel_vars[name], base_cost + vpc_penalty, 0))
     opt.minimize(Sum(cost_terms))
 
+    # Make equally cheap solutions deterministic across Python/Z3 versions.
+    # Prefer the first backend in catalog order when the primary cost objective ties.
+    tie_break_terms = [If(sel_vars[name], index, 0) for index, name in enumerate(backend_names)]
+    opt.minimize(Sum(tie_break_terms))
+
     result = opt.check()
     if result != sat:
         from skaal.solver.diagnostics import build_diagnosis, evaluate_storage_candidates

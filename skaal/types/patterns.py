@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Literal, TypeAlias, TypedDict, TypeVar
+from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel
+from typing_extensions import TypedDict
 
 from skaal.types.constraints import AccessPattern
 from skaal.types.protocols import AsyncPublishRef, AsyncPublishTarget

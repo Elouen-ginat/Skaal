@@ -15,9 +15,10 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any, TypeAlias, TypedDict, cast
+from typing import Any, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator
+from typing_extensions import TypedDict
 
 from skaal.types import AsyncPublishTarget
 

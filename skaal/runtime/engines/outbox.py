@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, TypedDict, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
+
+from typing_extensions import TypedDict
 
 from skaal.patterns import Outbox
 from skaal.runtime.engines.base import BackgroundTaskEngine

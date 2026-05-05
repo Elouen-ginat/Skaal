@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
+
+from typing_extensions import TypedDict
 
 TelemetryExporter: TypeAlias = Literal["otlp"]
 ReadinessState: TypeAlias = Literal["starting", "ready", "degraded", "stopped"]

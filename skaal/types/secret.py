@@ -21,9 +21,10 @@ from __future__ import annotations
 import re
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import AsyncContextManager, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
+from typing import AsyncContextManager, Literal, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
+from typing_extensions import TypedDict
 
 SecretProvider: TypeAlias = Literal[
     "env",

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias, TypedDict
+from typing import Any, Literal, Protocol, TypeAlias
+
+from typing_extensions import TypedDict
 
 from skaal.plan import PlanFile
 from skaal.types.protocols import SupportsAsyncAppend, SupportsAsyncSend

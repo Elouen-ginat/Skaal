@@ -19,9 +19,10 @@ import inspect
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
 from skaal.errors import SkaalError
 from skaal.patterns import Saga
