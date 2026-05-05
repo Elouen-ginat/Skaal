@@ -112,6 +112,9 @@ nav:
   - Home: index.md
   - Get Started: getting-started.md
   - Guides:
+      - How It Works: how-it-works.md
+      - Platform Features: platform-features.md
+      - Examples: examples.md
       - CLI: cli.md
       - Catalogs: catalogs.md
       - HTTP Integration: http.md

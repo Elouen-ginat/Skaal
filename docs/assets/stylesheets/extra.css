@@ -122,6 +122,64 @@ button {
   margin: 1.25rem 0 2rem;
 }
 
+.skaal-flow-grid,
+.skaal-feature-grid,
+.skaal-example-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.skaal-flow-card,
+.skaal-feature-card,
+.skaal-example-card {
+  border: 1px solid rgba(167, 180, 194, 0.22);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--skaal-shadow-soft);
+  overflow: hidden;
+}
+
+.skaal-flow-card img,
+.skaal-feature-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-bottom: 1px solid rgba(167, 180, 194, 0.18);
+}
+
+.skaal-flow-card > div,
+.skaal-feature-card > div,
+.skaal-example-card > div {
+  padding: 1.1rem 1.1rem 1.25rem;
+}
+
+.skaal-flow-card h3,
+.skaal-feature-card h3,
+.skaal-example-card h3 {
+  margin-top: 0;
+}
+
+.skaal-split-callout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.skaal-split-callout > div {
+  padding: 1.2rem 1.3rem;
+  border: 1px solid rgba(167, 180, 194, 0.22);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--skaal-shadow-soft);
+}
+
+.skaal-split-callout h3 {
+  margin-top: 0;
+}
+
 .md-typeset .grid.cards > ul > li,
 .md-typeset .grid.cards > ol > li {
   border-radius: 22px;
@@ -137,7 +195,11 @@ button {
 
 @media screen and (max-width: 960px) {
   .skaal-hero,
-  .skaal-showcase {
+  .skaal-showcase,
+  .skaal-flow-grid,
+  .skaal-feature-grid,
+  .skaal-example-grid,
+  .skaal-split-callout {
     grid-template-columns: 1fr;
   }
 

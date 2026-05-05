@@ -104,6 +104,14 @@ skaal deploy --app myapp:app --target local --catalog catalogs/local.toml
 
   In-process planning, building, deploying, and runtime entry points.
 
+- [See the planning lifecycle](how-it-works.md)
+
+  The full declare, solve, build, and deploy path from one application model.
+
+- [Explore platform features](platform-features.md)
+
+  Storage, compute, runtime, deployment, and integration capabilities in one place.
+
 - [Work from the CLI](cli.md)
 
   Command-line planning, build, deploy, and local run flows.
@@ -111,5 +119,9 @@ skaal deploy --app myapp:app --target local --catalog catalogs/local.toml
 - [Understand the HTTP model](http.md)
 
   How Skaal fits with FastAPI, Starlette, Dash, and ASGI patterns.
+
+- [Start from a real example](examples.md)
+
+  Browse the bundled apps for CRUD APIs, dashboards, streaming, uploads, and mesh flows.
 
 </div>
