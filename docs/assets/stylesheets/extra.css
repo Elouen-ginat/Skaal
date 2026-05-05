@@ -1,0 +1,147 @@
+:root {
+  --md-primary-fg-color: var(--skaal-color-ink);
+  --md-primary-fg-color--light: #1c2940;
+  --md-primary-fg-color--dark: #0a1120;
+  --md-accent-fg-color: var(--skaal-color-signal-teal);
+  --md-typeset-a-color: var(--skaal-color-signal-teal);
+  --md-default-bg-color: var(--skaal-color-mist);
+  --md-code-bg-color: #0f1828;
+}
+
+body,
+input,
+button {
+  font-family: var(--skaal-font-body);
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-header__title,
+.md-tabs__link {
+  font-family: var(--skaal-font-heading);
+}
+
+.md-grid {
+  max-width: 1280px;
+}
+
+.md-header {
+  background: rgba(246, 251, 249, 0.9);
+  border-bottom: 1px solid rgba(167, 180, 194, 0.22);
+  backdrop-filter: blur(16px);
+}
+
+.md-tabs {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(246, 251, 249, 0.9));
+}
+
+.md-main {
+  background:
+    radial-gradient(circle at top right, rgba(154, 230, 110, 0.12), transparent 22%),
+    radial-gradient(circle at top left, rgba(19, 181, 168, 0.1), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, var(--skaal-color-mist) 100%);
+}
+
+.skaal-hero {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  align-items: center;
+  padding: 1rem 0 2rem;
+}
+
+.skaal-kicker {
+  display: inline-block;
+  margin: 0 0 1rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid rgba(19, 181, 168, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--skaal-color-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skaal-hero h1 {
+  margin: 0;
+  font-size: clamp(2.6rem, 6vw, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+.skaal-lead {
+  max-width: 44rem;
+  margin: 1.25rem 0 0;
+  color: rgba(14, 23, 38, 0.82);
+  font-size: 1.15rem;
+}
+
+.skaal-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 1.5rem 0;
+}
+
+.skaal-hero__actions .md-button--primary {
+  background: linear-gradient(135deg, var(--skaal-color-ink), #1f3047);
+  border-color: transparent;
+  color: #fff;
+}
+
+.skaal-hero__visual,
+.skaal-showcase__panel {
+  border: 1px solid rgba(167, 180, 194, 0.2);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: var(--skaal-shadow-soft);
+  overflow: hidden;
+}
+
+.skaal-hero__visual img,
+.skaal-showcase__panel img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.skaal-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.skaal-showcase {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 1.25rem 0 2rem;
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > ol > li {
+  border-radius: 22px;
+  border-color: rgba(167, 180, 194, 0.22);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--skaal-shadow-soft);
+}
+
+.md-typeset code,
+.md-typeset pre code {
+  font-family: var(--skaal-font-mono);
+}
+
+@media screen and (max-width: 960px) {
+  .skaal-hero,
+  .skaal-showcase {
+    grid-template-columns: 1fr;
+  }
+
+  .skaal-hero h1 {
+    font-size: clamp(2.2rem, 10vw, 3.4rem);
+  }
+}

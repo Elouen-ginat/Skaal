@@ -110,6 +110,11 @@ secrets-gcp = [
 ]
 
 [dependency-groups]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.7",
+    "mkdocstrings[python]>=0.30",
+]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
