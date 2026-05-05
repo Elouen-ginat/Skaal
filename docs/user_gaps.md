@@ -18,16 +18,17 @@ If the next implementation pass is one PR, these are the items that buy the most
 
 ADR 014 removed public HTTP routing/streaming from the "what Skaal should build next" list, and ADR 015 landed the first `Store[T]` pagination/index pass (`list_page`, `scan_page`, `query_index`, `SecondaryIndex`). The next coherent pass is now the remaining storage/runtime capability work.
 
+Note: the old "add `skaal dev`" wording is intentionally retired here. The local dev loop now lives on `skaal run` via `--reload/--no-reload` and auto-reload defaults; treat any remaining work in this area as docs/help discoverability, not as a missing command.
+
 1. **Blob / object storage tier** — there is no `@app.blob` and no S3/GCS backend, so any user with files drops the framework entirely. P0. ([§B.2](#b2-kv-store-and-storage-tiers), [ADR 016](./design/016-blob-storage-tier-implementation-plan.md))
 2. **Agent persistent-state save/load** — `__skaal_persistent_fields__` is collected but the runtime never loads or persists it; "fields marked @persistent survive restarts" in the docstring is currently false. P0 correctness gap. ([§B.7](#b7-agents))
-3. **`skaal init` / project scaffolding + `skaal dev` watch mode** — the pieces now exist only partially; Skaal still lacks a first-class zero-config `init` → `dev` onboarding path. P0 for adoption. ([§A.1](#a1-cli-zero-config-and-dev-loop), [ADR 020](./design/020-skaal-init-and-dev-implementation-plan.md))
-4. **Solver-failure error messages with closest-match suggestions** — today an unsatisfiable plan surfaces as a Z3 stack trace. P0 for first-time users. ([§A.4](#a4-error-messages-and-validation))
-5. **Catalog overrides per environment** (dev / staging / prod) without copy-pasting whole TOML files. P1 but hits everyone past the prototype stage. ([§A.5](#a5-catalog-ergonomics), [ADR 022](./design/022-catalog-overrides-implementation-plan.md))
-6. ~~**Relational migrations beyond `create_all`**~~ — landed in [ADR 023](./design/023-relational-migrations-implementation-plan.md): Alembic-driven `skaal migrate relational` with `autogenerate`, `upgrade`, `downgrade`, `current`, `history`, `check`, `stamp` and a typed Python API.
-7. **Secret injection at deploy / runtime** — there is still no Skaal-level Secrets Manager / Secret Manager surface. P0. ([§B.6](#b6-compute--functions))
-8. **Examples ladder and testing story** — the examples still do not cover agents, schedules, patterns, or test fixtures. P1. ([§A.2](#a2-testing-story), [§A.8](#a8-examples-dont-progress-and-miss-common-patterns))
-9. **Backend-native cursor/index optimization** — the new `Store[T]` surface is present, but the built-in backends still materialize pages/index queries rather than mapping to native cursor or secondary-index primitives. P1 scalability gap. ([§B.2](#b2-kv-store-and-storage-tiers))
-10. **Per-row TTL / cache semantics** — `retention` still influences planning rather than runtime expiry behavior. P0 for session/cache workloads. ([§B.2](#b2-kv-store-and-storage-tiers))
+3. **Solver-failure error messages with closest-match suggestions** — today an unsatisfiable plan surfaces as a Z3 stack trace. P0 for first-time users. ([§A.4](#a4-error-messages-and-validation))
+4. **Catalog overrides per environment** (dev / staging / prod) without copy-pasting whole TOML files. P1 but hits everyone past the prototype stage. ([§A.5](#a5-catalog-ergonomics), [ADR 022](./design/022-catalog-overrides-implementation-plan.md))
+5. ~~**Relational migrations beyond `create_all`**~~ — landed in [ADR 023](./design/023-relational-migrations-implementation-plan.md): Alembic-driven `skaal migrate relational` with `autogenerate`, `upgrade`, `downgrade`, `current`, `history`, `check`, `stamp` and a typed Python API.
+6. **Secret injection at deploy / runtime** — there is still no Skaal-level Secrets Manager / Secret Manager surface. P0. ([§B.6](#b6-compute--functions))
+7. **Examples ladder and testing story** — the examples still do not cover agents, schedules, patterns, or test fixtures. P1. ([§A.2](#a2-testing-story), [§A.8](#a8-examples-dont-progress-and-miss-common-patterns))
+8. **Backend-native cursor/index optimization** — the new `Store[T]` surface is present, but the built-in backends still materialize pages/index queries rather than mapping to native cursor or secondary-index primitives. P1 scalability gap. ([§B.2](#b2-kv-store-and-storage-tiers))
+9. **Per-row TTL / cache semantics** — `retention` still influences planning rather than runtime expiry behavior. P0 for session/cache workloads. ([§B.2](#b2-kv-store-and-storage-tiers))
 
 ---
 
@@ -35,17 +36,18 @@ ADR 014 removed public HTTP routing/streaming from the "what Skaal should build 
 
 ### A.1. CLI zero-config and dev loop
 
-**What users want:** `pip install skaal && skaal init && skaal dev` — get to "code reload on save, hitting localhost" without reading docs.
+**What users want:** `pip install skaal && skaal init && skaal run` — get to "code reload on save, hitting localhost" without reading docs.
 
 **What happens today:**
-- `skaal init` now exists and scaffolds a starter project, but the happy path still ends in `skaal run` output rather than a dedicated dev command.
-- There is still no first-class `skaal dev` watch-mode. Hot reload exists under `skaal run` (`skaal/cli/run_cmd.py`) via `skaal/cli/_reload.py`, but it is not surfaced as the obvious default entry point.
-- `skaal run` requires `MODULE:APP` either as a positional or under `[tool.skaal]` in `pyproject.toml`. The fallback is real and the error message is good, but it is not surfaced in `--help`.
+- `skaal init` exists and scaffolds a starter project.
+- `skaal run` is the supported local-dev entry point. Hot reload lives there via `--reload/--no-reload`, with auto mode defaulting to reload-on for interactive local development.
+- `skaal run` accepts `MODULE:APP` as a positional argument and also falls back to `[tool.skaal].app` in `pyproject.toml`, which is what the starter project writes.
+- The remaining friction is discoverability, not a missing command: older planning notes can still imply Skaal wants a separate `skaal dev` surface even though the shipped flow is `skaal init` → `skaal run`.
 - No tab-completion install path documented (Typer supports it; nothing in the CLI registers it).
 
-**Why it's awkward:** The first-run story is better than the original audit, but it is still split across partially-hidden surfaces. Users can scaffold and they can hot-reload, yet the framework still does not present that as one obvious `skaal init` → `skaal dev` workflow. Compare to `cargo new`, `npm init`, `vite`, or `django-admin startproject`, where the default inner loop is immediately legible.
+**Why it's awkward:** End users can complete the local dev loop today, but the project still leaves room for contributor confusion about the intended surface. The gap here is now docs/help clarity around the existing `skaal run` workflow, not the absence of a dedicated `skaal dev` command.
 
-**Severity:** P0 (adoption). Tracked in [ADR 020](./design/020-skaal-init-and-dev-implementation-plan.md). The remaining work is to turn the existing scaffolding + reload pieces into a first-class `skaal init` → `skaal dev` onboarding path.
+**Severity:** P2 (documentation and discoverability). ADR 020 proposed a dedicated `skaal dev` command, but that plan is now superseded by the existing `skaal run` reload model. Keep future follow-up framed as docs/help polish unless the CLI surface changes again.
 
 ---
 

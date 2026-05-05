@@ -314,7 +314,7 @@ The implementation immediately after this one should not be "more storage" by de
 
 - blob/object storage
 - agent persistence correctness
-- `skaal init` / `skaal dev`
+- `skaal init` / `skaal run` dev-loop discoverability
 - solver error-message overhaul
 
 That prioritization should happen after this surface is stable, not while it is still being cut over.
