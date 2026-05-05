@@ -14,11 +14,11 @@ from skaal.storage import (
     _encode_cursor,
     _field_value,
     _get_backend_indexes,
+    _lex_sort_token,
     _normalize_limit,
-    _sort_token,
     _validate_cursor,
 )
-from skaal.types.storage import Page
+from skaal.types.storage import CursorPayload, Page
 
 
 class RedisBackend:
@@ -56,35 +56,28 @@ class RedisBackend:
     def _key_index(self) -> str:
         return f"skaal:{self.namespace}:__keys__"
 
-    def _index_bucket_key(self, index_name: str, partition_key: Any) -> str:
+    def _index_sorted_set_key(self, index_name: str, partition_key: Any) -> str:
         token = base64.urlsafe_b64encode(
             json.dumps(partition_key, sort_keys=True, default=str).encode("utf-8")
         ).decode("ascii")
-        return f"skaal:{self.namespace}:__idx__:{index_name}:{token}"
+        return f"skaal:{self.namespace}:__idxz__:{index_name}:{token}"
+
+    @staticmethod
+    def _index_member(primary_key: str, sort_value: Any, *, has_sort_key: bool) -> str:
+        if not has_sort_key:
+            return primary_key
+        return f"{_lex_sort_token(sort_value)}\x1f{primary_key}"
+
+    @staticmethod
+    def _member_primary_key(member: str) -> str:
+        if "\x1f" not in member:
+            return member
+        return member.split("\x1f", 1)[1]
 
     def _ttl_px(self, ttl: float | None) -> int | None:
         if ttl is None:
             return None
         return max(1, math.ceil(ttl * 1000))
-
-    async def _rewrite_index_bucket(
-        self,
-        client: Any,
-        *,
-        index_name: str,
-        partition_key: Any,
-        mutator: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
-    ) -> None:
-        bucket_key = self._index_bucket_key(index_name, partition_key)
-        raw_entries = await client.lrange(bucket_key, 0, -1)
-        entries = [json.loads(entry) for entry in raw_entries]
-        updated = mutator(entries)
-        updated.sort(key=lambda item: (_sort_token(item.get("sort")), item["pk"]))
-        pipe = client.pipeline(transaction=True)
-        pipe.delete(bucket_key)
-        if updated:
-            pipe.rpush(bucket_key, *[json.dumps(entry) for entry in updated])
-        await pipe.execute()
 
     async def _ensure_key_index(self, client: Any) -> None:
         if await client.zcard(self._key_index()) > 0:
@@ -155,36 +148,31 @@ class RedisBackend:
             )
 
             if old_partition is not None:
-
-                def _remove(
-                    entries: list[dict[str, Any]], existing_key: str = key
-                ) -> list[dict[str, Any]]:
-                    return [entry for entry in entries if entry["pk"] != existing_key]
-
-                await self._rewrite_index_bucket(
-                    client,
-                    index_name=index_name,
-                    partition_key=old_partition,
-                    mutator=_remove,
+                old_sort = (
+                    _field_value(old_value, index.sort_key) if index.sort_key is not None else key
+                )
+                await client.zrem(
+                    self._index_sorted_set_key(index_name, old_partition),
+                    self._index_member(
+                        key,
+                        old_sort,
+                        has_sort_key=index.sort_key is not None,
+                    ),
                 )
 
             if new_partition is not None:
                 sort_value = (
                     _field_value(new_value, index.sort_key) if index.sort_key is not None else key
                 )
-
-                def _add(
-                    entries: list[dict[str, Any]], key: str = key, sort_value: Any = sort_value
-                ):
-                    filtered = [entry for entry in entries if entry["pk"] != key]
-                    filtered.append({"pk": key, "sort": sort_value})
-                    return filtered
-
-                await self._rewrite_index_bucket(
-                    client,
-                    index_name=index_name,
-                    partition_key=new_partition,
-                    mutator=_add,
+                await client.zadd(
+                    self._index_sorted_set_key(index_name, new_partition),
+                    {
+                        self._index_member(
+                            key,
+                            sort_value,
+                            has_sort_key=index.sort_key is not None,
+                        ): 0
+                    },
                 )
 
     async def connect(self) -> None:
@@ -318,56 +306,78 @@ class RedisBackend:
     ):
         client = await self._ensure_connected()
         limit = _normalize_limit(limit)
+        indexes = _get_backend_indexes(self)
+        index = indexes.get(index_name)
+        if index is None:
+            raise ValueError(f"No secondary index named {index_name!r}")
         decoded = _validate_cursor(
             cursor,
             mode="index",
             extra={"index_name": index_name, "key": _cursor_identity(key)},
         )
-        bucket_key = self._index_bucket_key(index_name, key)
-        offset = int(decoded.get("offset", 0)) if decoded else 0
-        raw_entries = await client.lrange(bucket_key, 0, -1)
-        entries = [json.loads(entry) for entry in raw_entries]
-        primary_keys = [entry["pk"] for entry in entries]
-        values = (
-            await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
-            if primary_keys
-            else []
+        if decoded.get("offset") is not None:
+            raise ValueError("Invalid cursor")
+        return await self._query_index_native(
+            client,
+            index_name=index_name,
+            key=key,
+            limit=limit,
+            decoded=decoded,
         )
-        stale_keys = {entry["pk"] for entry, value in zip(entries, values) if value is None}
-        if stale_keys:
-            await self._rewrite_index_bucket(
-                client,
-                index_name=index_name,
-                partition_key=key,
-                mutator=lambda bucket_entries: [
-                    entry for entry in bucket_entries if entry["pk"] not in stale_keys
-                ],
-            )
-            entries = [entry for entry in entries if entry["pk"] not in stale_keys]
-            primary_keys = [entry["pk"] for entry in entries]
-            values = (
-                await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
-                if primary_keys
-                else []
-            )
 
-        live_entries = [
-            (entry, json.loads(value)) for entry, value in zip(entries, values) if value is not None
-        ]
-        page_entries = live_entries[offset : offset + limit]
-        has_more = len(live_entries) > offset + limit
-        items = [item for _, item in page_entries]
+    async def _query_index_native(
+        self,
+        client: Any,
+        *,
+        index_name: str,
+        key: Any,
+        limit: int,
+        decoded: CursorPayload,
+    ) -> Page[Any]:
+        collected: list[tuple[str, Any]] = []
+        last_member = decoded.get("last_member")
+        cursor = f"({last_member}" if last_member else "-"
+        fetch_size = max(limit * 2, 50)
+        sorted_set_key = self._index_sorted_set_key(index_name, key)
+
+        while len(collected) < limit + 1:
+            members = await client.zrangebylex(sorted_set_key, cursor, "+", start=0, num=fetch_size)
+            if not members:
+                break
+            primary_keys = [self._member_primary_key(member) for member in members]
+            values = await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
+            stale_members: list[str] = []
+            for member, value in zip(members, values):
+                if value is None:
+                    stale_members.append(member)
+                    continue
+                collected.append((member, json.loads(value)))
+                if len(collected) >= limit + 1:
+                    break
+            for stale_member in stale_members:
+                await client.zrem(sorted_set_key, stale_member)
+            if len(members) < fetch_size or len(collected) >= limit + 1:
+                break
+            cursor = f"({members[-1]}"
+
+        page_entries = collected[:limit]
+        has_more = len(collected) > limit
         next_cursor = None
-        if has_more:
+        if has_more and page_entries:
             next_cursor = _encode_cursor(
                 {
+                    "backend": "redis",
                     "mode": "index",
                     "index_name": index_name,
                     "key": _cursor_identity(key),
-                    "offset": offset + len(items),
+                    "last_member": page_entries[-1][0],
                 }
             )
-        return Page(items=items, next_cursor=next_cursor, has_more=has_more)
+        return Page(
+            items=[item for _, item in page_entries],
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
 
     async def ensure_indexes(self) -> None:
         return None

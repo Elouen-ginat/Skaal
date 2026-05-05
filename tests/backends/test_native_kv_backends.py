@@ -11,6 +11,7 @@ import pytest
 from skaal.backends.dynamodb_backend import DynamoBackend
 from skaal.backends.firestore_backend import FirestoreBackend
 from skaal.backends.redis_backend import RedisBackend
+from skaal.storage import _decode_cursor
 from skaal.types.storage import SecondaryIndex
 
 
@@ -67,6 +68,7 @@ class FakeRedis:
         self.zsets: dict[str, set[str]] = {}
         self.lists: dict[str, list[str]] = {}
         self.expiry: dict[str, float] = {}
+        self.lrange_calls: list[tuple[str, int, int]] = []
 
     def _purge(self, key: str | None = None) -> None:
         now = time.time()
@@ -147,6 +149,7 @@ class FakeRedis:
         return [self.values.get(key) for key in keys]
 
     async def lrange(self, key: str, start: int, end: int) -> list[str]:
+        self.lrange_calls.append((key, start, end))
         values = self.lists.get(key, [])
         if end == -1:
             return values[start:]
@@ -173,6 +176,8 @@ class FakeRedis:
 class FakeDynamoClient:
     def __init__(self) -> None:
         self.items: dict[str, dict[str, Any]] = {}
+        self.global_secondary_indexes: dict[str, dict[str, Any]] = {}
+        self.attribute_definitions: dict[str, str] = {"pk": "S"}
 
     def get_item(self, *, TableName: str, Key: dict[str, Any], **_: Any) -> dict[str, Any]:
         pk = Key["pk"]["S"]
@@ -228,6 +233,88 @@ class FakeDynamoClient:
             response["LastEvaluatedKey"] = {"pk": {"S": page[-1]["pk"]["S"]}}
         return response
 
+    def describe_table(self, *, TableName: str) -> dict[str, Any]:
+        return {
+            "Table": {
+                "AttributeDefinitions": [
+                    {"AttributeName": name, "AttributeType": attr_type}
+                    for name, attr_type in self.attribute_definitions.items()
+                ],
+                "GlobalSecondaryIndexes": list(self.global_secondary_indexes.values()),
+            }
+        }
+
+    def update_table(
+        self,
+        *,
+        TableName: str,
+        AttributeDefinitions: list[dict[str, Any]],
+        GlobalSecondaryIndexUpdates: list[dict[str, Any]],
+    ) -> None:
+        for definition in AttributeDefinitions:
+            self.attribute_definitions[definition["AttributeName"]] = definition["AttributeType"]
+        for update in GlobalSecondaryIndexUpdates:
+            created = update["Create"]
+            self.global_secondary_indexes[created["IndexName"]] = created
+
+    def query(
+        self,
+        *,
+        TableName: str,
+        IndexName: str,
+        Limit: int,
+        ExpressionAttributeNames: dict[str, str],
+        ExpressionAttributeValues: dict[str, Any],
+        ExclusiveStartKey: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        partition_attr = ExpressionAttributeNames["#idx_pk"]
+        partition_value = ExpressionAttributeValues[":idx_pk"]["S"]
+        matching = [
+            item
+            for item in self.items.values()
+            if item.get(partition_attr, {}).get("S") == partition_value
+            and item.get("kind", {}).get("S") == "item"
+        ]
+        sort_attr = None
+        for item in matching:
+            sort_attr = next((name for name in item if name.endswith("_sk")), None)
+            if sort_attr is not None:
+                break
+        matching.sort(
+            key=lambda item: (
+                item.get(sort_attr, {}).get("S") if sort_attr is not None else item["pk"]["S"],
+                item["pk"]["S"],
+            )
+        )
+        if ExclusiveStartKey is not None:
+            start_token = (
+                ExclusiveStartKey.get(sort_attr, {}).get("S")
+                if sort_attr is not None
+                else ExclusiveStartKey["pk"]["S"],
+                ExclusiveStartKey["pk"]["S"],
+            )
+            matching = [
+                item
+                for item in matching
+                if (
+                    item.get(sort_attr, {}).get("S") if sort_attr is not None else item["pk"]["S"],
+                    item["pk"]["S"],
+                )
+                > start_token
+            ]
+        page = matching[:Limit]
+        response: dict[str, Any] = {"Items": page}
+        if len(matching) > Limit:
+            last = page[-1]
+            resume = {"pk": {"S": last["pk"]["S"]}}
+            if partition_attr in last:
+                resume[partition_attr] = last[partition_attr]
+            if sort_attr is not None and sort_attr in last:
+                resume[sort_attr] = last[sort_attr]
+            response["LastEvaluatedKey"] = resume
+        return response
+
 
 @dataclass
 class FakeFirestoreDoc:
@@ -268,8 +355,9 @@ class FakeFirestoreQuery:
     ) -> None:
         self.collection = collection
         self.docs = docs
-        self._order_field: str | None = None
+        self._order_fields: list[str] = []
         self._limit: int | None = None
+        self._start_after: list[Any] | None = None
 
     def where(self, field: str, op: str, value: Any) -> "FakeFirestoreQuery":
         def _match(doc: dict[str, Any]) -> bool:
@@ -287,24 +375,60 @@ class FakeFirestoreQuery:
         return FakeFirestoreQuery(
             self.collection,
             [(doc_id, data) for doc_id, data in self.docs if _match(data)],
-        )._clone(order_field=self._order_field, limit=self._limit)
+        )._clone(order_fields=self._order_fields, limit=self._limit, start_after=self._start_after)
 
     def order_by(self, field: str) -> "FakeFirestoreQuery":
-        return self._clone(order_field=field, limit=self._limit)
+        return self._clone(
+            order_fields=[*self._order_fields, field],
+            limit=self._limit,
+            start_after=self._start_after,
+        )
 
     def limit(self, count: int) -> "FakeFirestoreQuery":
-        return self._clone(order_field=self._order_field, limit=count)
+        self.collection.query_limits.append(count)
+        return self._clone(
+            order_fields=self._order_fields,
+            limit=count,
+            start_after=self._start_after,
+        )
 
-    def _clone(self, *, order_field: str | None, limit: int | None) -> "FakeFirestoreQuery":
+    def start_after(self, values: list[Any]) -> "FakeFirestoreQuery":
+        return self._clone(
+            order_fields=self._order_fields,
+            limit=self._limit,
+            start_after=list(values),
+        )
+
+    def _clone(
+        self,
+        *,
+        order_fields: list[str],
+        limit: int | None,
+        start_after: list[Any] | None,
+    ) -> "FakeFirestoreQuery":
         clone = FakeFirestoreQuery(self.collection, list(self.docs))
-        clone._order_field = order_field
+        clone._order_fields = list(order_fields)
         clone._limit = limit
+        clone._start_after = list(start_after) if start_after is not None else None
         return clone
 
     def stream(self):
         docs = list(self.docs)
-        if self._order_field is not None:
-            docs.sort(key=lambda item: item[1].get(self._order_field))
+        if self._order_fields:
+            docs.sort(
+                key=lambda item: tuple(
+                    item[0] if field == "pk" else item[1].get(field) for field in self._order_fields
+                )
+            )
+        if self._start_after is not None:
+            docs = [
+                item
+                for item in docs
+                if tuple(
+                    item[0] if field == "pk" else item[1].get(field) for field in self._order_fields
+                )
+                > tuple(self._start_after)
+            ]
         if self._limit is not None:
             docs = docs[: self._limit]
         for doc_id, data in docs:
@@ -314,6 +438,7 @@ class FakeFirestoreQuery:
 class FakeFirestoreCollection:
     def __init__(self) -> None:
         self.docs: dict[str, dict[str, Any]] = {}
+        self.query_limits: list[int] = []
 
     def document(self, doc_id: str) -> FakeFirestoreDocRef:
         return FakeFirestoreDocRef(self, doc_id)
@@ -355,6 +480,7 @@ async def test_redis_backend_native_pages_and_indexes() -> None:
     await backend.set("m1", {"team": "alpha", "score": 10})
     await backend.set("m2", {"team": "alpha", "score": 2})
     await backend.set("m3", {"team": "alpha", "score": 30})
+    client.lrange_calls.clear()
 
     first_page = await backend.list_page(limit=2, cursor=None)
     assert [key for key, _ in first_page.items] == ["m1", "m2"]
@@ -363,6 +489,9 @@ async def test_redis_backend_native_pages_and_indexes() -> None:
     first_index_page = await backend.query_index("by_team", "alpha", limit=2, cursor=None)
     assert [item["score"] for item in first_index_page.items] == [2, 10]
     assert first_index_page.has_more is True
+    first_index_cursor = _decode_cursor(first_index_page.next_cursor)
+    assert first_index_cursor.get("last_member") is not None
+    assert "offset" not in first_index_cursor
 
     second_index_page = await backend.query_index(
         "by_team",
@@ -371,6 +500,7 @@ async def test_redis_backend_native_pages_and_indexes() -> None:
         cursor=first_index_page.next_cursor,
     )
     assert [item["score"] for item in second_index_page.items] == [30]
+    assert client.lrange_calls == []
 
 
 @pytest.mark.asyncio
@@ -405,6 +535,7 @@ async def test_dynamo_backend_native_pages_and_indexes() -> None:
     await backend.set("m1", {"team": "alpha", "score": 10})
     await backend.set("m2", {"team": "alpha", "score": 2})
     await backend.set("m3", {"team": "beta", "score": 5})
+    await backend.set("m4", {"team": "alpha", "score": 30})
 
     list_page = await backend.list_page(limit=2, cursor=None)
     assert [key for key, _ in list_page.items] == ["m1", "m2"]
@@ -416,7 +547,18 @@ async def test_dynamo_backend_native_pages_and_indexes() -> None:
 
     index_page = await backend.query_index("by_team", "alpha", limit=2, cursor=None)
     assert [item["score"] for item in index_page.items] == [2, 10]
-    assert index_page.has_more is False
+    assert index_page.has_more is True
+    index_cursor = _decode_cursor(index_page.next_cursor)
+    assert index_cursor.get("exclusive_start_key") is not None
+    assert "offset" not in index_cursor
+
+    next_index_page = await backend.query_index(
+        "by_team",
+        "alpha",
+        limit=2,
+        cursor=index_page.next_cursor,
+    )
+    assert [item["score"] for item in next_index_page.items] == [30]
 
 
 @pytest.mark.asyncio
@@ -448,14 +590,20 @@ async def test_firestore_backend_native_pages_and_indexes() -> None:
     await backend.set("m1", {"team": "alpha", "score": 10})
     await backend.set("m2", {"team": "alpha", "score": 2})
     await backend.set("m3", {"team": "alpha", "score": 30})
+    backend._col().query_limits.clear()
 
     list_page = await backend.list_page(limit=2, cursor=None)
     assert [key for key, _ in list_page.items] == ["m1", "m2"]
     assert list_page.has_more is True
 
+    scan_page = await backend.scan_page("m", limit=2, cursor=None)
+    assert [key for key, _ in scan_page.items] == ["m1", "m2"]
+    assert scan_page.has_more is True
+
     first_index_page = await backend.query_index("by_team", "alpha", limit=2, cursor=None)
     assert [item["score"] for item in first_index_page.items] == [2, 10]
     assert first_index_page.has_more is True
+    assert backend._col().query_limits.count(3) >= 3
 
     second_index_page = await backend.query_index(
         "by_team",

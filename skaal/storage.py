@@ -166,6 +166,17 @@ def _sort_token(value: Any) -> tuple[int, Any]:
     return (4, json.dumps(value, sort_keys=True, default=str))
 
 
+def _lex_sort_token(value: Any) -> str:
+    if value is None:
+        return "0:"
+    if isinstance(value, bool):
+        return f"1:{int(value)}"
+    if isinstance(value, (int, float)):
+        return f"2:{float(value):+030.10f}"
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return f"3:{encoded}"
+
+
 def _field_value(value: Any, field_name: str) -> Any:
     if isinstance(value, dict):
         return value.get(field_name)

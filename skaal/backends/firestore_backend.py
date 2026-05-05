@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List
 
-from skaal.errors import SkaalConflict, SkaalUnavailable
+from skaal.errors import SkaalBackendError, SkaalConflict, SkaalUnavailable
 from skaal.storage import (
+    _backend_index_fields,
     _cursor_identity,
     _encode_cursor,
     _field_value,
     _get_backend_indexes,
     _normalize_limit,
-    _sort_token,
     _validate_cursor,
 )
 from skaal.types.storage import Page
@@ -65,14 +64,64 @@ class FirestoreBackend:
     def _col(self) -> Any:
         return self._get_client().collection(self.collection)
 
-    def _idx_col(self) -> Any:
-        return self._get_client().collection(f"{self.collection}__skaal_indexes")
+    def _project_index_fields(self, value: Any) -> dict[str, Any]:
+        projected: dict[str, Any] = {}
+        if value is None:
+            return projected
+        for index in _get_backend_indexes(self).values():
+            fields = _backend_index_fields(index)
+            partition_value = _field_value(value, index.partition_key)
+            if partition_value is None:
+                continue
+            projected[fields.partition_field] = partition_value
+            if fields.sort_field is not None and index.sort_key is not None:
+                projected[fields.sort_field] = _field_value(value, index.sort_key)
+        return projected
 
-    def _index_bucket_id(self, index_name: str, partition_key: Any) -> str:
-        token = base64.urlsafe_b64encode(
-            json.dumps(partition_key, sort_keys=True, default=str).encode("utf-8")
-        ).decode("ascii")
-        return f"{index_name}:{token}"
+    @staticmethod
+    def _resume_values(doc: Any, order_fields: list[str]) -> list[Any]:
+        data = doc.to_dict() or {}
+        values: list[Any] = []
+        for field in order_fields:
+            values.append(doc.id if field == "pk" else data.get(field))
+        return values
+
+    def _bounded_live_query(
+        self,
+        build_query: Callable[[], Any],
+        *,
+        order_fields: list[str],
+        limit: int,
+        start_after: list[Any] | None,
+    ) -> tuple[list[tuple[Any, dict[str, Any]]], bool, list[Any] | None]:
+        collected: list[tuple[Any, dict[str, Any]]] = []
+        current_start_after = start_after
+
+        while len(collected) < limit + 1:
+            query = build_query()
+            if current_start_after is not None:
+                query = query.start_after(current_start_after)
+            batch_limit = limit + 1 - len(collected)
+            docs = list(query.limit(batch_limit).stream())
+            if not docs:
+                break
+            for doc in docs:
+                data = doc.to_dict()
+                if data is None or data.get("value") is None or self._is_expired_data(data):
+                    continue
+                collected.append((doc, data))
+                if len(collected) >= limit + 1:
+                    break
+            if len(docs) < batch_limit or len(collected) >= limit + 1:
+                break
+            current_start_after = self._resume_values(docs[-1], order_fields)
+
+        page_entries = collected[:limit]
+        has_more = len(collected) > limit
+        next_start_after = None
+        if has_more and page_entries:
+            next_start_after = self._resume_values(page_entries[-1][0], order_fields)
+        return page_entries, has_more, next_start_after
 
     def _expiry_deadline(self, ttl: float | None) -> datetime | None:
         if ttl is None:
@@ -86,55 +135,6 @@ class FirestoreBackend:
         if expires_at is None:
             return False
         return expires_at <= datetime.now(timezone.utc)
-
-    def _read_index_bucket(self, index_name: str, partition_key: Any) -> list[dict[str, Any]]:
-        doc = self._idx_col().document(self._index_bucket_id(index_name, partition_key)).get()
-        if not doc.exists:
-            return []
-        data = doc.to_dict() or {}
-        return list(data.get("entries", []))
-
-    def _write_index_bucket(
-        self,
-        index_name: str,
-        partition_key: Any,
-        entries: list[dict[str, Any]],
-    ) -> None:
-        doc_ref = self._idx_col().document(self._index_bucket_id(index_name, partition_key))
-        if not entries:
-            doc_ref.delete()
-            return
-        doc_ref.set({"entries": entries})
-
-    def _sync_indexes(self, key: str, old_value: Any, new_value: Any) -> None:
-        for index_name, index in _get_backend_indexes(self).items():
-            old_partition = (
-                _field_value(old_value, index.partition_key) if old_value is not None else None
-            )
-            new_partition = (
-                _field_value(new_value, index.partition_key) if new_value is not None else None
-            )
-
-            if old_partition is not None:
-                entries = [
-                    entry
-                    for entry in self._read_index_bucket(index_name, old_partition)
-                    if entry["pk"] != key
-                ]
-                self._write_index_bucket(index_name, old_partition, entries)
-
-            if new_partition is not None:
-                sort_value = (
-                    _field_value(new_value, index.sort_key) if index.sort_key is not None else key
-                )
-                entries = [
-                    entry
-                    for entry in self._read_index_bucket(index_name, new_partition)
-                    if entry["pk"] != key
-                ]
-                entries.append({"pk": key, "sort": sort_value})
-                entries.sort(key=lambda item: (_sort_token(item.get("sort")), item["pk"]))
-                self._write_index_bucket(index_name, new_partition, entries)
 
     async def _run(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         loop = asyncio.get_event_loop()
@@ -154,26 +154,19 @@ class FirestoreBackend:
 
     async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         def _set() -> None:
-            doc = self._col().document(key).get()
-            old_value = json.loads(doc.get("value")) if doc.exists and doc.get("value") else None
-            self._col().document(key).set(
-                {
-                    "pk": key,
-                    "value": json.dumps(value),
-                    "expires_at": self._expiry_deadline(ttl),
-                }
-            )
-            self._sync_indexes(key, old_value, value)
+            payload = {
+                "pk": key,
+                "value": json.dumps(value),
+                "expires_at": self._expiry_deadline(ttl),
+            }
+            payload.update(self._project_index_fields(value))
+            self._col().document(key).set(payload)
 
         await self._run(_set)
 
     async def delete(self, key: str) -> None:
         def _del() -> None:
-            doc = self._col().document(key).get()
-            old_value = json.loads(doc.get("value")) if doc.exists and doc.get("value") else None
             self._col().document(key).delete()
-            if old_value is not None:
-                self._sync_indexes(key, old_value, None)
 
         await self._run(_del)
 
@@ -190,21 +183,29 @@ class FirestoreBackend:
         decoded = _validate_cursor(cursor, mode="list")
 
         def _list_page() -> Page[tuple[str, Any]]:
-            query = self._col().order_by("pk")
-            last_key = decoded.get("last_key") if decoded else None
-            if last_key is not None:
-                query = query.where("pk", ">", last_key)
-            docs = [doc for doc in query.stream() if not self._is_expired_data(doc.to_dict())]
-            page_docs = docs[:limit]
-            has_more = len(docs) > limit
+            start_after = decoded.get("start_after")
+            if start_after is None and decoded.get("last_key") is not None:
+                start_after = [decoded["last_key"]]
+            page_docs, has_more, next_start_after = self._bounded_live_query(
+                lambda: self._col().order_by("pk"),
+                order_fields=["pk"],
+                limit=limit,
+                start_after=start_after,
+            )
             items = []
-            for doc in page_docs:
-                data = doc.to_dict()
+            for doc, data in page_docs:
                 if data and "value" in data:
                     items.append((doc.id, json.loads(data["value"])))
             next_cursor = None
             if has_more and page_docs:
-                next_cursor = _encode_cursor({"mode": "list", "last_key": page_docs[-1].id})
+                next_cursor = _encode_cursor(
+                    {
+                        "backend": "firestore",
+                        "mode": "list",
+                        "last_key": page_docs[-1][0].id,
+                        "start_after": next_start_after,
+                    }
+                )
             return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
         return await self._run(_list_page)
@@ -222,29 +223,36 @@ class FirestoreBackend:
         decoded = _validate_cursor(cursor, mode="scan", extra={"prefix": prefix})
 
         def _scan_page() -> Page[tuple[str, Any]]:
-            query = self._col().order_by("pk")
-            if prefix:
-                lower_bound = (
-                    decoded.get("last_key") if decoded and decoded.get("last_key") else prefix
-                )
-                comparator = ">" if decoded and decoded.get("last_key") else ">="
-                query = query.where("pk", comparator, lower_bound).where(
-                    "pk", "<", prefix + "\uffff"
-                )
-            elif decoded and decoded.get("last_key"):
-                query = query.where("pk", ">", decoded["last_key"])
-            docs = [doc for doc in query.stream() if not self._is_expired_data(doc.to_dict())]
-            page_docs = docs[:limit]
-            has_more = len(docs) > limit
+            start_after = decoded.get("start_after")
+            if start_after is None and decoded.get("last_key") is not None:
+                start_after = [decoded["last_key"]]
+
+            def _build_query() -> Any:
+                query = self._col().order_by("pk")
+                if prefix:
+                    query = query.where("pk", ">=", prefix).where("pk", "<", prefix + "\uffff")
+                return query
+
+            page_docs, has_more, next_start_after = self._bounded_live_query(
+                _build_query,
+                order_fields=["pk"],
+                limit=limit,
+                start_after=start_after,
+            )
             items = []
-            for doc in page_docs:
-                data = doc.to_dict()
+            for doc, data in page_docs:
                 if data and "value" in data:
                     items.append((doc.id, json.loads(data["value"])))
             next_cursor = None
             if has_more and page_docs:
                 next_cursor = _encode_cursor(
-                    {"mode": "scan", "prefix": prefix, "last_key": page_docs[-1].id}
+                    {
+                        "backend": "firestore",
+                        "mode": "scan",
+                        "prefix": prefix,
+                        "last_key": page_docs[-1][0].id,
+                        "start_after": next_start_after,
+                    }
                 )
             return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
@@ -259,46 +267,80 @@ class FirestoreBackend:
         cursor: str | None,
     ):
         limit = _normalize_limit(limit)
+        indexes = _get_backend_indexes(self)
+        index = indexes.get(index_name)
+        if index is None:
+            raise ValueError(f"No secondary index named {index_name!r}")
         decoded = _validate_cursor(
             cursor,
             mode="index",
             extra={"index_name": index_name, "key": _cursor_identity(key)},
         )
+        if decoded.get("offset") is not None:
+            raise ValueError("Invalid cursor")
 
         def _query_index() -> Page[Any]:
-            entries = self._read_index_bucket(index_name, key)
-            offset = int(decoded.get("offset", 0)) if decoded else 0
-            live_entries: list[tuple[dict[str, Any], dict[str, Any]]] = []
-            stale_keys: set[str] = set()
-            for entry in entries:
-                doc = self._col().document(entry["pk"]).get()
-                data = doc.to_dict() if doc.exists else None
-                if (
-                    not doc.exists
-                    or data is None
-                    or data.get("value") is None
-                    or self._is_expired_data(data)
-                ):
-                    stale_keys.add(entry["pk"])
-                    continue
-                live_entries.append((entry, data))
-            if stale_keys:
-                self._write_index_bucket(
-                    index_name,
-                    key,
-                    [entry for entry in entries if entry["pk"] not in stale_keys],
+            fields = _backend_index_fields(index)
+            if index.sort_key is None:
+                start_after = decoded.get("start_after")
+                if start_after is None and decoded.get("last_key") is not None:
+                    start_after = [decoded["last_key"]]
+                page_docs, has_more, next_start_after = self._bounded_live_query(
+                    lambda: self._col().where(fields.partition_field, "==", key).order_by("pk"),
+                    order_fields=["pk"],
+                    limit=limit,
+                    start_after=start_after,
                 )
-            page_entries = live_entries[offset : offset + limit]
-            has_more = len(live_entries) > offset + limit
-            items = [json.loads(data["value"]) for _, data in page_entries]
+                items = [json.loads(data["value"]) for _, data in page_docs]
+                next_cursor = None
+                if has_more and page_docs:
+                    next_cursor = _encode_cursor(
+                        {
+                            "backend": "firestore",
+                            "mode": "index",
+                            "index_name": index_name,
+                            "key": _cursor_identity(key),
+                            "last_key": page_docs[-1][0].id,
+                            "start_after": next_start_after,
+                        }
+                    )
+                return Page(items=items, next_cursor=next_cursor, has_more=has_more)
+
+            start_after = decoded.get("start_after")
+            if start_after is None and decoded.get("has_last_sort"):
+                start_after = [decoded.get("last_sort"), decoded.get("last_key")]
+            sort_field = fields.sort_field
+            if sort_field is None:
+                raise ValueError(f"Secondary index {index_name!r} requires a sort field")
+            try:
+                page_docs, has_more, next_start_after = self._bounded_live_query(
+                    lambda: self._col()
+                    .where(fields.partition_field, "==", key)
+                    .order_by(sort_field)
+                    .order_by("pk"),
+                    order_fields=[sort_field, "pk"],
+                    limit=limit,
+                    start_after=start_after,
+                )
+            except Exception as exc:
+                if type(exc).__name__ == "FailedPrecondition":
+                    raise SkaalBackendError(
+                        f"Firestore index required for secondary index {index_name!r}"
+                    ) from exc
+                raise
+            items = [json.loads(data["value"]) for _, data in page_docs]
             next_cursor = None
-            if has_more:
+            if has_more and page_docs:
                 next_cursor = _encode_cursor(
                     {
+                        "backend": "firestore",
                         "mode": "index",
                         "index_name": index_name,
                         "key": _cursor_identity(key),
-                        "offset": offset + len(items),
+                        "has_last_sort": True,
+                        "last_sort": page_docs[-1][1].get(sort_field),
+                        "last_key": page_docs[-1][0].id,
+                        "start_after": next_start_after,
                     }
                 )
             return Page(items=items, next_cursor=next_cursor, has_more=has_more)
@@ -377,13 +419,13 @@ class FirestoreBackend:
                         "pk": key,
                         "value": json.dumps(updated),
                         "expires_at": self._expiry_deadline(ttl),
+                        **self._project_index_fields(updated),
                     },
                 )
                 return updated
 
             try:
                 updated = _update_in_txn(db.transaction())
-                self._sync_indexes(key, previous_value, updated)
                 return updated
             except g_exc.Aborted as exc:
                 raise SkaalConflict(f"atomic_update on {key!r} lost a race") from exc

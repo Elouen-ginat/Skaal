@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
+import re
 import time
 from typing import Any, Callable, List
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
 from skaal.storage import (
+    _backend_index_fields,
     _cursor_identity,
     _encode_cursor,
     _field_value,
     _get_backend_indexes,
+    _lex_sort_token,
     _normalize_limit,
-    _sort_token,
     _validate_cursor,
 )
-from skaal.types.storage import Page
+from skaal.types.storage import CursorPayload, Page
 
 
 class DynamoBackend:
@@ -49,11 +50,38 @@ class DynamoBackend:
             self._client = boto3.client("dynamodb", region_name=self.region)
         return self._client
 
-    def _index_bucket_pk(self, index_name: str, partition_key: Any) -> str:
-        token = base64.urlsafe_b64encode(
-            json.dumps(partition_key, sort_keys=True, default=str).encode("utf-8")
-        ).decode("ascii")
-        return f"__skaal_idx__:{index_name}:{token}"
+    def _secondary_index_name(self, index_name: str) -> str:
+        token = re.sub(r"[^0-9A-Za-z_]+", "_", index_name).strip("_")
+        return f"skaal_idx_{token or 'default'}"
+
+    @staticmethod
+    def _index_partition_value(value: Any) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+    def _project_index_attributes(self, value: Any) -> dict[str, dict[str, str]]:
+        projected: dict[str, dict[str, str]] = {}
+        if value is None:
+            return projected
+        for index in _get_backend_indexes(self).values():
+            fields = _backend_index_fields(index)
+            partition_value = _field_value(value, index.partition_key)
+            if partition_value is None:
+                continue
+            projected[fields.partition_field] = {"S": self._index_partition_value(partition_value)}
+            if fields.sort_field is not None and index.sort_key is not None:
+                projected[fields.sort_field] = {
+                    "S": _lex_sort_token(_field_value(value, index.sort_key))
+                }
+        return projected
+
+    def _index_resume_key(self, item: dict[str, Any], index: Any) -> dict[str, Any]:
+        fields = _backend_index_fields(index)
+        resume_key = {"pk": item["pk"]}
+        if fields.partition_field in item:
+            resume_key[fields.partition_field] = item[fields.partition_field]
+        if fields.sort_field is not None and fields.sort_field in item:
+            resume_key[fields.sort_field] = item[fields.sort_field]
+        return resume_key
 
     def _ttl_attribute(self, ttl: float | None) -> dict[str, str] | None:
         if ttl is None:
@@ -65,68 +93,6 @@ class DynamoBackend:
             return False
         expires_at = item.get("expires_at", {}).get("N")
         return expires_at is not None and float(expires_at) <= time.time()
-
-    def _read_index_bucket(
-        self, client: Any, index_name: str, partition_key: Any
-    ) -> list[dict[str, Any]]:
-        resp = client.get_item(
-            TableName=self.table_name,
-            Key={"pk": {"S": self._index_bucket_pk(index_name, partition_key)}},
-        )
-        item = resp.get("Item")
-        if item is None or "entries" not in item:
-            return []
-        return json.loads(item["entries"]["S"])
-
-    def _write_index_bucket(
-        self,
-        client: Any,
-        index_name: str,
-        partition_key: Any,
-        entries: list[dict[str, Any]],
-    ) -> None:
-        bucket_pk = self._index_bucket_pk(index_name, partition_key)
-        if not entries:
-            client.delete_item(TableName=self.table_name, Key={"pk": {"S": bucket_pk}})
-            return
-        client.put_item(
-            TableName=self.table_name,
-            Item={
-                "pk": {"S": bucket_pk},
-                "kind": {"S": "index_bucket"},
-                "entries": {"S": json.dumps(entries)},
-            },
-        )
-
-    def _sync_indexes(self, client: Any, key: str, old_value: Any, new_value: Any) -> None:
-        for index_name, index in _get_backend_indexes(self).items():
-            old_partition = (
-                _field_value(old_value, index.partition_key) if old_value is not None else None
-            )
-            new_partition = (
-                _field_value(new_value, index.partition_key) if new_value is not None else None
-            )
-
-            if old_partition is not None:
-                entries = [
-                    entry
-                    for entry in self._read_index_bucket(client, index_name, old_partition)
-                    if entry["pk"] != key
-                ]
-                self._write_index_bucket(client, index_name, old_partition, entries)
-
-            if new_partition is not None:
-                sort_value = (
-                    _field_value(new_value, index.sort_key) if index.sort_key is not None else key
-                )
-                entries = [
-                    entry
-                    for entry in self._read_index_bucket(client, index_name, new_partition)
-                    if entry["pk"] != key
-                ]
-                entries.append({"pk": key, "sort": sort_value})
-                entries.sort(key=lambda item: (_sort_token(item.get("sort")), item["pk"]))
-                self._write_index_bucket(client, index_name, new_partition, entries)
 
     async def _run(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         loop = asyncio.get_event_loop()
@@ -153,23 +119,16 @@ class DynamoBackend:
         client = self._get_client()
 
         def _put() -> None:
-            current = client.get_item(
-                TableName=self.table_name,
-                Key={"pk": {"S": key}},
-            ).get("Item")
-            old_value = (
-                json.loads(current["value"]["S"]) if current and "value" in current else None
-            )
             item = {
                 "pk": {"S": key},
                 "kind": {"S": "item"},
                 "value": {"S": json.dumps(value)},
             }
+            item.update(self._project_index_attributes(value))
             expires_at = self._ttl_attribute(ttl)
             if expires_at is not None:
                 item["expires_at"] = expires_at
             client.put_item(TableName=self.table_name, Item=item)
-            self._sync_indexes(client, key, old_value, value)
 
         await self._run(_put)
 
@@ -177,19 +136,10 @@ class DynamoBackend:
         client = self._get_client()
 
         def _del() -> None:
-            current = client.get_item(
-                TableName=self.table_name,
-                Key={"pk": {"S": key}},
-            ).get("Item")
-            old_value = (
-                json.loads(current["value"]["S"]) if current and "value" in current else None
-            )
             client.delete_item(
                 TableName=self.table_name,
                 Key={"pk": {"S": key}},
             )
-            if old_value is not None:
-                self._sync_indexes(client, key, old_value, None)
 
         await self._run(_del)
 
@@ -289,57 +239,134 @@ class DynamoBackend:
             mode="index",
             extra={"index_name": index_name, "key": _cursor_identity(key)},
         )
+        indexes = _get_backend_indexes(self)
+        index = indexes.get(index_name)
+        if index is None:
+            raise ValueError(f"No secondary index named {index_name!r}")
+        if decoded.get("offset") is not None:
+            raise ValueError("Invalid cursor")
+        return await self._run(
+            self._query_index_native, client, index, index_name, key, limit, decoded
+        )
 
-        def _query() -> Page[Any]:
-            entries = self._read_index_bucket(client, index_name, key)
-            offset = int(decoded.get("offset", 0)) if decoded else 0
-            if not entries:
-                return Page(items=[], next_cursor=None, has_more=False)
+    def _query_index_native(
+        self,
+        client: Any,
+        index: Any,
+        index_name: str,
+        key: Any,
+        limit: int,
+        decoded: CursorPayload,
+    ) -> Page[Any]:
+        collected: list[tuple[dict[str, Any], Any]] = []
+        exclusive_start_key = decoded.get("exclusive_start_key") if decoded else None
+        fields = _backend_index_fields(index)
 
-            batch = client.batch_get_item(
-                RequestItems={
-                    self.table_name: {"Keys": [{"pk": {"S": entry["pk"]}} for entry in entries]}
+        while len(collected) < limit + 1:
+            kwargs: dict[str, Any] = {
+                "TableName": self.table_name,
+                "IndexName": self._secondary_index_name(index_name),
+                "KeyConditionExpression": "#idx_pk = :idx_pk",
+                "ExpressionAttributeNames": {"#idx_pk": fields.partition_field},
+                "ExpressionAttributeValues": {":idx_pk": {"S": self._index_partition_value(key)}},
+                "Limit": limit + 1 - len(collected),
+                "ScanIndexForward": True,
+            }
+            if exclusive_start_key is not None:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+            response = client.query(**kwargs)
+            raw_items = response.get("Items", [])
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            for item in raw_items:
+                if item.get("kind", {}).get("S") not in (None, "item"):
+                    continue
+                if "value" not in item or self._is_expired_item(item):
+                    continue
+                collected.append((item, json.loads(item["value"]["S"])))
+                if len(collected) >= limit + 1:
+                    break
+            if len(collected) >= limit + 1 or last_evaluated_key is None:
+                break
+            exclusive_start_key = last_evaluated_key
+
+        page_entries = collected[:limit]
+        has_more = len(collected) > limit
+        next_cursor = None
+        if has_more and page_entries:
+            next_cursor = _encode_cursor(
+                {
+                    "backend": "dynamodb",
+                    "mode": "index",
+                    "index_name": index_name,
+                    "key": _cursor_identity(key),
+                    "exclusive_start_key": self._index_resume_key(page_entries[-1][0], index),
                 }
             )
-            items_by_pk = {
-                item["pk"]["S"]: item
-                for item in batch.get("Responses", {}).get(self.table_name, [])
-                if "value" in item
-            }
-            stale_keys = {
-                entry["pk"]
-                for entry in entries
-                if entry["pk"] not in items_by_pk or self._is_expired_item(items_by_pk[entry["pk"]])
-            }
-            if stale_keys:
-                self._write_index_bucket(
-                    client,
-                    index_name,
-                    key,
-                    [entry for entry in entries if entry["pk"] not in stale_keys],
-                )
-            live_entries = [entry for entry in entries if entry["pk"] not in stale_keys]
-            page_entries = live_entries[offset : offset + limit]
-            has_more = len(live_entries) > offset + limit
-            ordered_items = [
-                json.loads(items_by_pk[entry["pk"]]["value"]["S"]) for entry in page_entries
-            ]
-            next_cursor = None
-            if has_more:
-                next_cursor = _encode_cursor(
-                    {
-                        "mode": "index",
-                        "index_name": index_name,
-                        "key": _cursor_identity(key),
-                        "offset": offset + len(page_entries),
-                    }
-                )
-            return Page(items=ordered_items, next_cursor=next_cursor, has_more=has_more)
-
-        return await self._run(_query)
+        return Page(
+            items=[item for _, item in page_entries],
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
 
     async def ensure_indexes(self) -> None:
-        return None
+        client = self._get_client()
+        if not hasattr(client, "describe_table") or not hasattr(client, "update_table"):
+            return None
+
+        def _ensure() -> None:
+            indexes = _get_backend_indexes(self)
+            if not indexes:
+                return None
+            table = client.describe_table(TableName=self.table_name).get("Table", {})
+            existing = {
+                gsi.get("IndexName")
+                for gsi in table.get("GlobalSecondaryIndexes", [])
+                if gsi.get("IndexName")
+            }
+            defined = {
+                attr.get("AttributeName")
+                for attr in table.get("AttributeDefinitions", [])
+                if attr.get("AttributeName")
+            }
+            staged = set(defined)
+            attribute_definitions: list[dict[str, str]] = []
+            pending_updates: list[dict[str, Any]] = []
+            for index in indexes.values():
+                fields = _backend_index_fields(index)
+                native_index_name = self._secondary_index_name(index.name)
+                if native_index_name in existing:
+                    continue
+                for attribute_name in (fields.partition_field, fields.sort_field):
+                    if attribute_name is None or attribute_name in staged:
+                        continue
+                    staged.add(attribute_name)
+                    attribute_definitions.append(
+                        {"AttributeName": attribute_name, "AttributeType": "S"}
+                    )
+                key_schema = [{"AttributeName": fields.partition_field, "KeyType": "HASH"}]
+                if fields.sort_field is not None:
+                    key_schema.append({"AttributeName": fields.sort_field, "KeyType": "RANGE"})
+                pending_updates.append(
+                    {
+                        "Create": {
+                            "IndexName": native_index_name,
+                            "KeySchema": key_schema,
+                            "Projection": {"ProjectionType": "ALL"},
+                            "ProvisionedThroughput": {
+                                "ReadCapacityUnits": 5,
+                                "WriteCapacityUnits": 5,
+                            },
+                        }
+                    }
+                )
+            if pending_updates:
+                client.update_table(
+                    TableName=self.table_name,
+                    AttributeDefinitions=attribute_definitions,
+                    GlobalSecondaryIndexUpdates=pending_updates,
+                )
+
+        await self._run(_ensure)
 
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter using DynamoDB UpdateItem.
@@ -413,6 +440,7 @@ class DynamoBackend:
                 "value": {"S": json.dumps(updated)},
                 "ver": {"N": str(next_ver)},
             }
+            item_payload.update(self._project_index_attributes(updated))
             expires_at = self._ttl_attribute(ttl)
             if expires_at is not None:
                 item_payload["expires_at"] = expires_at
@@ -436,7 +464,6 @@ class DynamoBackend:
                 if code == "ConditionalCheckFailedException":
                     return False, None
                 raise
-            self._sync_indexes(client, key, current, updated)
             return True, updated
 
         async def _loop() -> Any:
