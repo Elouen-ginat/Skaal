@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from skaal.deploy.builders.common import safe_key
-from skaal.types import AppLike
+from skaal.types import AppLike, AuthConfig, GatewayConfig, RouteSpec
 
 if TYPE_CHECKING:
     from skaal.plan import PlanFile
@@ -44,17 +44,17 @@ def add_aws_apigw_resources(
         ),
         None,
     )
-    mounts: dict[str, str] = getattr(app, "_mounts", {})
+    mounts: dict[str, str] = app._mounts if hasattr(app, "_mounts") else {}
 
     api_props: dict[str, Any] = {
         "name": f"${{pulumi.stack}}-{app.name}-api",
         "protocolType": "HTTP",
     }
-    cors_origins = gw_comp.config.get("cors_origins") if gw_comp else None
+    gateway_config = cast(GatewayConfig, gw_comp.config) if gw_comp else None
+    cors_origins = gateway_config.cors_origins if gateway_config else None
     auth_header = "Authorization"
-    if gw_comp:
-        auth_cfg = gw_comp.config.get("auth") or {}
-        auth_header = str(auth_cfg.get("header") or "Authorization")
+    if gateway_config and gateway_config.auth:
+        auth_header = gateway_config.auth.header
     if cors_origins:
         api_props["corsConfiguration"] = {
             "allowOrigins": cors_origins,
@@ -83,11 +83,11 @@ def add_aws_apigw_resources(
     }
 
     authorizer_ref: str | None = None
-    if gw_comp:
-        auth_cfg = gw_comp.config.get("auth") or {}
-        if auth_cfg.get("provider") == "jwt" and auth_cfg.get("required", True):
-            jwt_conf: dict[str, Any] = {"issuer": auth_cfg.get("issuer", "")}
-            audience = auth_cfg.get("audience")
+    if gateway_config and gateway_config.auth:
+        auth_cfg = gateway_config.auth
+        if auth_cfg.provider == "jwt" and auth_cfg.required:
+            jwt_conf: dict[str, Any] = {"issuer": auth_cfg.issuer or ""}
+            audience = auth_cfg.audience
             if audience:
                 jwt_conf["audiences"] = [audience]
             resources["jwt-authorizer"] = {
@@ -115,15 +115,15 @@ def add_aws_apigw_resources(
         resources[resource_key] = {"type": "aws:apigatewayv2:Route", "properties": props}
         route_resource_keys.append(resource_key)
 
-    if gw_comp and gw_comp.config.get("routes"):
+    if gateway_config and gateway_config.routes:
         auth_extra: dict[str, Any] = {}
         if authorizer_ref:
             auth_extra = {"authorizerId": authorizer_ref, "authorizationType": "JWT"}
 
         seen_keys: set[str] = set()
-        for route in gw_comp.config["routes"]:
-            gateway_path = aws_apigw_path(route["path"])
-            methods: list[str] = route.get("methods") or ["GET", "POST"]
+        for route in gateway_config.routes:
+            gateway_path = aws_apigw_path(route.path)
+            methods = route.methods
             if {"GET", "POST", "PUT", "DELETE", "PATCH"}.issubset(
                 {method.upper() for method in methods}
             ):
@@ -146,11 +146,16 @@ def add_aws_apigw_resources(
         "name": "$default",
         "autoDeploy": True,
     }
-    if gw_comp:
-        rate_limit = gw_comp.config.get("rate_limit") or {}
+    if gateway_config:
+        rate_limit = gateway_config.rate_limit
         if rate_limit:
-            requests_per_second = float(rate_limit.get("requests_per_second", 1000))
-            burst = int(rate_limit.get("burst", max(1, int(requests_per_second * 2))))
+            requests_per_second = float(rate_limit.requests_per_second)
+            burst_value = rate_limit.burst
+            burst = (
+                int(burst_value)
+                if burst_value is not None
+                else max(1, int(requests_per_second * 2))
+            )
             stage_props["defaultRouteSettings"] = {
                 "throttlingBurstLimit": burst,
                 "throttlingRateLimit": requests_per_second,
@@ -165,8 +170,8 @@ def add_aws_apigw_resources(
 
 def _build_openapi_spec(
     app_name: str,
-    routes: list[dict[str, Any]],
-    auth: dict[str, Any] | None,
+    routes: list[RouteSpec],
+    auth: AuthConfig | None,
     cloud_run_url_ref: str,
 ) -> dict[str, Any]:
     parts: list[Any] = [
@@ -180,12 +185,12 @@ def _build_openapi_spec(
     ]
 
     for route in routes:
-        openapi_path = gcp_openapi_path(route["path"])
+        openapi_path = gcp_openapi_path(route.path)
         safe_operation = re.sub(r"[^a-z0-9_]", "_", openapi_path.lower()).strip("_") or "root"
         has_proxy = "{proxy}" in openapi_path
 
         parts.append(f'  "{openapi_path}":\n')
-        for method in route.get("methods") or ["get", "post"]:
+        for method in route.methods:
             method_name = method.lower()
             parts.append(f"    {method_name}:\n")
             parts.append(f'      operationId: "{safe_operation}_{method_name}"\n')
@@ -199,9 +204,9 @@ def _build_openapi_spec(
                 )
             parts.append('      responses:\n        "200":\n          description: "Success"\n')
 
-    if auth and auth.get("provider") == "jwt" and auth.get("required", True):
-        issuer = auth.get("issuer") or ""
-        audience = auth.get("audience") or ""
+    if auth and auth.provider == "jwt" and auth.required:
+        issuer = auth.issuer or ""
+        audience = auth.audience or ""
         parts.append(
             "securityDefinitions:\n"
             "  jwt:\n"
@@ -236,18 +241,35 @@ def add_gcp_api_gateway(
     if gw_comp is None:
         return
 
-    routes: list[dict[str, Any]] = gw_comp.config.get("routes") or []
-    auth: dict[str, Any] | None = gw_comp.config.get("auth")
+    config = cast(GatewayConfig, gw_comp.config)
+    routes = list(config.routes)
+    auth = config.auth
 
     if not routes:
-        mounts: dict[str, str] = getattr(app, "_mounts", {})
+        mounts: dict[str, str] = app._mounts if hasattr(app, "_mounts") else {}
         if mounts:
             routes = [
-                {"path": prefix.rstrip("/") + "/*", "target": namespace, "methods": ["GET", "POST"]}
+                RouteSpec(
+                    path=prefix.rstrip("/") + "/*",
+                    target=namespace,
+                    methods=["GET", "POST"],
+                    strip_prefix=False,
+                    timeout_ms=None,
+                    rewrite=None,
+                )
                 for namespace, prefix in mounts.items()
             ]
         else:
-            routes = [{"path": "/*", "target": "app", "methods": ["GET", "POST"]}]
+            routes = [
+                RouteSpec(
+                    path="/*",
+                    target="app",
+                    methods=["GET", "POST"],
+                    strip_prefix=False,
+                    timeout_ms=None,
+                    rewrite=None,
+                )
+            ]
 
     cloud_run_url = "${cloud-run-service.statuses[0].url}"
     openapi_contents = _build_openapi_spec(app.name, routes, auth, cloud_run_url)

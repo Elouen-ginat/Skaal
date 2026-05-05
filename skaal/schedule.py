@@ -15,9 +15,11 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any, Union
+from typing import Any, TypeAlias, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+from skaal.types import AsyncPublishTarget
 
 # ── Interval parsing ──────────────────────────────────────────────────────────
 
@@ -168,7 +170,13 @@ class ScheduleContext(BaseModel):
 
 
 # Union alias for type annotations
-Schedule = Union[Every, Cron]
+Schedule: TypeAlias = Every | Cron
+
+
+class ScheduleFunctionMetadata(TypedDict):
+    trigger: Schedule
+    emit_to: object | None
+    timezone: str
 
 
 def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
@@ -184,7 +192,7 @@ def build_scheduled_job(
     fn: Callable[..., Any],
     *,
     name: str,
-    emit_to: Any = None,
+    emit_to: AsyncPublishTarget[object] | None = None,
     logger: Any | None = None,
     log_lifecycle: bool = False,
 ) -> Callable[[], Awaitable[None]]:
@@ -198,7 +206,7 @@ def build_scheduled_job(
             else:
                 result = await fn() if inspect.iscoroutinefunction(fn) else fn()
             if emit_to is not None and result is not None:
-                await emit_to.send(result)
+                await _publish_schedule_result(emit_to, result)
             if logger is not None and log_lifecycle:
                 logger.info("[skaal/schedule] %s completed", name)
         except Exception as exc:  # noqa: BLE001
@@ -226,12 +234,12 @@ def create_async_scheduler(
     )
 
     for name, fn in scheduled.items():
-        meta = fn.__skaal_schedule__
+        meta = cast(ScheduleFunctionMetadata, fn.__skaal_schedule__)
         scheduler.add_job(
             build_scheduled_job(
                 fn,
                 name=name,
-                emit_to=meta.get("emit_to"),
+                emit_to=cast(AsyncPublishTarget[object] | None, meta.get("emit_to")),
                 logger=logger,
                 log_lifecycle=log_lifecycle,
             ),
@@ -239,6 +247,20 @@ def create_async_scheduler(
         )
 
     return scheduler
+
+
+async def _publish_schedule_result(target: AsyncPublishTarget[object], payload: object) -> None:
+    send = cast(Callable[[object], Awaitable[None]] | None, getattr(target, "send", None))
+    if callable(send):
+        await send(payload)
+        return
+
+    append = cast(Callable[[object], Awaitable[object]] | None, getattr(target, "append", None))
+    if callable(append):
+        await append(payload)
+        return
+
+    raise TypeError("Scheduled emit target must provide send() or append()")
 
 
 __all__ = [

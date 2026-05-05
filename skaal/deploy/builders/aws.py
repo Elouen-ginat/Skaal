@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from skaal.deploy.backends import get_handler
 from skaal.deploy.builders.apigw import add_aws_apigw_resources
@@ -505,18 +505,20 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
     for comp_name, comp in plan.components.items():
         if comp.kind != "schedule-trigger":
             continue
-        cfg = comp.config
-        trigger_type = cfg.get("trigger_type", "cron")
-        target_fn = cfg.get("target_function", comp_name)
+        from skaal.types import ScheduleTriggerConfig
+
+        cfg = cast(ScheduleTriggerConfig, comp.config)
+        trigger_type = cfg.trigger_type
+        target_fn = cfg.target_function
 
         if trigger_type == "cron":
             from skaal.schedule import Cron
 
-            schedule_expr = Cron(expression=cfg["trigger"]["expression"]).as_aws_expression()
+            schedule_expr = Cron(expression=cast(Any, cfg.trigger).expression).as_aws_expression()
         else:
             from skaal.schedule import Every
 
-            schedule_expr = Every(interval=cfg["trigger"]["interval"]).as_rate_expression()
+            schedule_expr = Every(interval=cast(Any, cfg.trigger).interval).as_rate_expression()
 
         rule_key = f"{comp_name}-rule"
         target_key = f"{comp_name}-target"

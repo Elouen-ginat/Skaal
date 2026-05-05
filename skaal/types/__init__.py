@@ -4,6 +4,8 @@ Re-exports everything so existing code using ``from skaal.types import X``
 continues to work without change.
 """
 
+from importlib import import_module
+
 from skaal.types.blob import BlobObject
 from skaal.types.catalog import CatalogRaw, CatalogSource
 from skaal.types.cli import ChangeBatch, ChangeStream, ChildArgv, ReloadDirs, ReloadMode
@@ -28,12 +30,16 @@ from skaal.types.constraints import (
 )
 from skaal.types.deploy import (
     AppLike,
+    AppRefConfig,
     AuthConfig,
     BackendWiring,
     CloudRunEnvValueSource,
     CloudRunEnvVar,
     CloudRunSecretKeyRef,
+    ComponentConfig,
+    ComponentKind,
     ConfigOverrides,
+    CronTriggerConfig,
     DeployMeta,
     DockerBuildConfig,
     DockerContainerProperties,
@@ -43,6 +49,11 @@ from skaal.types.deploy import (
     DockerNetworkAttachment,
     DockerPortBinding,
     DockerVolumeMount,
+    EveryTriggerConfig,
+    ExternalComponentConfig,
+    ExternalObservabilityConfig,
+    ExternalQueueConfig,
+    ExternalStorageConfig,
     GatewayConfig,
     LocalServiceSpec,
     PulumiPlugins,
@@ -52,6 +63,7 @@ from skaal.types.deploy import (
     PulumiStack,
     RateLimitConfig,
     RouteSpec,
+    ScheduleTriggerConfig,
     StackOutputs,
     StackProfile,
     TargetName,
@@ -65,6 +77,34 @@ from skaal.types.observability import (
     ReadinessState,
     TelemetryConfig,
     TelemetryExporter,
+)
+from skaal.types.patterns import (
+    EventLogPatternConfig,
+    EventLogPatternMetadata,
+    EventLogStorageMetadata,
+    OutboxChannelRef,
+    OutboxDelivery,
+    OutboxPatternConfig,
+    OutboxPatternMetadata,
+    PatternConfig,
+    PatternMetadata,
+    ProjectionDeadLetterRef,
+    ProjectionDeadLetterSink,
+    ProjectionFailureError,
+    ProjectionFailurePayload,
+    ProjectionHandler,
+    ProjectionHandlerResult,
+    ProjectionPatternConfig,
+    ProjectionPatternMetadata,
+    SagaPatternConfig,
+    SagaPatternMetadata,
+    SagaStepMetadata,
+)
+from skaal.types.protocols import (
+    AsyncPublishRef,
+    AsyncPublishTarget,
+    SupportsAsyncAppend,
+    SupportsAsyncSend,
 )
 from skaal.types.relational import (
     RelationalMigrationBackend,
@@ -125,9 +165,13 @@ __all__ = [
     "ReloadDirs",
     "ReloadMode",
     # deploy
+    "AppRefConfig",
     "AppLike",
     "AuthConfig",
     "BackendWiring",
+    "ComponentConfig",
+    "ComponentKind",
+    "CronTriggerConfig",
     "CloudRunEnvValueSource",
     "CloudRunEnvVar",
     "CloudRunSecretKeyRef",
@@ -141,6 +185,11 @@ __all__ = [
     "DockerNetworkAttachment",
     "DockerPortBinding",
     "DockerVolumeMount",
+    "EveryTriggerConfig",
+    "ExternalComponentConfig",
+    "ExternalObservabilityConfig",
+    "ExternalQueueConfig",
+    "ExternalStorageConfig",
     "GatewayConfig",
     "LocalServiceSpec",
     "PulumiPlugins",
@@ -150,6 +199,7 @@ __all__ = [
     "PulumiStack",
     "RateLimitConfig",
     "RouteSpec",
+    "ScheduleTriggerConfig",
     "StackOutputs",
     "StackProfile",
     "TargetName",
@@ -162,6 +212,29 @@ __all__ = [
     "JobResult",
     "JobSpec",
     "JobStatus",
+    # patterns
+    "AsyncPublishRef",
+    "AsyncPublishTarget",
+    "EventLogPatternConfig",
+    "EventLogPatternMetadata",
+    "EventLogStorageMetadata",
+    "OutboxChannelRef",
+    "OutboxPatternConfig",
+    "OutboxDelivery",
+    "OutboxPatternMetadata",
+    "PatternConfig",
+    "PatternMetadata",
+    "ProjectionDeadLetterRef",
+    "ProjectionDeadLetterSink",
+    "ProjectionFailureError",
+    "ProjectionFailurePayload",
+    "ProjectionHandler",
+    "ProjectionHandlerResult",
+    "ProjectionPatternConfig",
+    "ProjectionPatternMetadata",
+    "SagaPatternConfig",
+    "SagaPatternMetadata",
+    "SagaStepMetadata",
     # invoke
     "BeforeInvoke",
     "InvokeContext",
@@ -231,5 +304,38 @@ __all__ = [
     "StateService",
     "StorageClassMap",
     "StorageKindName",
+    "SupportsAsyncAppend",
     "SupportsAsyncSend",
 ]
+
+_LAZY_RUNTIME_EXPORTS = {
+    "AgentsService",
+    "AsyncClosable",
+    "BackendOverrides",
+    "ConstructorKwargs",
+    "DispatchResult",
+    "MeshClient",
+    "RuntimeObserver",
+    "RuntimeApp",
+    "RuntimeCallable",
+    "RuntimeInstance",
+    "RuntimeInvoker",
+    "RuntimeKwargs",
+    "RuntimeMode",
+    "RuntimePayload",
+    "RuntimePlanSource",
+    "RuntimeServices",
+    "RuntimeWireParams",
+    "StateService",
+    "StorageClassMap",
+    "StorageKindName",
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _LAZY_RUNTIME_EXPORTS:
+        module = import_module("skaal.types.runtime")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

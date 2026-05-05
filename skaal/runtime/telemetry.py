@@ -19,6 +19,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from skaal.components import ExternalObservability
 from skaal.types import EngineTelemetrySnapshot, ReadinessState, TelemetryConfig
 
 log = logging.getLogger("skaal.runtime.telemetry")
@@ -199,7 +200,7 @@ class RuntimeTelemetry:
     def _observe_ready(self, options: Any) -> list[Observation]:  # noqa: ANN401
         if self._runtime is None:
             return []
-        state = cast(ReadinessState, getattr(self._runtime, "readiness_state", "starting"))
+        state = cast(ReadinessState, self._runtime.readiness_state)
         return [
             Observation(
                 1 if state == "ready" else 0,
@@ -239,11 +240,10 @@ class RuntimeTelemetry:
             return []
 
         observations: list[Observation] = []
-        for engine in getattr(self._runtime, "_engines", []):
-            snapshot_fn = getattr(engine, "snapshot_telemetry", None)
-            if not callable(snapshot_fn):
+        for engine in self._runtime._engines:
+            if not hasattr(engine, "snapshot_telemetry"):
                 continue
-            snapshot = cast(EngineTelemetrySnapshot, snapshot_fn())
+            snapshot = cast(EngineTelemetrySnapshot, engine.snapshot_telemetry())
             value = value_getter(snapshot)
             if value is None:
                 continue
@@ -267,16 +267,15 @@ def resolve_telemetry_config(
         return _normalize_telemetry_config(app.name, override)
 
     configs: list[TelemetryConfig] = []
-    for component in getattr(app, "_components", {}).values():
-        if getattr(component, "_skaal_component_kind", None) != "external-observability":
+    for component in app._components.values():
+        if not isinstance(component, ExternalObservability):
             continue
-        provider = str(getattr(component, "provider", "")).lower().strip()
+        provider = component.provider.lower().strip()
         if provider not in {"otlp", "otel", "signoz"}:
             continue
-        endpoint_env = getattr(component, "connection_env", None)
-        endpoint = getattr(component, "connection_string", None)
-        if endpoint_env:
-            endpoint = os.environ.get(endpoint_env, endpoint)
+        endpoint = component.connection_string
+        if component.secret is not None:
+            endpoint = os.environ.get(component.secret.env_var, endpoint)
         headers = _parse_otlp_headers(os.environ.get("OTEL_EXPORTER_OTLP_HEADERS"))
         config: TelemetryConfig = {
             "exporter": "otlp",

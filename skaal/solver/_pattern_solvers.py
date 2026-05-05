@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Callable, cast
 
 from skaal.plan import PatternSpec, PatternType, StorageSpec
+from skaal.types.patterns import EventLogPatternMetadata, PatternMetadata
+
+PATTERN_LOG = logging.getLogger("skaal.solver")
 
 
 @dataclass(frozen=True)
@@ -15,7 +20,7 @@ class PatternSolveContext:
     """
 
     qname: str
-    pattern_meta: dict[str, Any]
+    pattern_meta: PatternMetadata
     all_resources: dict[str, Any]
     storage_specs: dict[str, StorageSpec]
     storage_backends: dict[str, Any]
@@ -51,9 +56,7 @@ def register_pattern_solver(
 def solve_pattern(ctx: PatternSolveContext) -> PatternSpec | None:
     """Resolve and run the solver for ``ctx.pattern_meta['pattern_type']``."""
 
-    pattern_type = ctx.pattern_meta.get("pattern_type")
-    if not isinstance(pattern_type, str):
-        return None
+    pattern_type = ctx.pattern_meta["pattern_type"]
     solver = _REGISTRY.get(cast(PatternType, pattern_type))
     if solver is None:
         return None
@@ -77,22 +80,33 @@ def resolve_resource_qname(obj: Any, all_resources: dict[str, Any]) -> str | Non
     for qname, registered in all_resources.items():
         if registered is obj:
             return qname
-    name = getattr(obj, "__name__", None) or type(obj).__name__
+    if hasattr(obj, "__name__"):
+        name = obj.__name__
+    else:
+        name = type(obj).__name__
     for qname in all_resources:
         if qname == name or qname.endswith(f".{name}"):
             return qname
     return None
 
 
-def storage_constraints_from_pattern(pattern_meta: dict[str, Any]) -> dict[str, Any]:
+def serialize_pattern_value(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        return str(value.value)
+    return value if isinstance(value, str) else str(value)
+
+
+def storage_constraints_from_pattern(pattern_meta: EventLogPatternMetadata) -> dict[str, Any]:
     """Adapt EventLog metadata into a ``select_backend`` constraint payload."""
 
-    src = pattern_meta.get("storage", {})
+    src = pattern_meta["storage"]
     return {
         "kind": "kv",
-        "access_pattern": src.get("access_pattern"),
-        "durability": src.get("durability"),
-        "write_throughput": src.get("throughput"),
+        "access_pattern": src["access_pattern"],
+        "durability": src["durability"],
+        "write_throughput": src["throughput"],
         "retention": None,
         "read_latency": None,
         "write_latency": None,

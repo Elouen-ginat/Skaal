@@ -13,9 +13,22 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Literal, TypeVar, cast
 
 from skaal.types import Consistency, Durability, Throughput
+from skaal.types.patterns import (
+    EventLogPatternMetadata,
+    OutboxChannelRef,
+    OutboxDelivery,
+    OutboxPatternMetadata,
+    ProjectionDeadLetterRef,
+    ProjectionPatternMetadata,
+    SagaPatternMetadata,
+    SagaStepMetadata,
+)
+
+if TYPE_CHECKING:
+    from skaal.backends.base import StorageBackend
 
 TSource = TypeVar("TSource")
 TView = TypeVar("TView")
@@ -52,13 +65,13 @@ class EventLog(Generic[T]):
 
     def __init__(
         self,
-        backend: Any | None = None,
+        backend: StorageBackend | None = None,
         *,
         retention: str = "7d",
         partitions: int = 1,
         throughput: Throughput | str | None = None,
         durability: Durability = Durability.DURABLE,
-        _backend: Any | None = None,
+        _backend: StorageBackend | None = None,
     ) -> None:
         self.retention = retention
         self.partitions = partitions
@@ -80,7 +93,7 @@ class EventLog(Generic[T]):
         # Metadata consumed by solver — mirrors __skaal_storage__
         from skaal.types import AccessPattern
 
-        self.__skaal_pattern__ = {
+        self.__skaal_pattern__: EventLogPatternMetadata = {
             "pattern_type": "event-log",
             "storage": {
                 "access_pattern": AccessPattern.EVENT_LOG,
@@ -185,27 +198,35 @@ class Projection(Generic[TSource, TView]):
         handler: str,
         consistency: Consistency | str = Consistency.EVENTUAL,
         checkpoint_every: int = 100,
+        strict: bool = False,
+        dead_letter: ProjectionDeadLetterRef | None = None,
     ) -> None:
         self.source = source
-        self.target = target
+        self.target: type[TView] = target
         self.handler = handler
         self.consistency = Consistency(consistency) if isinstance(consistency, str) else consistency
         self.checkpoint_every = checkpoint_every
+        self.strict = strict
+        self.dead_letter: ProjectionDeadLetterRef | None = dead_letter
 
-        self.__skaal_pattern__ = {
+        self.__skaal_pattern__: ProjectionPatternMetadata = {
             "pattern_type": "projection",
             "source": source,
             "target": target,
             "handler": handler,
             "consistency": self.consistency,
             "checkpoint_every": checkpoint_every,
+            "strict": strict,
+            "dead_letter": dead_letter,
         }
 
     def __repr__(self) -> str:
         target_name = getattr(self.target, "__name__", repr(self.target))
+        dead_letter_name = getattr(self.dead_letter, "__name__", repr(self.dead_letter))
         return (
             f"Projection(source={self.source!r}, target={target_name!r}, "
-            f"handler={self.handler!r})"
+            f"handler={self.handler!r}, strict={self.strict!r}, "
+            f"dead_letter={dead_letter_name!r})"
         )
 
 
@@ -261,11 +282,18 @@ class Saga:
         self.coordination = coordination
         self.timeout_ms = timeout_ms
 
-        self.__skaal_pattern__ = {
+        self.__skaal_pattern__: SagaPatternMetadata = {
             "pattern_type": "saga",
             "name": name,
             "steps": [
-                {"function": s.function, "compensate": s.compensate, "timeout_ms": s.timeout_ms}
+                cast(
+                    SagaStepMetadata,
+                    {
+                        "function": s.function,
+                        "compensate": s.compensate,
+                        "timeout_ms": s.timeout_ms,
+                    },
+                )
                 for s in steps
             ],
             "coordination": coordination,
@@ -311,15 +339,15 @@ class Outbox(Generic[T]):
 
     def __init__(
         self,
-        channel: Any,  # Channel[T] — typed as Any to avoid circular import
-        storage: Any,  # @storage-annotated class
-        delivery: Literal["at-least-once", "exactly-once"] = "at-least-once",
+        channel: OutboxChannelRef[T],
+        storage: type[object],
+        delivery: OutboxDelivery = "at-least-once",
     ) -> None:
-        self.channel = channel
-        self.storage = storage
-        self.delivery = delivery
+        self.channel: OutboxChannelRef[T] = channel
+        self.storage: type[object] = storage
+        self.delivery: OutboxDelivery = delivery
 
-        self.__skaal_pattern__ = {
+        self.__skaal_pattern__: OutboxPatternMetadata = {
             "pattern_type": "outbox",
             "channel": channel,
             "storage": storage,

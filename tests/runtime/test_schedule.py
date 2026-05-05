@@ -15,6 +15,16 @@ from skaal.schedule import (
     build_scheduled_job,
 )
 
+
+class _AppendOnlySink:
+    def __init__(self) -> None:
+        self.items: list[object] = []
+
+    async def append(self, item: object) -> int:
+        self.items.append(item)
+        return len(self.items) - 1
+
+
 # ── Every — interval parsing ───────────────────────────────────────────────────
 
 
@@ -145,6 +155,19 @@ async def test_build_scheduled_job_injects_context() -> None:
 
     assert len(received) == 1
     assert isinstance(received[0], ScheduleContext)
+
+
+@pytest.mark.asyncio
+async def test_build_scheduled_job_emits_to_append_target() -> None:
+    sink = _AppendOnlySink()
+
+    async def scheduled() -> dict[str, bool]:
+        return {"ok": True}
+
+    job = build_scheduled_job(scheduled, name="scheduled", emit_to=sink)
+    await job()
+
+    assert sink.items == [{"ok": True}]
 
 
 # ── @app.schedule() decorator ─────────────────────────────────────────────────

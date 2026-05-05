@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, TypeAlias, TypedDict
 
 from skaal.plan import PlanFile
+from skaal.types.protocols import SupportsAsyncAppend, SupportsAsyncSend
 
 RuntimeMode = Literal["memory", "sqlite", "redis", "postgres"]
 StorageKindName = Literal["kv", "relational", "vector"]
@@ -56,10 +57,6 @@ class RuntimeInstance(Protocol):
     async def serve(self) -> None: ...
 
     async def shutdown(self) -> None: ...
-
-
-class SupportsAsyncSend(Protocol):
-    async def send(self, item: object) -> None: ...
 
 
 class AsyncClosable(Protocol):
@@ -192,5 +189,6 @@ __all__ = [
     "StateService",
     "StorageClassMap",
     "StorageKindName",
+    "SupportsAsyncAppend",
     "SupportsAsyncSend",
 ]

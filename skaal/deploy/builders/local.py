@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import platform
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from skaal.deploy.backends import LOCAL_SERVICE_SPECS, get_handler
 from skaal.deploy.builders.common import app_has_jobs, resource_slug
@@ -17,10 +17,12 @@ from skaal.types import (
     DockerNetworkAttachment,
     DockerPortBinding,
     DockerVolumeMount,
+    GatewayConfig,
     LocalServiceSpec,
     PulumiResource,
     PulumiResourceOptions,
     PulumiStack,
+    RouteSpec,
 )
 
 if TYPE_CHECKING:
@@ -60,18 +62,26 @@ def _gateway_component(plan: "PlanFile") -> Any | None:
     )
 
 
-def _gateway_routes(app: AppLike | None, gateway_component: Any) -> list[dict[str, Any]]:
-    routes: list[dict[str, Any]] = gateway_component.config.get("routes") or []
-    mounts: dict[str, str] = getattr(app, "_mounts", {}) if app is not None else {}
+def _gateway_routes(app: AppLike | None, gateway_component: Any) -> list[RouteSpec]:
+    config = cast(GatewayConfig, gateway_component.config)
+    routes = list(config.routes)
+    mounts: dict[str, str] = app._mounts if app is not None and hasattr(app, "_mounts") else {}
     if not routes and mounts:
         routes = [
-            {"path": prefix.rstrip("/") + "/*", "target": namespace, "methods": ["GET", "POST"]}
+            RouteSpec(
+                path=prefix.rstrip("/") + "/*",
+                target=namespace,
+                methods=["GET", "POST"],
+                strip_prefix=False,
+                timeout_ms=None,
+                rewrite=None,
+            )
             for namespace, prefix in mounts.items()
         ]
     return routes
 
 
-def _traefik_labels(routes: list[dict[str, Any]], app_name: str) -> list[DockerLabel]:
+def _traefik_labels(routes: list[RouteSpec], app_name: str) -> list[DockerLabel]:
     labels: list[DockerLabel] = [{"label": "traefik.enable", "value": "true"}]
     if not routes:
         return labels + [
@@ -83,7 +93,7 @@ def _traefik_labels(routes: list[dict[str, Any]], app_name: str) -> list[DockerL
         ]
 
     for index, route in enumerate(routes):
-        path = route["path"].rstrip("*").rstrip("/") or "/"
+        path = route.path.rstrip("*").rstrip("/") or "/"
         router = f"{app_name}-r{index}"
         rule = f"PathPrefix(`{path}`)" if path != "/" else "PathPrefix(`/`)"
         labels.append({"label": f"traefik.http.routers.{router}.rule", "value": rule})
@@ -106,6 +116,7 @@ def build_kong_config(
     if gateway_component is None:
         return None
 
+    config = cast(GatewayConfig, gateway_component.config)
     implementation = gateway_component.implementation or (
         "traefik" if gateway_component.kind == "proxy" else "kong"
     )
@@ -114,7 +125,7 @@ def build_kong_config(
 
     routes = _gateway_routes(app, gateway_component)
     if not routes:
-        routes = [{"path": "/", "target": "app", "methods": ["GET", "POST"]}]
+        routes = [RouteSpec(path="/", target="app", methods=["GET", "POST"])]
 
     lines: list[str] = [
         '_format_version: "3.0"',
@@ -127,8 +138,8 @@ def build_kong_config(
     ]
 
     for index, route in enumerate(routes):
-        path = route["path"].rstrip("*").rstrip("/") or "/"
-        methods = route.get("methods") or ["GET", "POST"]
+        path = route.path.rstrip("*").rstrip("/") or "/"
+        methods = route.methods
         lines.append(f"      - name: route-{index}")
         lines.append("        paths:")
         lines.append(f"          - {path}")
@@ -136,16 +147,16 @@ def build_kong_config(
         for method in methods:
             lines.append(f"          - {method.upper()}")
 
-    auth = gateway_component.config.get("auth")
-    rate_limit = gateway_component.config.get("rate_limit")
-    cors_origins = gateway_component.config.get("cors_origins")
+    auth = config.auth
+    rate_limit = config.rate_limit
+    cors_origins = config.cors_origins
     has_plugins = auth or rate_limit or cors_origins
     if has_plugins:
         lines.append("")
         lines.append("plugins:")
 
     if rate_limit:
-        requests_per_second = rate_limit.get("requests_per_second", 100)
+        requests_per_second = rate_limit.requests_per_second
         lines += [
             "  - name: rate-limiting",
             "    config:",
@@ -157,7 +168,7 @@ def build_kong_config(
         origins = ", ".join(f'"{origin}"' for origin in cors_origins)
         auth_header = "Authorization"
         if auth:
-            auth_header = str(auth.get("header") or "Authorization")
+            auth_header = auth.header
         lines += [
             "  - name: cors",
             "    config:",
@@ -167,7 +178,7 @@ def build_kong_config(
             "      preflight_continue: false",
         ]
 
-    if auth and auth.get("provider") == "jwt" and auth.get("required", True):
+    if auth and auth.provider == "jwt" and auth.required:
         lines += [
             "  - name: jwt",
             "    config:",
@@ -175,8 +186,8 @@ def build_kong_config(
             "      cookie_names: []",
             "      # Configure consumers and JWT credentials separately",
         ]
-        if auth.get("issuer"):
-            lines.append(f"      # Issuer: {auth['issuer']}")
+        if auth.issuer:
+            lines.append(f"      # Issuer: {auth.issuer}")
 
     return "\n".join(lines) + "\n"
 

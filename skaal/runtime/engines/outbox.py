@@ -10,16 +10,27 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, TypedDict, TypeGuard, cast
 
 from skaal.patterns import Outbox
 from skaal.runtime.engines.base import BackgroundTaskEngine
+from skaal.types import AsyncPublishTarget
+
+if TYPE_CHECKING:
+    from skaal.backends.base import StorageBackend
+
+
+class OutboxRow(TypedDict):
+    payload: object
+    written_at: str
+    delivered: bool
 
 
 class OutboxEngine(BackgroundTaskEngine):
     """Background relay that publishes pending outbox rows to a channel."""
 
-    def __init__(self, outbox: Outbox[Any], poll_interval: float = 0.05) -> None:
+    def __init__(self, outbox: Outbox[object], poll_interval: float = 0.05) -> None:
         super().__init__()
         self.outbox = outbox
         self.poll_interval = poll_interval
@@ -34,10 +45,10 @@ class OutboxEngine(BackgroundTaskEngine):
 
     # ── Writer + relay ───────────────────────────────────────────────────────
 
-    def _write_factory(self) -> Any:
+    def _write_factory(self) -> Callable[[str, object], Awaitable[None]]:
         store_backend = _backend_of(self.outbox.storage)
 
-        async def write(row_key: str, payload: Any) -> None:
+        async def write(row_key: str, payload: object) -> None:
             """Atomically append *payload* to the outbox.
 
             The payload is stored under ``outbox:<row_key>:<ts>`` so ordering
@@ -46,7 +57,7 @@ class OutboxEngine(BackgroundTaskEngine):
             ts = f"{time.time_ns():020d}"
             key = f"outbox:{row_key}:{ts}"
 
-            def _write(current: Any) -> Any:
+            def _write(current: object) -> OutboxRow:
                 return {"payload": payload, "written_at": ts, "delivered": False}
 
             await store_backend.atomic_update(key, _write)
@@ -71,12 +82,9 @@ class OutboxEngine(BackgroundTaskEngine):
                     if not isinstance(row, dict) or row.get("delivered"):
                         continue
                     try:
-                        if hasattr(channel, "send"):
-                            await channel.send(row["payload"])
-                        elif hasattr(channel, "append"):
-                            await channel.append(row["payload"])
-                        else:
+                        if not _is_async_publish_target(channel):
                             continue
+                        await _publish_outbox_row(channel, row["payload"])
                     except Exception:  # noqa: BLE001
                         # Retry on next tick — at-least-once delivery.
                         self._failures += 1
@@ -110,7 +118,29 @@ class OutboxEngine(BackgroundTaskEngine):
         return getattr(self.outbox.storage, "__name__", "outbox")
 
 
-def _backend_of(storage_cls: Any) -> Any:
+def _is_async_publish_target(value: object) -> TypeGuard[AsyncPublishTarget[object]]:
+    if isinstance(value, type):
+        return False
+    send = getattr(value, "send", None)
+    append = getattr(value, "append", None)
+    return callable(send) or callable(append)
+
+
+async def _publish_outbox_row(target: AsyncPublishTarget[object], payload: object) -> None:
+    send = cast(Callable[[object], Awaitable[None]] | None, getattr(target, "send", None))
+    if callable(send):
+        await send(payload)
+        return
+
+    append = cast(Callable[[object], Awaitable[object]] | None, getattr(target, "append", None))
+    if callable(append):
+        await append(payload)
+        return
+
+    raise TypeError("Outbox channel must provide send() or append()")
+
+
+def _backend_of(storage_cls: type[object]) -> "StorageBackend":
     """Return the wired backend on a ``@storage`` class.
 
     ``Store`` classes keep their backend on a class-level
@@ -119,7 +149,7 @@ def _backend_of(storage_cls: Any) -> Any:
     for attr in ("_backend", "__skaal_backend__"):
         backend = getattr(storage_cls, attr, None)
         if backend is not None:
-            return backend
+            return cast("StorageBackend", backend)
     raise RuntimeError(
         f"outbox storage {storage_cls!r} has no wired backend — "
         "call cls.wire(backend) before starting the outbox engine"

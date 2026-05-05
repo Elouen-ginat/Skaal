@@ -17,9 +17,12 @@ from skaal import APIGateway, App, AuthConfig, Route, TelemetryConfig
 from skaal.backends.file_blob_backend import FileBlobBackend
 from skaal.backends.local_backend import LocalMap
 from skaal.blob import BlobStore
+from skaal.components import ExternalObservability
+from skaal.runtime.auth import resolve_gateway_auth
 from skaal.runtime.local import LocalRuntime
-from skaal.runtime.telemetry import RuntimeTelemetry
+from skaal.runtime.telemetry import RuntimeTelemetry, resolve_telemetry_config
 from skaal.storage import Store
+from skaal.types import SecretRef
 
 
 def _invoke_path(app: App, function_name: str) -> str:
@@ -112,6 +115,38 @@ def _make_secured_counter_app(
             captured["span_id"] = getattr(ctx, "span_id", None)
 
     return app
+
+
+def test_resolve_gateway_auth_uses_attached_gateway_model() -> None:
+    app = _make_secured_counter_app(required=False)
+
+    config = resolve_gateway_auth(app)
+
+    assert config is not None
+    assert config.provider == "jwt"
+    assert config.header == "Authorization"
+    assert config.required is False
+
+
+def test_resolve_telemetry_config_uses_external_observability_secret_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = App("telemetry-app")
+    app.attach(
+        ExternalObservability(
+            "signoz",
+            provider="signoz",
+            endpoint_secret=SecretRef("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        )
+    )
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+    config = resolve_telemetry_config(app)
+
+    assert config is not None
+    assert config["exporter"] == "otlp"
+    assert config["endpoint"] == "http://collector:4318"
+    assert config["insecure"] is True
 
 
 def _make_jwt_client(issuer: str) -> tuple[str, httpx.AsyncClient]:

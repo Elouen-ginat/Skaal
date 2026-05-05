@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal, NamedTuple, Protocol, Required, TypeAlias, TypedDict
 
+from pydantic import BaseModel
+
 TargetName: TypeAlias = Literal[
     "aws",
     "aws-lambda",
@@ -12,6 +14,16 @@ TargetName: TypeAlias = Literal[
     "gcp-cloudrun",
     "local",
     "local-docker",
+]
+
+ComponentKind: TypeAlias = Literal[
+    "proxy",
+    "api-gateway",
+    "schedule-trigger",
+    "external-storage",
+    "external-queue",
+    "external-observability",
+    "app-ref",
 ]
 
 ConfigOverrides: TypeAlias = dict[str, str]
@@ -33,30 +45,88 @@ class DeployMeta(TypedDict, total=False):
     lambda_runtime: str
 
 
-class RouteSpec(TypedDict, total=False):
+class RouteSpec(BaseModel):
     path: str
     target: str
     methods: list[str]
+    strip_prefix: bool = False
+    timeout_ms: int | None = None
+    rewrite: str | None = None
 
 
-class AuthConfig(TypedDict, total=False):
-    provider: Literal["jwt"]
-    issuer: str
-    audience: str
-    header: str
-    required: bool
+class AuthConfig(BaseModel):
+    provider: str
+    issuer: str | None = None
+    audience: str | None = None
+    header: str = "Authorization"
+    required: bool = True
 
 
-class RateLimitConfig(TypedDict, total=False):
-    requests_per_second: float
-    burst: int
+class RateLimitConfig(BaseModel):
+    requests_per_second: float | int
+    burst: int | None = None
+    scope: str | None = None
 
 
-class GatewayConfig(TypedDict, total=False):
+class GatewayConfig(BaseModel):
     routes: list[RouteSpec]
-    auth: AuthConfig
-    rate_limit: RateLimitConfig
-    cors_origins: list[str]
+    auth: AuthConfig | None = None
+    rate_limit: RateLimitConfig | None = None
+    cors_origins: list[str] | None = None
+    tls: bool | None = None
+    latency_ms: float | None = None
+    health_check_path: str | None = None
+    implementation: str | None = None
+
+
+class CronTriggerConfig(BaseModel):
+    expression: str
+
+
+class EveryTriggerConfig(BaseModel):
+    interval: str
+
+
+class ScheduleTriggerConfig(BaseModel):
+    trigger: CronTriggerConfig | EveryTriggerConfig
+    trigger_type: Literal["cron", "every"]
+    target_function: str
+    timezone: str = "UTC"
+    emit_to: str | None = None
+
+
+class ExternalComponentConfig(BaseModel):
+    external: bool = True
+    secret_name: str | None = None
+    latency_ms: float | None = None
+    region: str | None = None
+
+
+class ExternalStorageConfig(ExternalComponentConfig):
+    access_pattern: str
+    durability: str
+
+
+class ExternalQueueConfig(ExternalComponentConfig):
+    throughput: str | None = None
+
+
+class ExternalObservabilityConfig(ExternalComponentConfig):
+    provider: str
+
+
+class AppRefConfig(ExternalComponentConfig):
+    timeout_ms: int
+
+
+ComponentConfig: TypeAlias = (
+    GatewayConfig
+    | ScheduleTriggerConfig
+    | ExternalStorageConfig
+    | ExternalQueueConfig
+    | ExternalObservabilityConfig
+    | AppRefConfig
+)
 
 
 class CloudRunSecretKeyRef(TypedDict):

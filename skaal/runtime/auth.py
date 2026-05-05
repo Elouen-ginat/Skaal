@@ -10,7 +10,8 @@ import jwt
 from jwt import InvalidTokenError
 from jwt.algorithms import RSAAlgorithm
 
-from skaal.types import AuthConfig
+from skaal.components import APIGateway
+from skaal.components import AuthConfig as GatewayAuthConfig
 
 _JWKS_CACHE_TTL_SECONDS = 300.0
 
@@ -28,38 +29,34 @@ class RuntimeAuthFailure(RuntimeError):
         self.message = message
 
 
-def _normalize_auth_config(raw: Mapping[str, Any]) -> AuthConfig:
-    provider = raw.get("provider")
+def _normalize_auth_config(raw: GatewayAuthConfig) -> GatewayAuthConfig:
+    provider = raw.provider
     if provider != "jwt":
         raise RuntimeAuthConfigError(
             f"Unsupported APIGateway.auth provider {provider!r}; only 'jwt' is implemented."
         )
 
-    issuer = str(raw.get("issuer") or "").strip()
+    issuer = str(raw.issuer or "").strip()
     if not issuer:
         raise RuntimeAuthConfigError("APIGateway.auth issuer is required for provider='jwt'.")
 
-    config: AuthConfig = {
-        "provider": "jwt",
-        "issuer": issuer,
-        "header": str(raw.get("header") or "Authorization"),
-        "required": bool(raw.get("required", True)),
-    }
-    audience = raw.get("audience")
-    if audience:
-        config["audience"] = str(audience)
-    return config
+    return GatewayAuthConfig(
+        provider="jwt",
+        issuer=issuer,
+        audience=str(raw.audience) if raw.audience else None,
+        header=raw.header,
+        required=raw.required,
+    )
 
 
-def resolve_gateway_auth(app: Any) -> AuthConfig | None:
-    configs: list[AuthConfig] = []
-    for component in getattr(app, "_components", {}).values():
-        if getattr(component, "_skaal_component_kind", None) != "api-gateway":
+def resolve_gateway_auth(app: Any) -> GatewayAuthConfig | None:
+    configs: list[GatewayAuthConfig] = []
+    for component in app._components.values():
+        if not isinstance(component, APIGateway):
             continue
-        raw_auth = getattr(component, "__skaal_component__", {}).get("auth")
-        if not raw_auth:
+        if component.auth is None:
             continue
-        config = _normalize_auth_config(cast(Mapping[str, Any], raw_auth))
+        config = _normalize_auth_config(component.auth)
         if config not in configs:
             configs.append(config)
 
@@ -74,7 +71,12 @@ def resolve_gateway_auth(app: Any) -> AuthConfig | None:
 
 
 class JwtVerifier:
-    def __init__(self, config: AuthConfig, *, http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        config: GatewayAuthConfig,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         self.config = config
         self._http_client = http_client
         self._jwks: list[dict[str, Any]] = []
@@ -84,19 +86,19 @@ class JwtVerifier:
 
     @property
     def header_name(self) -> str:
-        return self.config.get("header", "Authorization")
+        return self.config.header
 
     @property
     def required(self) -> bool:
-        return bool(self.config.get("required", True))
+        return self.config.required
 
     @property
     def issuer(self) -> str:
-        return self.config["issuer"]
+        return self.config.issuer or ""
 
     @property
     def audience(self) -> str | None:
-        return self.config.get("audience")
+        return self.config.audience
 
     @property
     def jwks_url(self) -> str:

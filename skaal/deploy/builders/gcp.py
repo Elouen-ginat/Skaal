@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from skaal.deploy.backends import get_handler
 from skaal.deploy.builders.apigw import add_gcp_api_gateway
@@ -259,17 +259,19 @@ def build_pulumi_stack(
     for comp_name, comp in plan.components.items():
         if comp.kind != "schedule-trigger":
             continue
-        cfg = comp.config
-        trigger_type = cfg.get("trigger_type", "cron")
-        target_fn = cfg.get("target_function", comp_name)
-        timezone = cfg.get("timezone", "UTC")
+        from skaal.types import ScheduleTriggerConfig
+
+        cfg = cast(ScheduleTriggerConfig, comp.config)
+        trigger_type = cfg.trigger_type
+        target_fn = cfg.target_function
+        timezone = cfg.timezone
 
         if trigger_type == "cron":
-            cron_expr = cfg["trigger"]["expression"]
+            cron_expr = cast(Any, cfg.trigger).expression
         else:
             from skaal.schedule import Every
 
-            cron_expr = Every(interval=cfg["trigger"]["interval"]).as_cron_expression()
+            cron_expr = Every(interval=cast(Any, cfg.trigger).interval).as_cron_expression()
 
         body_bytes = json.dumps({"_skaal_trigger": comp_name}).encode()
         resources[f"{comp_name}-scheduler"] = {

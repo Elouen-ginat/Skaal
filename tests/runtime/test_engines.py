@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -13,6 +14,7 @@ from skaal.runtime.engines.eventlog import EventLogEngine
 from skaal.runtime.engines.outbox import OutboxEngine
 from skaal.runtime.engines.projection import ProjectionEngine
 from skaal.runtime.engines.saga import SagaEngine, SagaExecutor
+from skaal.types import ProjectionFailurePayload
 
 # ── EventLog push-based subscribe ────────────────────────────────────────────
 
@@ -57,7 +59,7 @@ async def test_projection_engine_applies_handler_to_each_event() -> None:
     source: EventLog[dict] = EventLog(LocalMap())
 
     class Summary:
-        totals: dict[str, int] = {}
+        totals: ClassVar[dict[str, int]] = {}
 
     async def apply(target: type, event: dict) -> None:
         k = event["k"]
@@ -85,6 +87,104 @@ async def test_projection_engine_applies_handler_to_each_event() -> None:
             break
         await asyncio.sleep(0.02)
     assert Summary.totals == {"x": 3, "y": 5}
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_projection_engine_strict_mode_stops_on_handler_failure() -> None:
+    source: EventLog[dict] = EventLog(LocalMap())
+
+    class Summary:
+        totals: ClassVar[dict[str, int]] = {}
+
+    async def apply(target: type, event: dict) -> None:
+        if event["k"] == "boom":
+            raise RuntimeError("projection failed")
+        key = event["k"]
+        target.totals[key] = target.totals.get(key, 0) + event["delta"]
+
+    proj = SimpleNamespace(
+        source=source,
+        target=Summary,
+        handler="apply",
+        checkpoint_every=1,
+        strict=True,
+    )
+    engine = ProjectionEngine(proj)  # type: ignore[arg-type]
+    context = SimpleNamespace(functions={"apply": apply})
+    await engine.start(context)
+
+    await asyncio.sleep(0.01)
+    await source.append({"k": "ok", "delta": 1})
+    for _ in range(20):
+        if Summary.totals.get("ok") == 1:
+            break
+        await asyncio.sleep(0.02)
+
+    await source.append({"k": "boom", "delta": 1})
+
+    for _ in range(20):
+        if engine._task is not None and engine._task.done():
+            break
+        await asyncio.sleep(0.02)
+
+    assert Summary.totals == {"ok": 1}
+    assert engine._failures == 1
+    assert engine._task is not None
+    assert engine._task.done() is True
+    with pytest.raises(RuntimeError, match="projection failed"):
+        await engine._task
+
+
+@pytest.mark.asyncio
+async def test_projection_engine_dead_letters_failed_event_and_continues() -> None:
+    source: EventLog[dict] = EventLog(LocalMap())
+    dead_letter = _FakeChannel()
+
+    class Summary:
+        totals: ClassVar[dict[str, int]] = {}
+
+    async def apply(target: type, event: dict) -> None:
+        if event["k"] == "boom":
+            raise RuntimeError("projection failed")
+        key = event["k"]
+        target.totals[key] = target.totals.get(key, 0) + event["delta"]
+
+    proj = SimpleNamespace(
+        source=source,
+        target=Summary,
+        handler="apply",
+        checkpoint_every=1,
+        strict=False,
+        dead_letter=dead_letter,
+    )
+    engine = ProjectionEngine(proj)  # type: ignore[arg-type]
+    context = SimpleNamespace(functions={"apply": apply})
+    await engine.start(context)
+
+    await asyncio.sleep(0.01)
+    await source.append({"k": "ok", "delta": 1})
+    await source.append({"k": "boom", "delta": 99})
+    await source.append({"k": "ok", "delta": 2})
+
+    for _ in range(30):
+        if Summary.totals.get("ok") == 3 and len(dead_letter.sent) == 1:
+            break
+        await asyncio.sleep(0.02)
+
+    assert Summary.totals == {"ok": 3}
+    assert engine._failures == 1
+    assert engine._task is not None
+    assert engine._task.done() is False
+    assert dead_letter.sent == [
+        {
+            "pattern": "projection",
+            "handler": "apply",
+            "offset": 1,
+            "event": {"k": "boom", "delta": 99},
+            "error": {"type": "RuntimeError", "message": "projection failed"},
+        }
+    ]
     await engine.stop()
 
 
@@ -175,14 +275,14 @@ async def test_saga_engine_registers_executor_on_context() -> None:
 
 class _FakeChannel:
     def __init__(self) -> None:
-        self.sent: list[object] = []
+        self.sent: list[ProjectionFailurePayload] = []
 
-    async def send(self, payload: object) -> None:
+    async def send(self, payload: ProjectionFailurePayload) -> None:
         self.sent.append(payload)
 
 
 class _Storage:
-    _backend = None  # type: ignore[assignment]
+    _backend: ClassVar[LocalMap | None] = None
 
 
 @pytest.mark.asyncio

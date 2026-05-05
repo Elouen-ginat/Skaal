@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from datetime import datetime
-from types import SimpleNamespace
 
 # TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypeVar, cast, overload
 
 from skaal.types import (
     AccessPattern,
@@ -30,6 +30,8 @@ from skaal.types import (
     SecretRef,
     Throughput,
 )
+from skaal.types.invoke import AuthClaims
+from skaal.types.protocols import AsyncPublishTarget
 
 if TYPE_CHECKING:
     from skaal.channel import Channel
@@ -77,6 +79,27 @@ class ModuleExport:
             f"agents={list(self.agents)}, "
             f"functions={list(self.functions)})"
         )
+
+
+@dataclass(slots=True)
+class _BeforeInvokeContext:
+    function_name: str
+    kwargs: dict[str, Any]
+    is_stream: bool
+    attempt: int
+    headers: Mapping[str, str]
+    auth_claims: AuthClaims | None
+    auth_subject: str | None
+    trace_id: str | None
+    span_id: str | None
+
+
+class _HasName(Protocol):
+    name: str
+
+
+class _HasDunderName(Protocol):
+    __name__: str
 
 
 class Module:
@@ -436,10 +459,11 @@ class Module:
         so the runtime registry resolves it without a separate
         ``app.secret(...)`` call.
         """
+        from skaal.components import ExternalComponent
+
         self._components[component.name] = component
-        secret = getattr(component, "secret", None)
-        if secret is not None and isinstance(secret, SecretRef):
-            self.secret(secret)
+        if isinstance(component, ExternalComponent) and component.secret is not None:
+            self.secret(component.secret)
         return component
 
     def get_channel(self, channel_cls: type[ChannelT]) -> ChannelT:
@@ -476,7 +500,7 @@ class Module:
         fn_to_decorate: F,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = ...,
+        emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> F: ...
 
@@ -486,7 +510,7 @@ class Module:
         fn_to_decorate: None = ...,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = ...,
+        emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> Callable[[F], F]: ...
 
@@ -495,7 +519,7 @@ class Module:
         fn_to_decorate: F | None = None,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = None,
+        emit_to: AsyncPublishTarget[object] | None = None,
         timezone: str = "UTC",
     ) -> F | Callable[[F], F]:
         """Register a background function triggered on a time-based schedule.
@@ -537,7 +561,7 @@ class Module:
                 trigger=trigger,
                 target_function=fn.__name__,
                 timezone=timezone,
-                emit_to=emit_to.name if emit_to is not None else None,
+                emit_to=_schedule_emit_target_name(emit_to),
             )
             self._components[st.name] = st
             return fn
@@ -554,7 +578,7 @@ class Module:
 
             auth.pattern(UserEventLog)
         """
-        name = getattr(p, "name", None) or getattr(p, "__class__", type(p)).__name__
+        name = _resource_registration_name(p)
         self._patterns[name] = p
         return p
 
@@ -600,7 +624,7 @@ class Module:
         exp_channels: dict[str, Any] = {}
 
         for sym in symbols:
-            sym_name = getattr(sym, "__name__", repr(sym))
+            sym_name = _symbol_export_name(sym)
             found = False
             for bucket_name, bucket in registered.items():
                 if sym_name in bucket:
@@ -814,13 +838,13 @@ class Module:
         trace_id: str | None = None,
         span_id: str | None = None,
     ) -> dict[str, Any]:
-        ctx = SimpleNamespace(
+        ctx = _BeforeInvokeContext(
             function_name=function_name,
             kwargs=dict(kwargs),
             is_stream=is_stream,
             attempt=attempt,
             headers=dict(headers or {}),
-            auth_claims=dict(auth_claims or {}) or None,
+            auth_claims=cast(AuthClaims | None, dict(auth_claims or {}) or None),
             auth_subject=auth_subject,
             trace_id=trace_id,
             span_id=span_id,
@@ -842,7 +866,7 @@ class Module:
             if direct is not None:
                 return fn, direct
             for function_name, obj in invokables.items():
-                if getattr(obj, "__name__", None) == fn:
+                if _callable_name(obj) == fn:
                     return function_name, obj
             raise KeyError(f"No invokable function named {fn!r}")
 
@@ -860,7 +884,7 @@ class Module:
             if direct is not None:
                 return job, direct
             for job_name, obj in jobs.items():
-                if getattr(obj, "__name__", None) == job:
+                if _callable_name(obj) == job:
                     return job_name, obj
             raise KeyError(f"No job named {job!r}")
 
@@ -896,3 +920,37 @@ class Module:
             f"agents={list(self._agents)}, "
             f"functions={list(self._functions)})"
         )
+
+
+def _schedule_emit_target_name(target: AsyncPublishTarget[object] | None) -> str | None:
+    if target is None:
+        return None
+    explicit_name = _explicit_name(target)
+    if explicit_name is not None:
+        return explicit_name
+    return type(target).__name__
+
+
+def _resource_registration_name(resource: object) -> str:
+    explicit_name = _explicit_name(resource)
+    if explicit_name is not None:
+        return explicit_name
+    return type(resource).__name__
+
+
+def _symbol_export_name(symbol: object) -> str:
+    if hasattr(symbol, "__name__"):
+        return cast(_HasDunderName, symbol).__name__
+    return repr(symbol)
+
+
+def _callable_name(value: Callable[..., Any]) -> str | None:
+    if hasattr(value, "__name__"):
+        return cast(_HasDunderName, value).__name__
+    return None
+
+
+def _explicit_name(value: object) -> str | None:
+    if hasattr(value, "name"):
+        return cast(_HasName, value).name
+    return None

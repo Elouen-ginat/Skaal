@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from skaal.types.deploy import ComponentConfig, ComponentKind
+from skaal.types.patterns import PatternConfig
 from skaal.types.secret import SecretSpec
 
 PLAN_FILE_NAME = "plan.skaal.lock"
@@ -78,18 +80,18 @@ class PatternSpec(BaseModel):
     # Human-readable reason explaining the solver's choices
     reason: str = ""
     # Free-form config: saga steps, projection handler, outbox channel, …
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: PatternConfig
 
 
 class ComponentSpec(BaseModel):
     """Serialisable spec for a provisioned or external component."""
 
     component_name: str
-    kind: str  # "proxy" | "api-gateway" | "external-storage" | ...
+    kind: ComponentKind
     implementation: str | None = None  # e.g. "traefik", "kong"; None if solver selects
     provisioned: bool = True  # False for ExternalComponent subclasses
     secret_name: str | None = None  # references PlanFile.secrets[<name>] (external only)
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: ComponentConfig
     reason: str = ""
 
 

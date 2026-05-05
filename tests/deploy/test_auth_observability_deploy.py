@@ -6,12 +6,13 @@ from skaal.deploy.builders.aws import build_pulumi_stack as build_aws_stack
 from skaal.deploy.builders.gcp import build_pulumi_stack as build_gcp_stack
 from skaal.deploy.builders.local import build_kong_config
 from skaal.plan import ComponentSpec, PlanFile
+from skaal.types import ExternalObservabilityConfig, GatewayConfig
 from skaal.types.secret import SecretSpec
 
 
 def _gateway_component_config(
     *, header: str = "Authorization", required: bool = True
-) -> dict[str, object]:
+) -> GatewayConfig:
     gateway = APIGateway(
         "public-api",
         routes=[Route("/api/*", target="demo.increment")],
@@ -24,7 +25,9 @@ def _gateway_component_config(
         ),
         cors_origins=["*"],
     )
-    return {key: value for key, value in gateway.describe().items() if key not in {"kind", "name"}}
+    from skaal.solver.components import _encode_component_config
+
+    return _encode_component_config("api-gateway", gateway.describe())
 
 
 def test_aws_apigw_uses_custom_auth_header_when_required() -> None:
@@ -82,7 +85,7 @@ def test_telemetry_endpoint_env_is_injected_into_cloud_targets() -> None:
                 kind="external-observability",
                 provisioned=False,
                 secret_name="OTEL_EXPORTER_OTLP_ENDPOINT",
-                config={"provider": "signoz"},
+                config=ExternalObservabilityConfig(provider="signoz"),
             )
         },
         secrets={

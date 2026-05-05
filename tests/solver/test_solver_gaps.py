@@ -312,8 +312,8 @@ def test_solve_projection_pattern_validates_handler():
     assert proj_keys
     spec = plan.patterns[proj_keys[0]]
     assert spec.pattern_type == "projection"
-    assert spec.config["handler"] == "apply_event"
-    assert spec.config["target"] == "proj.View"
+    assert spec.config.handler == "apply_event"
+    assert spec.config.target == "proj.View"
 
 
 def test_solve_projection_unknown_handler_warns():
@@ -362,6 +362,44 @@ def test_solve_projection_forces_target_collocation():
     assert "EventLog" in plan.storage["proj.View"].collocate_with
 
 
+def test_solve_projection_serializes_strict_and_dead_letter_metadata():
+    from skaal.channel import Channel
+
+    app = App("proj")
+
+    @app.storage(read_latency="< 10ms")
+    class View:
+        pass
+
+    Events = EventLog()
+    app.pattern(Events)
+
+    @app.channel()
+    class ProjectionDlq(Channel[dict]):
+        pass
+
+    @app.function()
+    async def apply_event() -> dict:
+        return {}
+
+    app.pattern(
+        Projection(
+            source=Events,
+            target=View,
+            handler="apply_event",
+            strict=True,
+            dead_letter=ProjectionDlq,
+        )
+    )
+
+    plan = solve(app, load_catalog())
+    proj_keys = [k for k in plan.patterns if "Projection" in k]
+    assert proj_keys
+    spec = plan.patterns[proj_keys[0]]
+    assert spec.config.strict is True
+    assert spec.config.dead_letter == "proj.ProjectionDlq"
+
+
 # ── Pattern: Saga ─────────────────────────────────────────────────────────────
 
 
@@ -397,8 +435,8 @@ def test_solve_saga_validates_function_references():
     assert saga_keys, f"no saga pattern in {list(plan.patterns)}"
     spec = plan.patterns[saga_keys[0]]
     assert spec.pattern_type == "saga"
-    assert spec.config["name"] == "place_order"
-    assert not spec.config["missing_references"]
+    assert spec.config.name == "place_order"
+    assert not spec.config.missing_references
 
 
 def test_solve_saga_missing_reference_warns():
@@ -427,7 +465,7 @@ def test_solve_saga_missing_reference_warns():
     saga_keys = [k for k in plan.patterns if "place_order" in k]
     assert saga_keys, f"no saga pattern in {list(plan.patterns)}"
     spec = plan.patterns[saga_keys[0]]
-    assert any("release_inventory" in r for r in spec.config["missing_references"])
+    assert any("release_inventory" in r for r in spec.config.missing_references)
 
 
 # ── Pattern: Outbox ───────────────────────────────────────────────────────────
@@ -457,4 +495,4 @@ def test_solve_outbox_borrows_primary_storage_backend():
     assert spec.pattern_type == "outbox"
     # Outbox backend should match the primary storage backend
     assert spec.backend == plan.storage["ob.Orders"].backend
-    assert spec.config["storage"] == "ob.Orders"
+    assert spec.config.storage == "ob.Orders"
