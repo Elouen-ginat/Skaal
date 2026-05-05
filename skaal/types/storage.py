@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypedDict, TypeVar
 
 T = TypeVar("T")
 
@@ -19,3 +19,24 @@ class SecondaryIndex:
     partition_key: str
     sort_key: str | None = None
     unique: bool = False
+
+
+@dataclass(frozen=True)
+class BackendIndexFields:
+    partition_field: str
+    sort_field: str | None = None
+
+
+class CursorPayload(TypedDict, total=False):
+    backend: str
+    mode: str
+    prefix: str
+    index_name: str
+    key: str
+    last_key: str
+    last_sort: Any
+    has_last_sort: bool
+    offset: int
+    exclusive_start_key: dict[str, Any]
+    start_after: list[Any]
+    last_member: str

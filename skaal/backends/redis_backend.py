@@ -369,6 +369,9 @@ class RedisBackend:
             )
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
+    async def ensure_indexes(self) -> None:
+        return None
+
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter using Redis INCR."""
         client = await self._ensure_connected()

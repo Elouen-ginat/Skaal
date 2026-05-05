@@ -65,6 +65,10 @@ class StorageBackend(Protocol):
         """Return one page of values matching a declared secondary index."""
         ...
 
+    async def ensure_indexes(self) -> None:
+        """Provision backend-native indexes for declared secondary indexes."""
+        ...
+
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """
         Atomically increment a counter and return the new value.

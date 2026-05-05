@@ -139,6 +139,7 @@ class TestStorageBackendProtocol:
             "scan",
             "scan_page",
             "query_index",
+            "ensure_indexes",
             "increment_counter",
             "atomic_update",
             "close",

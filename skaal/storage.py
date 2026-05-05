@@ -58,7 +58,7 @@ from skaal.serialization import deserialize_value as _deserialize
 from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
 from skaal.types import TTL
-from skaal.types.storage import Page, SecondaryIndex
+from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 T = TypeVar("T")
 _PAGE_DRAIN_LIMIT = 1000
@@ -126,9 +126,9 @@ def _encode_cursor(payload: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(cursor: str | None) -> dict[str, Any]:
+def _decode_cursor(cursor: str | None) -> CursorPayload:
     if cursor is None:
-        return {}
+        return CursorPayload()
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
@@ -137,7 +137,7 @@ def _decode_cursor(cursor: str | None) -> dict[str, Any]:
         raise ValueError("Invalid cursor") from exc
     if not isinstance(decoded, dict):
         raise ValueError("Invalid cursor")
-    return decoded
+    return CursorPayload(**decoded)
 
 
 def _validate_cursor(
@@ -145,7 +145,7 @@ def _validate_cursor(
     *,
     mode: str,
     extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> CursorPayload:
     decoded = _decode_cursor(cursor)
     expected = {"mode": mode, **(extra or {})}
     for key, value in expected.items():
@@ -188,6 +188,13 @@ def _get_backend_indexes(backend: Any) -> dict[str, SecondaryIndex]:
                 normalized[name] = SecondaryIndex(name=name, **value)
         return normalized
     return {}
+
+
+def _backend_index_fields(index: SecondaryIndex) -> BackendIndexFields:
+    return BackendIndexFields(
+        partition_field=f"idx_{index.name}_pk",
+        sort_field=f"idx_{index.name}_sk" if index.sort_key is not None else None,
+    )
 
 
 def _page_items(

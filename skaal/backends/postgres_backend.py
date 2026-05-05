@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Callable, List, cast
@@ -69,6 +70,15 @@ class PostgresBackend:
             return "postgresql+asyncpg://" + self.dsn[len("postgres://") :]
         return self.dsn
 
+    def _secondary_index_name(self, index_name: str) -> str:
+        token = re.sub(r"[^0-9A-Za-z_]+", "_", f"{self.namespace}_{index_name}").strip("_")
+        return f"skaal_kv_idx_{token or 'default'}"
+
+    @staticmethod
+    def _jsonb_path_expr(field_name: str) -> str:
+        path = field_name.replace("\\", "\\\\").replace("'", "''")
+        return f"(value #> '{{{path}}}')"
+
     async def connect(self) -> None:
         """Create the asyncpg connection pool and ensure table exists."""
         import asyncpg
@@ -101,6 +111,7 @@ class PostgresBackend:
             except asyncpg.exceptions.UniqueViolationError:
                 # Another worker created the table concurrently — safe to ignore.
                 pass
+        await self.ensure_indexes()
 
     def _expiry_deadline(self, ttl: float | None) -> datetime | None:
         if ttl is None:
@@ -117,6 +128,22 @@ class PostgresBackend:
             self._pool_loop = None
         if self._pool is None:
             await self.connect()
+
+    async def ensure_indexes(self) -> None:
+        await self._ensure_connected()
+        indexes = _get_backend_indexes(self)
+        if not indexes:
+            return
+        async with self._pool.acquire() as conn:
+            for index in indexes.values():
+                columns = ["ns", self._jsonb_path_expr(index.partition_key)]
+                if index.sort_key is not None:
+                    columns.append(self._jsonb_path_expr(index.sort_key))
+                columns.append("key")
+                await conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "{self._secondary_index_name(index.name)}" '
+                    f'ON skaal_kv ({", ".join(columns)})'
+                )
 
     async def _ensure_relational_engine(self) -> None:
         if self._engine is not None:
@@ -279,6 +306,7 @@ class PostgresBackend:
         cursor: str | None,
     ):
         await self._ensure_connected()
+        await self.ensure_indexes()
         limit = _normalize_limit(limit)
         indexes = _get_backend_indexes(self)
         index = indexes.get(index_name)

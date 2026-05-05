@@ -229,3 +229,36 @@ async def test_query_index_pages_sorted_results(tmp_path):
         assert second_page.has_more is False
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indexes_creates_deterministic_secondary_indexes(tmp_path):
+    db_file = tmp_path / "indexed-native.db"
+    backend = SqliteBackend(db_file, namespace="team.members")
+    setattr(
+        backend,
+        "_skaal_secondary_indexes",
+        {
+            "by_team": SecondaryIndex(name="by_team", partition_key="team", sort_key="score"),
+            "by_email": SecondaryIndex(name="by_email", partition_key="email"),
+        },
+    )
+    try:
+        await backend.connect()
+        await backend.ensure_indexes()
+
+        assert backend._db is not None
+        async with backend._db.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'skaal_kv_idx_%' ORDER BY name"
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        assert [row[0] for row in rows] == [
+            "skaal_kv_idx_team_members_by_email",
+            "skaal_kv_idx_team_members_by_team",
+        ]
+        assert "json_extract(value, '$.email')" in rows[0][1]
+        assert "json_extract(value, '$.team')" in rows[1][1]
+        assert "json_extract(value, '$.score')" in rows[1][1]
+    finally:
+        await backend.close()

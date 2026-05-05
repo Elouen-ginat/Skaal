@@ -112,6 +112,9 @@ class LocalMap:
             cursor=cursor,
         )
 
+    async def ensure_indexes(self) -> None:
+        return None
+
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter using a lock."""
         async with self._lock:

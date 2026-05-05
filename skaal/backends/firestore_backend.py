@@ -305,6 +305,9 @@ class FirestoreBackend:
 
         return await self._run(_query_index)
 
+    async def ensure_indexes(self) -> None:
+        return None
+
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter using a Firestore transaction."""
 

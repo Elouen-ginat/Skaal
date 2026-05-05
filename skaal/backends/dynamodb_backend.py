@@ -338,6 +338,9 @@ class DynamoBackend:
 
         return await self._run(_query)
 
+    async def ensure_indexes(self) -> None:
+        return None
+
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter using DynamoDB UpdateItem.
 

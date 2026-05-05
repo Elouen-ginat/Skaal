@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -52,6 +53,15 @@ class SqliteBackend:
         self._engine: Any = None
         self._session_factory: Any = None
 
+    def _secondary_index_name(self, index_name: str) -> str:
+        token = re.sub(r"[^0-9A-Za-z_]+", "_", f"{self.namespace}_{index_name}").strip("_")
+        return f"skaal_kv_idx_{token or 'default'}"
+
+    @staticmethod
+    def _json_extract_expr(field_name: str) -> str:
+        path = field_name.replace("'", "''")
+        return f"json_extract(value, '$.{path}')"
+
     def _sqlalchemy_url(self) -> str:
         raw = str(self.path)
         if raw == ":memory:":
@@ -76,6 +86,7 @@ class SqliteBackend:
         )
         await self._ensure_ttl_schema()
         await self._db.commit()
+        await self.ensure_indexes()
 
     async def _ensure_ttl_schema(self) -> None:
         assert self._db is not None
@@ -102,6 +113,22 @@ class SqliteBackend:
     async def _ensure_connected(self) -> None:
         if self._db is None:
             await self.connect()
+
+    async def ensure_indexes(self) -> None:
+        await self._ensure_connected()
+        indexes = _get_backend_indexes(self)
+        if not indexes:
+            return
+        for index in indexes.values():
+            columns = ["ns", self._json_extract_expr(index.partition_key)]
+            if index.sort_key is not None:
+                columns.append(self._json_extract_expr(index.sort_key))
+            columns.append("key")
+            await self._db.execute(
+                f'CREATE INDEX IF NOT EXISTS "{self._secondary_index_name(index.name)}" '
+                f'ON kv ({", ".join(columns)})'
+            )
+        await self._db.commit()
 
     async def _ensure_relational_engine(self) -> None:
         if self._engine is not None:
@@ -238,6 +265,7 @@ class SqliteBackend:
         cursor: str | None,
     ):
         await self._ensure_connected()
+        await self.ensure_indexes()
         limit = _normalize_limit(limit)
         indexes = _get_backend_indexes(self)
         index = indexes.get(index_name)

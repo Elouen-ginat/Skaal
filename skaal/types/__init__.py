@@ -139,7 +139,7 @@ from skaal.types.solver import (
     ResourceKind,
     Violation,
 )
-from skaal.types.storage import Page, SecondaryIndex
+from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 __all__ = [
     # constraints
@@ -259,6 +259,8 @@ __all__ = [
     "SecretResolver",
     "SecretSpec",
     # storage
+    "BackendIndexFields",
+    "CursorPayload",
     "Page",
     "SecondaryIndex",
     # relational migrations
