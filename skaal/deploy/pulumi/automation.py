@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import pulumi.automation as auto
-
-from skaal.deploy.packaging.docker_builder import find_network_id, find_volume_name
 from skaal.deploy.pulumi.env import local_backend_url, pulumi_env
 from skaal.types import PulumiStack
+
+if TYPE_CHECKING:
+    import pulumi.automation as auto
 
 STACK_SPEC = "skaal-stack.json"
 
@@ -31,6 +31,8 @@ def read_stack_spec(artifacts_dir: Path) -> PulumiStack:
 
 
 def workspace_options(artifacts_dir: Path, spec: PulumiStack) -> auto.LocalWorkspaceOptions:
+    import pulumi.automation as auto
+
     state_dir = (artifacts_dir / ".pulumi-state").resolve()
     state_dir.mkdir(parents=True, exist_ok=True)
     return auto.LocalWorkspaceOptions(
@@ -46,9 +48,13 @@ def workspace_options(artifacts_dir: Path, spec: PulumiStack) -> auto.LocalWorks
 
 def existing_resource_import_id(resource_type: str, properties: dict[str, Any]) -> str | None:
     if resource_type == "docker:Network":
+        from skaal.deploy.packaging.docker_builder import find_network_id
+
         name = properties.get("name")
         return find_network_id(name) if isinstance(name, str) else None
     if resource_type == "docker:Volume":
+        from skaal.deploy.packaging.docker_builder import find_volume_name
+
         name = properties.get("name")
         return find_volume_name(name) if isinstance(name, str) else None
     return None

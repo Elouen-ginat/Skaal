@@ -7,7 +7,11 @@ from pathlib import Path
 from skaal.deploy.pulumi.meta import read_meta
 from skaal.types import ConfigOverrides, StackOutputs
 
-from .targets.registry import get_target
+
+def get_target(name: str):
+    from .targets.registry import get_target as resolve_target
+
+    return resolve_target(name)
 
 
 def package_and_push(

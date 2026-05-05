@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
-import google.auth
-from google.auth.transport.requests import Request
+try:
+    import google.auth
+    from google.auth.transport.requests import Request
+except ModuleNotFoundError:
+    google = SimpleNamespace(auth=SimpleNamespace(default=None))
+    Request = None
 
 from skaal.deploy.packaging.docker_builder import (
     DockerProgress,
@@ -21,6 +26,10 @@ def build_and_push_image(
     app_name: str,
     progress: DockerProgress = None,
 ) -> None:
+    if Request is None or getattr(google.auth, "default", None) is None:
+        raise ModuleNotFoundError(
+            "google-auth is required for GCP image pushes. Install the gcp extra."
+        )
     credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     credentials.refresh(Request())
     if credentials.token is None:
