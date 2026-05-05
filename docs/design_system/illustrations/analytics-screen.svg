@@ -1,0 +1,11 @@
+<svg width="320" height="260" viewBox="0 0 320 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal analytics screen illustration</title>
+  <rect width="320" height="260" rx="24" fill="#F6FBF9"/>
+  <rect x="46" y="54" width="228" height="152" rx="16" fill="#FFFFFF" stroke="#CFDCE6" stroke-width="2"/>
+  <rect x="46" y="54" width="228" height="22" rx="16" fill="#EDF3F8"/>
+  <circle cx="64" cy="65" r="4" fill="#C96A3D"/><circle cx="78" cy="65" r="4" fill="#F0C05A"/><circle cx="92" cy="65" r="4" fill="#9AE66E"/>
+  <path d="M72 148L102 128L138 136L176 104L214 118L248 92" stroke="#13B5A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 166H248" stroke="#DCE5EB" stroke-width="2" stroke-linecap="round"/>
+  <path d="M92 182V148M132 182V160M172 182V128M212 182V140" stroke="#A7B4C2" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="270" cy="174" r="18" fill="#13B5A8"/><path d="M263 174L268 179L277 169" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

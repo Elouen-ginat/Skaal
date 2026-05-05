@@ -1,0 +1,11 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal dot field pattern</title>
+  <rect width="320" height="240" rx="28" fill="#FBFDFC"/>
+  <g fill="#B7C5D0">
+    <circle cx="40" cy="40" r="2.2"/><circle cx="100" cy="40" r="2.2"/><circle cx="160" cy="40" r="2.2"/><circle cx="220" cy="40" r="2.2"/><circle cx="280" cy="40" r="2.2"/>
+    <circle cx="70" cy="80" r="2.2"/><circle cx="130" cy="80" r="2.2"/><circle cx="190" cy="80" r="2.2"/><circle cx="250" cy="80" r="2.2"/>
+    <circle cx="40" cy="120" r="2.2"/><circle cx="100" cy="120" r="2.2"/><circle cx="160" cy="120" r="2.2"/><circle cx="220" cy="120" r="2.2"/><circle cx="280" cy="120" r="2.2"/>
+    <circle cx="70" cy="160" r="2.2"/><circle cx="130" cy="160" r="2.2"/><circle cx="190" cy="160" r="2.2"/><circle cx="250" cy="160" r="2.2"/>
+    <circle cx="40" cy="200" r="2.2"/><circle cx="100" cy="200" r="2.2"/><circle cx="160" cy="200" r="2.2"/><circle cx="220" cy="200" r="2.2"/><circle cx="280" cy="200" r="2.2"/>
+  </g>
+</svg>

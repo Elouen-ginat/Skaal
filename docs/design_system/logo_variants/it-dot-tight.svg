@@ -1,0 +1,7 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Skaal it-dot tight logo</title>
+  <desc id="desc">A denser it-dot symbol with the endpoint locked closer to the rail.</desc>
+  <rect width="256" height="256" rx="48" fill="#F6FBF9"/>
+  <path d="M129.5 63.5C135.2 57.8 144.4 57.8 150.1 63.5C155.8 69.2 155.8 78.4 150.1 84.1L106.2 128L150.1 171.9C155.8 177.6 155.8 186.8 150.1 192.5C144.4 198.2 135.2 198.2 129.5 192.5L75.28 138.3C69.57 132.6 69.57 123.4 75.28 117.7L129.5 63.5Z" fill="#0E1726"/>
+  <circle cx="176" cy="128" r="17" fill="#9AE66E"/>
+</svg>

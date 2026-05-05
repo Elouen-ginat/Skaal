@@ -1,0 +1,28 @@
+<svg width="760" height="240" viewBox="0 0 760 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal constraint token set</title>
+  <rect width="760" height="240" rx="24" fill="#F6FBF9"/>
+  <g transform="translate(24 42)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#E9FAF6" stroke="#13B5A8" stroke-width="2"/><path d="M24 22V42M19 32H29" stroke="#13B5A8" stroke-width="2" stroke-linecap="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Latency</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">&lt; 10ms</text>
+  </g>
+  <g transform="translate(252 42)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#F0FBE9" stroke="#9AE66E" stroke-width="2"/><path d="M20 32L23 35L29 28" stroke="#0E1726" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Durability</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Strong</text>
+  </g>
+  <g transform="translate(480 42)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#E9FAF6" stroke="#13B5A8" stroke-width="2"/><path d="M18 34C22 26 26 26 30 18M18 30C23 35 28 35 31 25" stroke="#13B5A8" stroke-width="2" stroke-linecap="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Throughput</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">&gt; 100 rps</text>
+  </g>
+  <g transform="translate(24 126)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#F2F7FB" stroke="#0E1726" stroke-width="2"/><path d="M19 32C19 27 23 23 28 23" stroke="#13B5A8" stroke-width="2" stroke-linecap="round"/><path d="M28 23H30V29" stroke="#13B5A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Access Pattern</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Read-heavy</text>
+  </g>
+  <g transform="translate(252 126)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#F2F7FB" stroke="#5FA8FF" stroke-width="2"/><path d="M18 36H30V24" stroke="#5FA8FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 24L30 36" stroke="#5FA8FF" stroke-width="2" stroke-linecap="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Scale</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Auto</text>
+  </g>
+  <g transform="translate(480 126)">
+    <rect width="204" height="64" rx="16" fill="#FFFFFF" stroke="#DCE5EB"/>
+    <circle cx="24" cy="32" r="10" fill="#EFF4FF" stroke="#5FA8FF" stroke-width="2"/><path d="M20 32L23 35L29 28" stroke="#5FA8FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="50" y="29" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Consistency</text><text x="50" y="48" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Eventual</text>
+  </g>
+</svg>

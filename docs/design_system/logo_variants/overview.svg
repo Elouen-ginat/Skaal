@@ -1,0 +1,55 @@
+<svg width="1400" height="520" viewBox="0 0 1400 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Skaal logo system overview</title>
+  <desc id="desc">A contact sheet showing the finalized it-dot family, alternate rails, and browser icon exports.</desc>
+  <rect width="1400" height="520" rx="32" fill="#F6FBF9"/>
+  <text x="56" y="68" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="34" font-weight="700">Logo System</text>
+  <text x="1140" y="68" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="28" font-weight="700">Favicon / App Icon</text>
+  <g transform="translate(52 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M96.8 31.8C101.4 27.2 108.8 27.2 113.4 31.8C118 36.4 118 43.8 113.4 48.4L77.8 84L113.4 119.6C118 124.2 118 131.6 113.4 136.2C108.8 140.8 101.4 140.8 96.8 136.2L53 92.4C48.4 87.8 48.4 80.4 53 75.8L96.8 31.8Z" fill="#0E1726"/>
+    <circle cx="130" cy="84" r="14" fill="#9AE66E"/>
+    <text x="54" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">it-dot</text>
+  </g>
+  <g transform="translate(260 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M101.4 31.8C106 27.2 113.4 27.2 118 31.8C122.6 36.4 122.6 43.8 118 48.4L82.4 84L118 119.6C122.6 124.2 122.6 131.6 118 136.2C113.4 140.8 106 140.8 101.4 136.2L57.6 92.4C53 87.8 53 80.4 57.6 75.8L101.4 31.8Z" fill="#0E1726"/>
+    <circle cx="142" cy="84" r="14" fill="#9AE66E"/>
+    <text x="34" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">it-dot-wide</text>
+  </g>
+  <g transform="translate(468 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M92.2 31.8C96.8 27.2 104.2 27.2 108.8 31.8C113.4 36.4 113.4 43.8 108.8 48.4L73.2 84L108.8 119.6C113.4 124.2 113.4 131.6 108.8 136.2C104.2 140.8 96.8 140.8 92.2 136.2L48.4 92.4C43.8 87.8 43.8 80.4 48.4 75.8L92.2 31.8Z" fill="#0E1726"/>
+    <circle cx="122" cy="84" r="14" fill="#9AE66E"/>
+    <text x="36" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">it-dot-tight</text>
+  </g>
+  <g transform="translate(676 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M61 60C61 53.37 66.37 48 73 48H78.28C81.49 48 84.57 49.28 86.84 51.54L108.14 72.84C110.4 75.11 112.55 76.38 115.76 76.38H136.12C142.74 76.38 148.12 81.76 148.12 88.38C148.12 95 142.74 100.38 136.12 100.38H115.32C110.24 100.38 105.38 98.36 101.78 94.77L82.52 75.5L70.4 87.62C65.8 92.22 58.34 92.22 53.74 87.62C49.14 83.02 49.14 75.56 53.74 70.96L69.68 55.02" fill="#0E1726"/>
+    <path d="M61 116C61 122.63 66.37 128 73 128H78.28C81.49 128 84.57 126.72 86.84 124.46L108.14 103.16C110.4 100.89 112.55 99.62 115.76 99.62H136.12C142.74 99.62 148.12 94.24 148.12 87.62C148.12 81 142.74 75.62 136.12 75.62H115.32C110.24 75.62 105.38 77.64 101.78 81.23L82.52 100.5L70.4 88.38C65.8 83.78 58.34 83.78 53.74 88.38C49.14 92.98 49.14 100.44 53.74 105.04L69.68 120.98" fill="#0E1726"/>
+    <circle cx="155" cy="88" r="12" fill="#9AE66E"/>
+    <text x="48" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">cut-rail</text>
+  </g>
+  <g transform="translate(884 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M118.82 26.66C123.42 22.06 130.88 22.06 135.48 26.66C140.08 31.26 140.08 38.72 135.48 43.32L107.38 71.42H133.92C140.54 71.42 145.92 76.8 145.92 83.42C145.92 90.04 140.54 95.42 133.92 95.42H107.38L135.48 123.52C140.08 128.12 140.08 135.58 135.48 140.18C130.88 144.78 123.42 144.78 118.82 140.18L70.86 92.22C68.6 89.95 67.32 86.87 67.32 83.66C67.32 80.45 68.6 77.37 70.86 75.1L118.82 26.66Z" fill="#0E1726"/>
+    <circle cx="155" cy="86" r="12" fill="#9AE66E"/>
+    <text x="50" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">step-rail</text>
+  </g>
+  <g transform="translate(1092 110)">
+    <rect width="176" height="176" rx="28" fill="#FFFFFF" stroke="#E5ECF2"/>
+    <path d="M74.6 34.6C79.2 30 86.7 30 91.3 34.6L103 46.3V121.7L91.3 133.4C86.7 138 79.2 138 74.6 133.4C70 128.8 70 121.3 74.6 116.7L77 114.3V53.7L74.6 51.3C70 46.7 70 39.2 74.6 34.6Z" fill="#0E1726"/>
+    <path d="M103 52.9L131.4 24.5C136 19.9 143.5 19.9 148.1 24.5C152.7 29.1 152.7 36.6 148.1 41.2L119.7 69.6H137.5C144.1 69.6 149.5 75 149.5 81.6C149.5 88.2 144.1 93.6 137.5 93.6H119.7L148.1 122C152.7 126.6 152.7 134.1 148.1 138.7C143.5 143.3 136 143.3 131.4 138.7L103 110.3V52.9Z" fill="#0E1726"/>
+    <circle cx="163" cy="81" r="12" fill="#9AE66E"/>
+    <text x="46" y="164" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="600">linked-rail</text>
+  </g>
+  <g transform="translate(1148 334)">
+    <rect width="92" height="92" rx="22" fill="#0E1726"/>
+    <path d="M41.92 24.92C44.37 22.47 48.33 22.47 50.78 24.92C53.23 27.37 53.23 31.33 50.78 33.78L39.56 45L50.78 56.22C53.23 58.67 53.23 62.63 50.78 65.08C48.33 67.53 44.37 67.53 41.92 65.08L27.56 50.72C25.11 48.27 25.11 44.31 27.56 41.86L41.92 27.5Z" fill="#F6FBF9"/>
+    <circle cx="63.5" cy="45" r="5.5" fill="#9AE66E"/>
+  </g>
+  <g transform="translate(1260 334)">
+    <rect width="92" height="92" rx="22" fill="#FFFFFF" stroke="#D6E0E8"/>
+    <path d="M41.92 24.92C44.37 22.47 48.33 22.47 50.78 24.92C53.23 27.37 53.23 31.33 50.78 33.78L39.56 45L50.78 56.22C53.23 58.67 53.23 62.63 50.78 65.08C48.33 67.53 44.37 67.53 41.92 65.08L27.56 50.72C25.11 48.27 25.11 44.31 27.56 41.86L41.92 27.5Z" fill="#0E1726"/>
+    <circle cx="63.5" cy="45" r="5.5" fill="#9AE66E"/>
+  </g>
+</svg>

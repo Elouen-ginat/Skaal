@@ -1,0 +1,8 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Skaal linked rail logo</title>
+  <desc id="desc">A connected-rail mark with a left-side spine and selected endpoint.</desc>
+  <rect width="256" height="256" rx="48" fill="#F6FBF9"/>
+  <path d="M92 62.5C97.71 56.79 106.97 56.79 112.68 62.5L128 77.82V177.18L112.68 192.5C106.97 198.21 97.71 198.21 92 192.5C86.29 186.79 86.29 177.53 92 171.82L98.76 165.06V89.94L92 83.18C86.29 77.47 86.29 68.21 92 62.5Z" fill="#0E1726"/>
+  <path d="M128 88.77L160.73 56.04C166.44 50.33 175.7 50.33 181.41 56.04C187.12 61.75 187.12 71.01 181.41 76.72L146.06 112.07H169.34C177.05 112.07 183.31 118.33 183.31 126.04C183.31 133.76 177.05 140.01 169.34 140.01H146.06L181.41 175.36C187.12 181.07 187.12 190.33 181.41 196.04C175.7 201.75 166.44 201.75 160.73 196.04L128 163.31V88.77Z" fill="#0E1726"/>
+  <circle cx="205" cy="126" r="15" fill="#9AE66E"/>
+</svg>

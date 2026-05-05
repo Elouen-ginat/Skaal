@@ -1,0 +1,67 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --skaal-color-ink: #0e1726;
+  --skaal-color-mist: #f6fbf9;
+  --skaal-color-grid: #a7b4c2;
+  --skaal-color-signal-teal: #13b5a8;
+  --skaal-color-solver-green: #9ae66e;
+  --skaal-color-cloud-blue: #5fa8ff;
+  --skaal-color-rust-copper: #c96a3d;
+
+  --skaal-font-heading: "Space Grotesk", "Segoe UI", sans-serif;
+  --skaal-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --skaal-font-mono: "IBM Plex Mono", "Cascadia Code", monospace;
+
+  --skaal-radius-card: 16px;
+  --skaal-radius-chip: 14px;
+  --skaal-radius-icon: 18px;
+  --skaal-stroke-fine: 1.5px;
+  --skaal-stroke-base: 2px;
+
+  --skaal-shadow-soft: 0 16px 40px rgba(14, 23, 38, 0.08);
+  --skaal-shadow-panel: 0 12px 28px rgba(14, 23, 38, 0.12);
+
+  --skaal-motion-fast: 140ms;
+  --skaal-motion-base: 180ms;
+  --skaal-motion-slow: 220ms;
+  --skaal-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-skaal-surface="light"] {
+  background: linear-gradient(180deg, #ffffff 0%, var(--skaal-color-mist) 100%);
+  color: var(--skaal-color-ink);
+}
+
+[data-skaal-surface="dark"] {
+  background: linear-gradient(180deg, #101b2b 0%, #0b1220 100%);
+  color: #f5fbff;
+}
+
+.skaal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--skaal-color-grid) 40%, white);
+  border-radius: var(--skaal-radius-chip);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--skaal-shadow-soft);
+  font: 500 14px/1 var(--skaal-font-body);
+}
+
+.skaal-code-surface {
+  border-radius: var(--skaal-radius-card);
+  background: #0f1828;
+  color: #e5f3f7;
+  box-shadow: var(--skaal-shadow-panel);
+  font: 500 14px/1.6 var(--skaal-font-mono);
+}
+
+.skaal-route-accent {
+  color: var(--skaal-color-signal-teal);
+}
+
+.skaal-route-resolved {
+  color: var(--skaal-color-solver-green);
+}

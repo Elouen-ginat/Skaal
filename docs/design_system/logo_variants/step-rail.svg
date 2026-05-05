@@ -1,0 +1,7 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Skaal step rail logo</title>
+  <desc id="desc">A stepped rail mark that suggests staged resolution toward the endpoint.</desc>
+  <rect width="256" height="256" rx="48" fill="#F6FBF9"/>
+  <path d="M146.15 58.44C151.86 52.73 161.08 52.73 166.79 58.44C172.5 64.15 172.5 73.37 166.79 79.08L133.1 112.76L161.7 112.76C169.42 112.76 175.67 119.02 175.67 126.73C175.67 134.45 169.42 140.7 161.7 140.7L133.1 140.7L166.79 174.39C172.5 180.1 172.5 189.32 166.79 195.03C161.08 200.74 151.86 200.74 146.15 195.03L83.88 132.76C81.26 130.14 79.79 126.57 79.79 122.86C79.79 119.16 81.26 115.59 83.88 112.97L146.15 58.44Z" fill="#0E1726"/>
+  <circle cx="195" cy="126" r="16" fill="#9AE66E"/>
+</svg>

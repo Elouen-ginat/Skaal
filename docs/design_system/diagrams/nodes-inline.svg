@@ -1,0 +1,7 @@
+<svg width="340" height="220" viewBox="0 0 340 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal inline nodes diagram</title>
+  <rect width="340" height="220" rx="24" fill="#F6FBF9"/>
+  <path d="M42 110H118L172 72H244L294 108" stroke="#CDD7E0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M118 110H172" stroke="#13B5A8" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="42" cy="110" r="11" fill="#D9E1E7"/><circle cx="118" cy="110" r="11" fill="#0E1726"/><circle cx="172" cy="72" r="11" fill="#13B5A8"/><circle cx="244" cy="72" r="11" fill="#9AE66E"/><circle cx="294" cy="108" r="11" fill="#D9E1E7"/>
+</svg>

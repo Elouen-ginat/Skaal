@@ -1,0 +1,12 @@
+<svg width="520" height="230" viewBox="0 0 520 230" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal terminal block</title>
+  <rect width="520" height="230" rx="24" fill="#0D1624"/>
+  <g font-family="'IBM Plex Mono', monospace" font-size="16">
+    <text x="24" y="40" fill="#FFFFFF">$ skaal plan --app myapp:app --catalog local.toml</text>
+    <text x="24" y="76" fill="#8FA7BE">&gt; solving...</text>
+    <text x="24" y="104" fill="#E5EDF5">&gt; 42 backends evaluated</text>
+    <text x="24" y="132" fill="#E5EDF5">&gt; best path: DynamoDB (AWS)</text>
+    <text x="24" y="160" fill="#E5EDF5">&gt; estimated cost: $1.25 / mo</text>
+    <text x="24" y="196" fill="#9AE66E">&gt; plan resolved</text>
+  </g>
+</svg>

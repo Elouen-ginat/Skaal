@@ -1,0 +1,23 @@
+<svg width="760" height="360" viewBox="0 0 760 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal generated Pulumi output panel</title>
+  <rect width="760" height="360" rx="28" fill="#0F1828"/>
+  <text x="34" y="44" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="28" font-weight="700">Generated (Pulumi Output)</text>
+  <rect x="30" y="72" width="168" height="250" rx="18" fill="#111D2F" stroke="#24354B"/>
+  <text x="50" y="102" fill="#B8C6D3" font-family="'IBM Plex Mono', monospace" font-size="16">artifacts/</text>
+  <text x="50" y="132" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">Dockerfile</text>
+  <text x="50" y="158" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">main.py</text>
+  <text x="50" y="184" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">Pulumi.yaml</text>
+  <text x="50" y="210" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">Pulumi.dev.yaml</text>
+  <text x="50" y="236" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">__main__.py</text>
+  <text x="50" y="262" fill="#8ED9D0" font-family="'IBM Plex Mono', monospace" font-size="14">stack.yaml</text>
+  <rect x="212" y="72" width="514" height="250" rx="18" fill="#0D1624" stroke="#24354B"/>
+  <g font-family="'IBM Plex Mono', monospace" font-size="15">
+    <text x="236" y="108" fill="#7E8DA3">1</text><text x="278" y="108" fill="#C7D3DE">import </text><text x="334" y="108" fill="#9D7CFF">pulumi</text>
+    <text x="236" y="138" fill="#7E8DA3">2</text><text x="278" y="138" fill="#C7D3DE">import </text><text x="334" y="138" fill="#9D7CFF">pulumi_aws</text><text x="433" y="138" fill="#C7D3DE"> as </text><text x="466" y="138" fill="#13B5A8">aws</text>
+    <text x="236" y="184" fill="#7E8DA3">4</text><text x="278" y="184" fill="#C7D3DE">table = </text><text x="344" y="184" fill="#13B5A8">aws</text><text x="372" y="184" fill="#C7D3DE">.dynamodb.Table(</text>
+    <text x="236" y="214" fill="#7E8DA3">5</text><text x="304" y="214" fill="#E6EDF5">"counters",</text>
+    <text x="236" y="244" fill="#7E8DA3">6</text><text x="304" y="244" fill="#9AE66E">hash_key</text><text x="370" y="244" fill="#E6EDF5">=</text><text x="388" y="244" fill="#F1C27D">"pk"</text>
+    <text x="236" y="274" fill="#7E8DA3">7</text><text x="304" y="274" fill="#9AE66E">attributes</text><text x="384" y="274" fill="#E6EDF5">=[{</text><text x="406" y="274" fill="#F1C27D">"name"</text><text x="460" y="274" fill="#E6EDF5">:</text><text x="476" y="274" fill="#F1C27D">"pk"</text><text x="510" y="274" fill="#E6EDF5">}]</text>
+    <text x="236" y="304" fill="#7E8DA3">8</text><text x="304" y="304" fill="#9AE66E">billing_mode</text><text x="406" y="304" fill="#E6EDF5">=</text><text x="424" y="304" fill="#F1C27D">"PAY_PER_REQUEST"</text>
+  </g>
+</svg>

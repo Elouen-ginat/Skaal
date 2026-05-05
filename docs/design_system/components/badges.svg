@@ -1,0 +1,15 @@
+<svg width="520" height="220" viewBox="0 0 520 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal badges</title>
+  <rect width="520" height="220" rx="24" fill="#F6FBF9"/>
+  <g font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14" font-weight="600">
+    <rect x="24" y="28" width="56" height="28" rx="14" fill="#EEF5FF" stroke="#9CC2FF"/><text x="39" y="47" fill="#3C67BC">Alpha</text>
+    <rect x="94" y="28" width="92" height="28" rx="14" fill="#FFFFFF" stroke="#D7E3EE"/><text x="110" y="47" fill="#0E1726">Python 3.11+</text>
+    <rect x="200" y="28" width="48" height="28" rx="14" fill="#F1FCF7" stroke="#BDE9D8"/><text x="217" y="47" fill="#2A8A61">MIT</text>
+    <rect x="24" y="76" width="52" height="28" rx="14" fill="#F1FCF7" stroke="#BDE9D8"/><text x="39" y="95" fill="#2A8A61">Local</text>
+    <rect x="90" y="76" width="48" height="28" rx="14" fill="#FFFFFF" stroke="#D7E3EE"/><text x="107" y="95" fill="#0E1726">AWS</text>
+    <rect x="152" y="76" width="46" height="28" rx="14" fill="#FFF6EF" stroke="#F3D3BF"/><text x="167" y="95" fill="#B05B33">GCP</text>
+    <rect x="24" y="124" width="70" height="28" rx="14" fill="#F1FCF7" stroke="#BDE9D8"/><text x="41" y="143" fill="#2A8A61">Z3 Solver</text>
+    <rect x="108" y="124" width="58" height="28" rx="14" fill="#F5EEFF" stroke="#D6BEFF"/><text x="126" y="143" fill="#8A57CC">Pulumi</text>
+    <rect x="180" y="124" width="44" height="28" rx="14" fill="#FFF6EF" stroke="#F3D3BF"/><text x="196" y="143" fill="#C96A3D">ASGI</text>
+  </g>
+</svg>
