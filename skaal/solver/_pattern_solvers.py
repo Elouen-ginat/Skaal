@@ -114,3 +114,7 @@ def storage_constraints_from_pattern(pattern_meta: EventLogPatternMetadata) -> d
         "residency": None,
         "size_hint": None,
     }
+
+
+# Import built-in pattern solver modules for registration side effects.
+from skaal.solver import patterns as _patterns  # noqa: F401,E402

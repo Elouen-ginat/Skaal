@@ -116,6 +116,10 @@ test = [
     "pytest-httpx>=0.30",
     "rq>=2.8",
     "fakeredis>=2.23",
+    "fastapi",
+    "python-multipart>=0.0.5",
+    "langchain-chroma>=1.1",
+    "chromadb>=1.5",
 ]
 lint = [
     "ruff>=0.4",
