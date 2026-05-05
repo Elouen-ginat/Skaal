@@ -21,6 +21,9 @@ $backend_overrides
 # Starts APScheduler in a daemon thread; each firing is printed to stdout
 # so it appears in `docker logs`.  No-ops if apscheduler is not installed.
 _runtime.start_background_scheduler()
+# Starts the background jobs worker in a daemon thread so delayed jobs can
+# continue running in WSGI / gunicorn deployments too.
+_runtime.start_background_jobs()
 
 # WSGI callable — mounted via app.mount_wsgi("$wsgi_attribute")
 # gunicorn is invoked in the Dockerfile CMD and imports this module as:

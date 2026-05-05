@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from skaal.deploy.backends import build_wiring_aws, collect_user_packages, get_handler
 from skaal.deploy.builders.aws import build_pulumi_stack
+from skaal.deploy.builders.common import app_has_jobs
 from skaal.deploy.config import LambdaDeployConfig
 from skaal.deploy.pulumi.automation import write_stack_spec
 from skaal.deploy.pulumi.meta import write_meta
@@ -35,6 +36,7 @@ def generate_artifacts(
     wsgi_attribute: str | None = getattr(app, "_wsgi_attribute", None)
     enable_mesh = bool((stack_profile or {}).get("enable_mesh"))
     deploy_config = LambdaDeployConfig.model_validate(plan.deploy_config)
+    has_jobs = app_has_jobs(app)
 
     handler_path = output_dir / "handler.py"
     if wsgi_attribute:
@@ -60,6 +62,20 @@ def generate_artifacts(
             )
         )
     generated.append(handler_path)
+
+    if has_jobs:
+        worker_path = output_dir / "worker.py"
+        worker_path.write_text(
+            render(
+                "aws/worker.py",
+                app_name=app.name,
+                source_module=source_module,
+                app_var=app_var,
+                backend_imports=backend_imports,
+                backend_overrides=backend_overrides,
+            )
+        )
+        generated.append(worker_path)
 
     handler_extra_deps: list[str] = []
     for spec in plan.storage.values():

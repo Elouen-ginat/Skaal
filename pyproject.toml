@@ -55,6 +55,8 @@ runtime = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "rq>=2.8",
+    "fakeredis>=2.23",
 ]
 deploy = [
     "docker>=7.1",
@@ -112,6 +114,8 @@ test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-httpx>=0.30",
+    "rq>=2.8",
+    "fakeredis>=2.23",
 ]
 lint = [
     "ruff>=0.4",

@@ -28,6 +28,7 @@ notes = "Pure in-process Python dict. Used by LocalRuntime automatically."
 class_name      = "SqliteBackend"
 module          = "sqlite_backend"
 env_prefix      = "SKAAL_SQLITE_PATH"
+uses_namespace  = true
 local_env_value = "/app/data/skaal.db"
 
 [storage.sqlite]

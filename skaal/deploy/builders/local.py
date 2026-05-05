@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from skaal.deploy.backends import LOCAL_SERVICE_SPECS, get_handler
-from skaal.deploy.builders.common import resource_slug
+from skaal.deploy.builders.common import app_has_jobs, resource_slug
 from skaal.deploy.config import LocalStackDeployConfig
 from skaal.deploy.secrets import LocalSecretInjector
 from skaal.types import (
@@ -208,7 +208,12 @@ def _app_command(is_wsgi: bool) -> list[str]:
     return command
 
 
-def _app_envs(plan: "PlanFile", *, app_slug: str) -> tuple[list[str], list[str]]:
+def _app_envs(
+    plan: "PlanFile",
+    *,
+    app_slug: str,
+    has_jobs: bool = False,
+) -> tuple[list[str], list[str]]:
     envs: dict[str, str] = {}
     service_dependencies: list[str] = []
 
@@ -231,6 +236,11 @@ def _app_envs(plan: "PlanFile", *, app_slug: str) -> tuple[list[str], list[str]]
 
     for env_name, value in LocalSecretInjector().env_vars(plan).items():
         envs[env_name] = value
+
+    if has_jobs:
+        envs["SKAAL_JOBS_REDIS_URL"] = f"redis://{_service_host(app_slug, 'redis')}:6379"
+        if "redis" not in service_dependencies:
+            service_dependencies.append("redis")
 
     return [f"{name}={value}" for name, value in sorted(envs.items())], service_dependencies
 
@@ -309,7 +319,8 @@ def build_pulumi_stack(
 ) -> PulumiStack:
     deploy = LocalStackDeployConfig.model_validate(plan.deploy_config)
     app_slug = resource_slug(app.name)
-    app_envs, storage_services = _app_envs(plan, app_slug=app_slug)
+    has_jobs = app_has_jobs(app)
+    app_envs, storage_services = _app_envs(plan, app_slug=app_slug, has_jobs=has_jobs)
 
     resources: dict[str, PulumiResource] = {
         "skaal-net": {"type": "docker:Network", "properties": {"name": f"skaal-{app_slug}-net"}},

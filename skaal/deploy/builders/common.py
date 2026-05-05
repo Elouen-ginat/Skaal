@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 
 def resource_slug(name: str, *, max_len: int = 40) -> str:
@@ -23,3 +24,19 @@ def database_name(app_name: str) -> str:
 
 def safe_key(route_key: str) -> str:
     return re.sub(r"[^a-zA-Z0-9-]", "-", route_key).strip("-")
+
+
+def app_has_jobs(app: Any) -> bool:
+    jobs = getattr(app, "_jobs", None)
+    if isinstance(jobs, dict):
+        return bool(jobs)
+
+    collect_jobs = getattr(app, "_collect_jobs", None)
+    if callable(collect_jobs):
+        try:
+            resolved = collect_jobs()
+        except Exception:  # noqa: BLE001
+            return False
+        return isinstance(resolved, dict) and bool(resolved)
+
+    return False

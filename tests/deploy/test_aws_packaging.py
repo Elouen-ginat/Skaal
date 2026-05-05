@@ -46,3 +46,27 @@ dependencies = [
     assert "--only-binary=:all:" in mesh_cmd
     assert "--python-version" in mesh_cmd
     assert "312" in mesh_cmd
+
+
+def test_package_aws_copies_worker_when_present(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "pyproject.toml").write_text(
+        """
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["skaal[runtime,aws]"]
+""".strip(),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "handler.py").write_text("def handler(event, context): return {}\n")
+    (artifacts_dir / "worker.py").write_text("def handler(event, context): return {}\n")
+    src_pkg = tmp_path / "examples"
+    src_pkg.mkdir()
+    (src_pkg / "__init__.py").write_text("", encoding="utf-8")
+
+    with mock.patch("skaal.deploy.packaging.lambda_pkg.run_pip"):
+        package_lambda(artifacts_dir, tmp_path, "examples.counter")
+
+    assert (artifacts_dir / "lambda_package" / "worker.py").exists()

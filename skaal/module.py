@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import AsyncIterator, Mapping
+from datetime import datetime
 from types import SimpleNamespace
 
 # TYPE_CHECKING import to avoid circular deps at runtime
@@ -17,6 +18,9 @@ from skaal.types import (
     Compute,
     DecommissionPolicy,
     Durability,
+    Duration,
+    JobHandle,
+    JobSpec,
     Latency,
     RateLimitPolicy,
     Retention,
@@ -104,6 +108,7 @@ class Module:
         self._storage: dict[str, Any] = {}
         self._agents: dict[str, Any] = {}
         self._functions: dict[str, Any] = {}
+        self._jobs: dict[str, Any] = {}
         self._channels: dict[str, Any] = {}
         self._patterns: dict[str, Any] = {}
         self._components: dict[str, Any] = {}
@@ -326,6 +331,60 @@ class Module:
         if fn_to_decorate is None:
             return decorator
         return decorator(fn_to_decorate)
+
+    @overload
+    def job(
+        self,
+        fn_to_decorate: F,
+        *,
+        retry: RetryPolicy | None = ...,
+    ) -> F: ...
+
+    @overload
+    def job(
+        self,
+        fn_to_decorate: None = ...,
+        *,
+        retry: RetryPolicy | None = ...,
+    ) -> Callable[[F], F]: ...
+
+    def job(
+        self,
+        fn_to_decorate: F | None = None,
+        *,
+        retry: RetryPolicy | None = None,
+    ) -> F | Callable[[F], F]:
+        """Register a background job handler executed by the runtime worker."""
+
+        def decorator(fn: F) -> F:
+            setattr(fn, "__skaal_job__", JobSpec(name=fn.__name__, retry=retry))
+            self._jobs[fn.__name__] = fn
+            return fn
+
+        if fn_to_decorate is None:
+            return decorator
+        return decorator(fn_to_decorate)
+
+    async def enqueue(
+        self,
+        job: str | Callable[..., Any],
+        *args: Any,
+        delay: Duration | str | None = None,
+        run_at: datetime | None = None,
+        idempotency_key: str | None = None,
+        **kwargs: Any,
+    ) -> JobHandle:
+        """Queue a registered background job on the active runtime."""
+        job_name, _ = self._resolve_job(job)
+        runtime = self._require_runtime()
+        return await runtime.enqueue_job(
+            job_name,
+            *args,
+            delay=delay,
+            run_at=run_at,
+            idempotency_key=idempotency_key,
+            **kwargs,
+        )
 
     def channel(
         self,
@@ -640,6 +699,8 @@ class Module:
             result[f"{prefix}{name}"] = obj
         for name, obj in self._functions.items():
             result[f"{prefix}{name}"] = obj
+        for name, obj in self._jobs.items():
+            result[f"{prefix}{name}"] = obj
         for name, obj in self._channels.items():
             result[f"{prefix}{name}"] = obj
         for name, obj in self._patterns.items():
@@ -688,6 +749,22 @@ class Module:
         for sub in self._submodules.values():
             _merge(sub._collect_secrets())
         return out
+
+    def _collect_jobs(self) -> dict[str, Any]:
+        """Recursively collect background job handlers, regardless of export status."""
+        result: dict[str, Any] = {}
+        prefix = f"{self.name}." if self.name else ""
+
+        for name, obj in self._jobs.items():
+            result[f"{prefix}{name}"] = obj
+
+        for ns, sub in self._submodules.items():
+            sub_prefix = f"{prefix}{ns}." if ns else prefix
+            for qname, obj in sub._collect_jobs().items():
+                bare = qname[len(sub.name) + 1 :] if qname.startswith(sub.name + ".") else qname
+                result[f"{sub_prefix}{bare}"] = obj
+
+        return result
 
     def _bind_runtime(self, runtime: Any) -> None:
         self._runtime_ref = weakref.ref(runtime)
@@ -760,6 +837,24 @@ class Module:
 
         raise KeyError(f"Callable {fn!r} is not registered with module {self.name!r}")
 
+    def _resolve_job(self, job: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        jobs = self._collect_jobs()
+
+        if isinstance(job, str):
+            direct = jobs.get(job)
+            if direct is not None:
+                return job, direct
+            for job_name, obj in jobs.items():
+                if getattr(obj, "__name__", None) == job:
+                    return job_name, obj
+            raise KeyError(f"No job named {job!r}")
+
+        for job_name, obj in jobs.items():
+            if obj is job:
+                return job_name, obj
+
+        raise KeyError(f"Callable {job!r} is not registered as a job on module {self.name!r}")
+
     # ── Introspection ──────────────────────────────────────────────────────
 
     def describe(self) -> dict[str, Any]:
@@ -769,6 +864,7 @@ class Module:
             "storage": list(self._storage.keys()),
             "agents": list(self._agents.keys()),
             "functions": list(self._functions.keys()),
+            "jobs": list(self._jobs.keys()),
             "channels": list(self._channels.keys()),
             "patterns": list(self._patterns.keys()),
             "schedules": list(self._schedules.keys()),

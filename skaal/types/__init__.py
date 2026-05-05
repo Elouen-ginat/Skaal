@@ -58,6 +58,7 @@ from skaal.types.deploy import (
 )
 from skaal.types.duration import TTL, Duration, Retention
 from skaal.types.invoke import BeforeInvoke, InvokeContext, StreamFn
+from skaal.types.job import JobHandle, JobResult, JobSpec, JobStatus
 from skaal.types.observability import (
     EngineTelemetrySnapshot,
     HeaderMap,
@@ -157,6 +158,10 @@ __all__ = [
     "EngineTelemetrySnapshot",
     "ReadinessState",
     "HeaderMap",
+    "JobHandle",
+    "JobResult",
+    "JobSpec",
+    "JobStatus",
     # invoke
     "BeforeInvoke",
     "InvokeContext",

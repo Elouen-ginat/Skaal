@@ -6,13 +6,37 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 import traceback
 from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from rq import Queue
+from rq.serializers import JSONSerializer
+
 from skaal.backends.local_backend import LocalMap
 from skaal.runtime.base import _SKAAL_INVOKE_PREFIX, BaseRuntime
+from skaal.runtime.jobs import (
+    JobWorkerTelemetry,
+    build_rq_retry,
+    build_worker,
+    close_job_connection,
+    default_job_connection,
+    ensure_json_payload,
+    failed_registry,
+    job_handle_from_rq_job,
+    job_queue_name,
+    normalize_scheduled_for,
+    promote_scheduled_jobs,
+    register_runtime,
+    scheduled_registry,
+    unique_job_id,
+    unregister_runtime,
+    utc_now,
+)
+from skaal.types import Duration, JobHandle, JobSpec
 
 if TYPE_CHECKING:
     import httpx
@@ -66,8 +90,10 @@ class LocalRuntime(BaseRuntime):
         telemetry_runtime: "RuntimeTelemetry | None" = None,
         auth_http_client: "httpx.AsyncClient | None" = None,
         kv_backend_factory: Callable[[str], Any] | None = None,
+        job_connection: Any | None = None,
     ) -> None:
         self._kv_backend_factory = kv_backend_factory or (lambda _namespace: LocalMap())
+        self._job_connection_override = job_connection
         self.sagas: dict[str, Any] = {}
         super().__init__(
             app,
@@ -78,11 +104,52 @@ class LocalRuntime(BaseRuntime):
             telemetry_runtime=telemetry_runtime,
             auth_http_client=auth_http_client,
         )
+        self._schedule_autostart()
 
     def _initialize_runtime_state(self) -> None:
         self._agent_backends: dict[str, Any] = {}
         self._agent_routes = self._collect_agents()
         self._agent_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._job_handlers = self._collect_jobs()
+        self._job_connection: Any | None = None
+        self._job_queue: Queue | None = None
+        self._job_loop: asyncio.AbstractEventLoop | None = None
+        self._job_runtime_token = f"skaal-runtime:{self.app.name}"
+        self._job_stop = asyncio.Event()
+        self._job_task: asyncio.Task[None] | None = None
+        self._job_telemetry = JobWorkerTelemetry()
+        self._autostart_task: asyncio.Task[None] | None = None
+        self._background_jobs_thread_started = False
+        self._job_worker_start_suppressed = False
+
+    def _schedule_autostart(self) -> None:
+        if self._started or self._autostart_task is not None:
+            return
+        if not self._has_pending_job_work():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._autostart_task = loop.create_task(
+            self.ensure_started(),
+            name=f"skaal-runtime-start:{self.app.name}",
+        )
+        self._autostart_task.add_done_callback(self._finalize_autostart)
+
+    def _finalize_autostart(self, task: asyncio.Task[None]) -> None:
+        self._autostart_task = None
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            log.warning("[skaal/runtime] background startup failed: %s", exc)
+
+    def _has_pending_job_work(self) -> bool:
+        if not self._job_handlers:
+            return False
+        queue = self._job_queue_instance()
+        return len(queue) > 0 or len(scheduled_registry(queue)) > 0
 
     def _default_kv_backend(self, namespace: str) -> Any:
         return self._kv_backend_factory(namespace)
@@ -112,6 +179,11 @@ class LocalRuntime(BaseRuntime):
             "endpoints": [
                 {"path": f"{_SKAAL_INVOKE_PREFIX}{name}", "function": name} for name in public
             ],
+            "jobs": sorted(
+                name
+                for name, (qualified_name, _) in self._job_handlers.items()
+                if name == qualified_name
+            ),
             "agents": [
                 {
                     "path": f"{_SKAAL_AGENT_PREFIX}{name}/{{identity}}/{{handler}}",
@@ -123,6 +195,21 @@ class LocalRuntime(BaseRuntime):
             ],
             "storage": list(self.stores.keys()),
         }
+
+    def _augment_readiness_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._job_handlers:
+            return payload
+        payload["jobs"] = {
+            "registered_jobs": sorted(
+                name
+                for name, (qualified_name, _) in self._job_handlers.items()
+                if name == qualified_name
+            ),
+            "worker_running": self._job_task is not None and not self._job_task.done(),
+            "queue_depth": self._job_queue_depth(),
+            "failed_jobs": self._job_failed_count(),
+        }
+        return payload
 
     async def _dispatch_extra_post(
         self,
@@ -165,12 +252,34 @@ class LocalRuntime(BaseRuntime):
             return {"error": str(exc), "traceback": traceback.format_exc()}, 500, exc
 
     async def _close_extra_resources(self) -> None:
-        import contextlib
+        if self._autostart_task is not None and not self._autostart_task.done():
+            self._autostart_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._autostart_task
+        self._autostart_task = None
+
+        self._job_stop.set()
+        if self._job_task is not None:
+            self._job_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._job_task
+            self._job_task = None
+        unregister_runtime(self._job_runtime_token)
+
+        if self._job_connection is not None:
+            with suppress(Exception):
+                await close_job_connection(self._job_connection)
+            self._job_connection = None
+        self._job_queue = None
 
         for backend in self._agent_backends.values():
-            with contextlib.suppress(Exception):
+            with suppress(Exception):
                 await backend.close()
         self._agent_backends.clear()
+
+    async def _start_engines(self) -> None:
+        await super()._start_engines()
+        await self._start_job_worker()
 
     # ── Factory methods ────────────────────────────────────────────────────────
 
@@ -428,6 +537,20 @@ class LocalRuntime(BaseRuntime):
         """Flat map of name → callable for all ``@app.schedule()`` functions."""
         return dict(getattr(self.app, "_schedules", {}))
 
+    def _collect_jobs(self) -> dict[str, tuple[str, Any]]:
+        jobs: dict[str, tuple[str, Any]] = {}
+        short_names: dict[str, list[str]] = {}
+        for qname, obj in self.app._collect_jobs().items():
+            jobs[qname] = (qname, obj)
+            short_names.setdefault(getattr(obj, "__name__", qname), []).append(qname)
+
+        for short_name, qualified_names in short_names.items():
+            if len(qualified_names) == 1:
+                qualified_name = qualified_names[0]
+                jobs[short_name] = jobs[qualified_name]
+
+        return jobs
+
     def _collect_agents(self) -> dict[str, tuple[str, type[Any]]]:
         agents: dict[str, tuple[str, type[Any]]] = {}
         short_names: dict[str, list[str]] = {}
@@ -493,6 +616,205 @@ class LocalRuntime(BaseRuntime):
         if not isinstance(raw_state, dict):
             raise TypeError("Persisted agent state must be a JSON object")
         return raw_state
+
+    def _job_queue_connection(self) -> Any:
+        if self._job_connection is None:
+            self._job_connection = self._job_connection_override or default_job_connection(
+                self.app.name
+            )
+        return self._job_connection
+
+    def _job_queue_instance(self) -> Queue:
+        if self._job_queue is None:
+            self._job_queue = Queue(
+                job_queue_name(self.app.name),
+                connection=self._job_queue_connection(),
+                serializer=JSONSerializer,
+            )
+        return self._job_queue
+
+    def _job_worker_instance(self) -> Any:
+        return build_worker(self._job_queue_instance(), self._job_queue_connection())
+
+    def _job_queue_depth(self) -> int:
+        if self._job_queue is None:
+            return 0
+        return len(self._job_queue) + len(scheduled_registry(self._job_queue))
+
+    def _job_failed_count(self) -> int:
+        if self._job_queue is None:
+            return 0
+        return len(failed_registry(self._job_queue))
+
+    async def _start_job_worker(self) -> None:
+        if self._job_worker_start_suppressed:
+            return
+        if not self._job_handlers or self._job_task is not None:
+            return
+        self._job_loop = asyncio.get_running_loop()
+        self._job_queue_instance()
+        self._job_worker_instance()
+        register_runtime(self._job_runtime_token, self)
+        self._job_stop = asyncio.Event()
+        self._job_task = asyncio.create_task(
+            self._job_worker_loop(),
+            name=f"skaal-jobs:{self.app.name}",
+        )
+
+    async def enqueue_job(
+        self,
+        job_name: str,
+        *args: Any,
+        delay: Duration | str | None = None,
+        run_at: Any | None = None,
+        idempotency_key: str | None = None,
+        **kwargs: Any,
+    ) -> JobHandle:
+        await self.ensure_started()
+
+        resolved = self._job_handlers.get(job_name)
+        if resolved is None:
+            raise KeyError(f"No job {job_name!r}. Available: {sorted(self._job_handlers)}")
+
+        qualified_name, fn = resolved
+        spec = cast(JobSpec, getattr(fn, "__skaal_job__"))
+        scheduled_for = normalize_scheduled_for(delay=delay, run_at=run_at)
+        normalized_args, normalized_kwargs = ensure_json_payload(args=args, kwargs=kwargs)
+        queue = self._job_queue_instance()
+        retry = build_rq_retry(spec.retry)
+        job_id = unique_job_id(qualified_name, idempotency_key) if idempotency_key else None
+        if job_id is not None:
+            existing = queue.fetch_job(job_id)
+            if existing is not None:
+                return job_handle_from_rq_job(existing, fallback_scheduled_for=scheduled_for)
+        enqueue_kwargs: dict[str, Any] = {
+            "description": qualified_name,
+            "retry": retry,
+            "result_ttl": 3600,
+            "failure_ttl": 86400,
+        }
+        if job_id is not None:
+            enqueue_kwargs["job_id"] = job_id
+
+        if scheduled_for <= utc_now():
+            job = queue.enqueue(
+                "skaal.runtime.jobs.execute_registered_job",
+                self._job_runtime_token,
+                qualified_name,
+                normalized_args,
+                normalized_kwargs,
+                **enqueue_kwargs,
+            )
+        else:
+            job = queue.enqueue_at(
+                scheduled_for,
+                "skaal.runtime.jobs.execute_registered_job",
+                self._job_runtime_token,
+                qualified_name,
+                normalized_args,
+                normalized_kwargs,
+                **enqueue_kwargs,
+            )
+
+        job.meta.setdefault("scheduled_for", scheduled_for.isoformat())
+        job.meta.setdefault("skaal_job_name", qualified_name)
+        job.save_meta()
+        if scheduled_for <= utc_now():
+            self._kick_remote_job_worker()
+        return job_handle_from_rq_job(job, fallback_scheduled_for=scheduled_for)
+
+    def _kick_remote_job_worker(self) -> None:
+        worker_function = os.getenv("SKAAL_JOBS_WORKER_FUNCTION")
+        if not worker_function:
+            return
+        try:
+            import boto3
+        except ImportError:
+            log.warning("[skaal/jobs] boto3 is not available; cannot invoke AWS jobs worker")
+            return
+        try:
+            boto3.client("lambda").invoke(
+                FunctionName=worker_function,
+                InvocationType="Event",
+                Payload=b'{"source":"skaal-jobs-enqueue"}',
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[skaal/jobs] failed to invoke remote jobs worker: %s", exc)
+
+    async def run_job_worker_burst(self, *, max_jobs: int = 10) -> int:
+        if not self._job_handlers:
+            return 0
+
+        if not self._started:
+            self._job_worker_start_suppressed = True
+            try:
+                await self.ensure_started()
+            finally:
+                self._job_worker_start_suppressed = False
+
+        self._job_loop = asyncio.get_running_loop()
+        queue = self._job_queue_instance()
+        connection = self._job_queue_connection()
+        transient_registration = self._job_task is None
+        if transient_registration:
+            register_runtime(self._job_runtime_token, self)
+        try:
+            promote_scheduled_jobs(queue, connection)
+            queue_depth = self._job_queue_depth()
+            self._job_telemetry.queued = queue_depth
+            self._job_telemetry.failed = self._job_failed_count()
+            self._job_telemetry.last_tick_at = utc_now()
+            ready_jobs = len(queue)
+            if ready_jobs <= 0:
+                return 0
+
+            self._job_telemetry.running = 1
+            await asyncio.to_thread(
+                self._job_worker_instance().work,
+                burst=True,
+                max_jobs=max_jobs,
+            )
+            remaining_jobs = len(queue)
+            return max(0, ready_jobs - remaining_jobs)
+        finally:
+            self._job_telemetry.running = 0
+            if transient_registration:
+                unregister_runtime(self._job_runtime_token)
+
+    async def _job_worker_loop(self) -> None:
+        while not self._job_stop.is_set():
+            try:
+                queue = self._job_queue_instance()
+                promote_scheduled_jobs(queue, self._job_queue_connection())
+                queue_depth = self._job_queue_depth()
+                self._job_telemetry.queued = queue_depth
+                self._job_telemetry.failed = self._job_failed_count()
+                self._job_telemetry.last_tick_at = utc_now()
+                if len(queue) > 0:
+                    self._job_telemetry.running = 1
+                    await asyncio.to_thread(
+                        self._job_worker_instance().work,
+                        burst=True,
+                        max_jobs=1,
+                    )
+                    self._job_telemetry.running = 0
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[skaal/jobs] worker tick failed: %s", exc)
+                self._job_telemetry.running = 0
+            try:
+                await asyncio.wait_for(self._job_stop.wait(), timeout=0.05)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _invoke_registered_job(self, job_name: str, *args: Any, **kwargs: Any) -> Any:
+        resolved = self._job_handlers.get(job_name)
+        if resolved is None:
+            raise KeyError(f"No job {job_name!r}. Available: {sorted(self._job_handlers)}")
+        _, fn = resolved
+        result = fn(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     async def invoke_agent(
         self,
@@ -841,6 +1163,40 @@ class LocalRuntime(BaseRuntime):
             loop.run_forever()
 
         thread = threading.Thread(target=_run, daemon=True, name="skaal-scheduler")
+        thread.start()
+
+    def start_background_jobs(self) -> None:
+        """Start the jobs worker in a daemon thread for WSGI / gunicorn deployments.
+
+        WSGI artifacts do not call ``serve()``, so delayed jobs would otherwise
+        remain idle after container start until something else explicitly starts
+        the runtime. This mirrors ``start_background_scheduler()`` for the jobs
+        worker path.
+        """
+        import threading
+
+        if self._background_jobs_thread_started or not self._job_handlers:
+            return
+        self._background_jobs_thread_started = True
+
+        def _run() -> None:
+            import asyncio as _asyncio
+
+            loop = _asyncio.new_event_loop()
+            _asyncio.set_event_loop(loop)
+
+            async def _bootstrap() -> None:
+                try:
+                    await self.ensure_started()
+                    log.info("[skaal/jobs] started background worker for %s", self.app.name)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("[skaal/jobs] background worker failed to start: %s", exc)
+                    loop.stop()
+
+            loop.create_task(_bootstrap())
+            loop.run_forever()
+
+        thread = threading.Thread(target=_run, daemon=True, name="skaal-jobs")
         thread.start()
 
     async def _serve_wsgi(self, wsgi_app: Any) -> None:

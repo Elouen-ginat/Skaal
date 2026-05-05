@@ -53,15 +53,18 @@ Plan for AWS:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Coroutine, Mapping
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Field as SqlField
 from sqlmodel import SQLModel, select
 
@@ -92,6 +95,7 @@ logger = logging.getLogger(__name__)
 
 Priority = Literal["low", "medium", "high", "critical"]
 TaskStatus = Literal["open", "in_progress", "done", "cancelled"]
+BackgroundJobState = Literal["queued", "running", "succeeded", "failed"]
 
 
 class User(BaseModel):
@@ -160,6 +164,65 @@ class TaskSearchDocument(BaseModel):
     status: str = "open"
 
 
+class BackgroundJobRecord(BaseModel):
+    """Queue-backed job state rendered directly in the dashboard UI."""
+
+    id: str
+    task_id: str
+    task_title: str | None = None
+    job_id: str | None = None
+    job_name: str = "task-dashboard.process_task_digest"
+    requested_by: str | None = None
+    status: BackgroundJobState = "queued"
+    requested_delay: str | None = None
+    message: str = "Queued"
+    result_summary: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    scheduled_for: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    completed_at: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_record(cls, value: Any) -> Any:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            return value
+
+        data = dict(value)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        payload = data.get("payload")
+        payload_data = payload if isinstance(payload, Mapping) else {}
+        result = data.get("result")
+        result_data = result if isinstance(result, Mapping) else {}
+        queue_id = str(data.get("id") or data.get("job_id") or uuid.uuid4())
+        task_id = str(
+            data.get("task_id")
+            or payload_data.get("task_id")
+            or result_data.get("task_id")
+            or queue_id
+        )
+        status = str(data.get("status") or "queued")
+        if status not in {"queued", "running", "succeeded", "failed"}:
+            status = "queued"
+
+        data.setdefault("id", queue_id)
+        data.setdefault("task_id", task_id)
+        data.setdefault("task_title", data.get("title") or data.get("task_name"))
+        data.setdefault("job_name", "task-dashboard.process_task_digest")
+        data.setdefault("message", data.get("error") or data.get("message") or "Queued")
+        data.setdefault("created_at", timestamp)
+        data.setdefault("scheduled_for", data.get("created_at") or timestamp)
+        data["status"] = status
+
+        if data.get("result_summary") is None:
+            if isinstance(result, str):
+                data["result_summary"] = result
+
+        return data
+
+
 # ── Skaal app declaration ─────────────────────────────────────────────────────
 
 skaal_app = App("task-dashboard")
@@ -216,6 +279,16 @@ class Tasks(Store[Task]):
 )
 class Stats(Store[StatsView]):
     """Aggregated counters rebuilt on every task mutation."""
+
+
+@skaal_app.storage(
+    read_latency="< 10ms",
+    durability="persistent",
+    access_pattern="random-read",
+    collocate_with="task-dashboard.Tasks",
+)
+class BackgroundJobs(Store[BackgroundJobRecord]):
+    """Small read-model for queued background job work and its outcomes."""
 
 
 # ── Event log ─────────────────────────────────────────────────────────────────
@@ -414,6 +487,20 @@ async def _sync_task_search(task: Task) -> None:
     """Upsert a task document in the vector index."""
     await TaskSearchIndex.delete([task.id])
     await TaskSearchIndex.add([_task_to_search_doc(task)])
+
+
+def _task_digest_summary(task: Task, owner_name: str | None) -> str:
+    next_action = {
+        "critical": "Escalate immediately and assign an owner in this sprint.",
+        "high": "Move it into active execution and confirm blockers today.",
+        "medium": "Schedule the next concrete step and keep it visible in the backlog.",
+        "low": "Keep it parked until higher-priority work is cleared.",
+    }[task.priority]
+    owner_fragment = f"Owner: {owner_name}." if owner_name else "Owner: unassigned."
+    return (
+        f"{task.title} is {task.priority} priority and currently {task.status}. "
+        f"{owner_fragment} {next_action}"
+    )
 
 
 # ── Compute functions ─────────────────────────────────────────────────────────
@@ -617,6 +704,105 @@ async def search_tasks(query: str, k: int = 5, status: TaskStatus | None = None)
     return {"tasks": tasks, "count": len(tasks)}
 
 
+@skaal_app.job(retry=RetryPolicy(max_attempts=2, backoff="linear", base_delay_ms=250))
+async def process_task_digest(queue_id: str) -> None:
+    """Generate a short async digest for a task and persist the result for the UI."""
+    record = await BackgroundJobs.get(queue_id)
+    if record is None:
+        return
+
+    record.status = "running"
+    record.started_at = datetime.now(timezone.utc).isoformat()
+    record.message = "Generating task digest"
+    await BackgroundJobs.set(queue_id, record)
+
+    task = await Tasks.get(record.task_id)
+    if task is None:
+        record.status = "failed"
+        record.completed_at = datetime.now(timezone.utc).isoformat()
+        record.message = "Task not found"
+        await BackgroundJobs.set(queue_id, record)
+        return
+
+    await asyncio.sleep(0.25)
+
+    owner_name: str | None = None
+    if task.owner_id:
+        owner = await Users.get(task.owner_id)
+        owner_name = owner.name if owner is not None else None
+
+    summary = _task_digest_summary(task, owner_name)
+    record.task_title = task.title
+    record.status = "succeeded"
+    record.completed_at = datetime.now(timezone.utc).isoformat()
+    record.message = "Digest ready"
+    record.result_summary = summary
+    await BackgroundJobs.set(queue_id, record)
+    await _record_audit(
+        AuditEvent(
+            event_type="background_digest_completed",
+            task_id=task.id,
+            user_id=record.requested_by,
+            payload={"queue_id": queue_id, "job_id": record.job_id, "summary": summary},
+        )
+    )
+
+
+async def enqueue_task_digest(
+    task_id: str,
+    *,
+    requested_by: str | None = None,
+    delay: str | None = None,
+) -> BackgroundJobRecord:
+    """Create a queue record and enqueue the background digest job."""
+    task = await Tasks.get(task_id)
+    if task is None:
+        raise ValueError(f"Task {task_id!r} not found")
+
+    queue_id = str(uuid.uuid4())
+    record = BackgroundJobRecord(
+        id=queue_id,
+        task_id=task_id,
+        task_title=task.title,
+        requested_by=requested_by,
+        requested_delay=delay,
+        message="Queued digest job",
+    )
+    await BackgroundJobs.set(queue_id, record)
+
+    handle = await skaal_app.enqueue(process_task_digest, queue_id, delay=delay)
+    record.job_id = handle.job_id
+    record.job_name = handle.job_name
+    record.scheduled_for = handle.scheduled_for.isoformat()
+    record.message = "Scheduled" if delay else "Queued and waiting for worker"
+    await BackgroundJobs.set(queue_id, record)
+    return record
+
+
+def _run_runtime_awaitable(awaitable: Coroutine[Any, Any, Any]) -> Any:
+    """Run runtime-bound async work on the active runtime loop when available."""
+    try:
+        runtime = skaal_app._require_runtime()
+    except RuntimeError:
+        return sync_run(awaitable)
+
+    deadline = time.monotonic() + 1.0
+    loop = getattr(runtime, "_job_loop", None)
+    while getattr(runtime, "_background_jobs_thread_started", False) and (
+        loop is None or loop.is_closed() or not loop.is_running()
+    ):
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
+        loop = getattr(runtime, "_job_loop", None)
+
+    if loop is None or loop.is_closed() or not loop.is_running():
+        return sync_run(awaitable)
+
+    future = asyncio.run_coroutine_threadsafe(awaitable, loop)
+    return future.result()
+
+
 # ── Internal helper (not exposed as a Skaal function) ────────────────────────
 
 
@@ -739,6 +925,13 @@ STATUS_COLORS = {
     "cancelled": "secondary",
 }
 
+JOB_STATUS_COLORS = {
+    "queued": "secondary",
+    "running": "info",
+    "succeeded": "success",
+    "failed": "danger",
+}
+
 
 def _stat_card(title: str, value: str | int, color: str = "primary") -> dbc.Card:
     return dbc.Card(
@@ -833,6 +1026,41 @@ def _task_row(task: dict, users: list[dict]) -> dbc.ListGroupItem:
             ],
             align="center",
         ),
+    )
+
+
+def _background_job_row(job: BackgroundJobRecord) -> dbc.ListGroupItem:
+    title = job.task_title or job.task_id
+    detail = [
+        f"task={job.task_id[:8]}..." if len(job.task_id) > 8 else f"task={job.task_id}",
+        f"scheduled={job.scheduled_for[:19]}",
+    ]
+    if job.completed_at:
+        detail.append(f"completed={job.completed_at[:19]}")
+    return dbc.ListGroupItem(
+        [
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Strong(title),
+                            html.Div(" · ".join(detail), className="text-muted small"),
+                            html.Div(job.message, className="small mt-1"),
+                        ],
+                        width=9,
+                    ),
+                    dbc.Col(
+                        dbc.Badge(job.status, color=JOB_STATUS_COLORS[job.status]),
+                        width=3,
+                        className="text-end",
+                    ),
+                ],
+                align="center",
+            ),
+            html.Div(job.result_summary, className="small text-muted mt-2")
+            if job.result_summary
+            else None,
+        ]
     )
 
 
@@ -1164,6 +1392,43 @@ dash_app.layout = dbc.Container(
                                         className="mb-2 align-items-center",
                                     ),
                                     html.Div(id="schedule-trigger-result", className="mt-2"),
+                                ]
+                            ),
+                            className="mb-3",
+                        ),
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H6("Background Job Queue", className="card-title"),
+                                    html.P(
+                                        "Queue async task digests with the Skaal jobs API. "
+                                        "Copy a task ID from the board and enqueue immediate or delayed work.",
+                                        className="text-muted small",
+                                    ),
+                                    dbc.Input(
+                                        id="inp-background-task-id",
+                                        placeholder="Task ID",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Select(
+                                        id="inp-background-delay",
+                                        options=[
+                                            {"label": "Run immediately", "value": ""},
+                                            {"label": "Delay 2 seconds", "value": "2s"},
+                                            {"label": "Delay 10 seconds", "value": "10s"},
+                                        ],
+                                        value="",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Queue Digest Job",
+                                        id="btn-queue-digest",
+                                        color="dark",
+                                        className="w-100",
+                                    ),
+                                    html.Div(id="background-job-feedback", className="mt-2"),
+                                    html.Hr(),
+                                    html.Div(id="background-job-list"),
                                 ]
                             ),
                             className="mb-3",
@@ -1688,6 +1953,62 @@ def trigger_scheduled_job(*_):
         return dbc.Alert(f"Error: {exc}", color="danger")
 
     return dash.no_update
+
+
+@callback(
+    Output("background-job-feedback", "children"),
+    Output("action-result", "data", allow_duplicate=True),
+    Input("btn-queue-digest", "n_clicks"),
+    State("inp-background-task-id", "value"),
+    State("inp-background-delay", "value"),
+    State("session-id", "data"),
+    prevent_initial_call=True,
+)
+def handle_background_job_enqueue(_, task_id, delay, session_id):
+    """Queue a digest job for the selected task and persist the queue metadata."""
+    if not task_id:
+        return dbc.Alert("Task ID is required.", color="warning"), dash.no_update
+
+    try:
+        record = _run_runtime_awaitable(
+            enqueue_task_digest(task_id.strip(), requested_by=session_id, delay=delay or None)
+        )
+    except ValueError as exc:
+        return dbc.Alert(str(exc), color="warning"), dash.no_update
+    except Exception as exc:
+        return dbc.Alert(f"Queue error: {exc}", color="danger"), dash.no_update
+
+    scheduled = "now" if not record.requested_delay else record.scheduled_for[:19]
+    return (
+        dbc.Alert(
+            f"Queued digest job for '{record.task_title or record.task_id}' (scheduled {scheduled}).",
+            color="success",
+            duration=5000,
+        ),
+        {"op": "background-job-enqueue", "queue_id": record.id},
+    )
+
+
+@callback(
+    Output("background-job-list", "children"),
+    Input("main-tabs", "active_tab"),
+    Input("poll", "n_intervals"),
+    Input("action-result", "data"),
+)
+def refresh_background_jobs(active_tab, _, __):
+    """Render the newest queued background jobs for the system-health view."""
+    if active_tab != "tab-health":
+        return dash.no_update
+
+    listed_jobs = _run_runtime_awaitable(BackgroundJobs.list())
+    entries = sorted(
+        (job for _, job in listed_jobs),
+        key=lambda job: job.created_at,
+        reverse=True,
+    )[:8]
+    if not entries:
+        return dbc.ListGroup([dbc.ListGroupItem("No background jobs queued yet.", color="light")])
+    return dbc.ListGroup([_background_job_row(job) for job in entries])
 
 
 @callback(

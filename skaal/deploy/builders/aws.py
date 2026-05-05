@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from skaal.deploy.backends import get_handler
 from skaal.deploy.builders.apigw import add_aws_apigw_resources
-from skaal.deploy.builders.common import database_name, resource_slug
+from skaal.deploy.builders.common import app_has_jobs, database_name, resource_slug
 from skaal.deploy.config import DynamoDBDeployConfig, LambdaDeployConfig, RDSPostgresDeployConfig
 from skaal.deploy.secrets import AwsSecretInjector
 from skaal.types import AppLike, PulumiStack
@@ -31,9 +31,11 @@ _S3_ACTIONS = [
     "s3:DeleteObject",
     "s3:ListBucket",
 ]
+_LAMBDA_INVOKE_ACTIONS = ["lambda:InvokeFunction"]
 
 
 def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1") -> PulumiStack:
+    has_jobs = app_has_jobs(app)
     deploy = LambdaDeployConfig.model_validate(plan.deploy_config)
     config: dict[str, Any] = {
         "aws:region": {"type": "string", "default": region},
@@ -42,6 +44,10 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
         "lambdaRuntime": {"type": "string", "default": deploy.runtime},
         "lambdaArchitecture": {"type": "string", "default": deploy.architecture},
     }
+    if has_jobs:
+        config["jobsWorkerMaxBursts"] = {"type": "integer", "default": 5}
+        config["jobsWorkerMaxJobs"] = {"type": "integer", "default": 10}
+        config["jobsRedisNodeType"] = {"type": "string", "default": "cache.t4g.micro"}
 
     variables: dict[str, Any] = {}
     resources: dict[str, Any] = {}
@@ -51,7 +57,7 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
     db_outputs: dict[str, str] = {}
     has_dynamodb = any(spec.backend == "dynamodb" for spec in plan.storage.values())
     has_s3 = any(spec.backend == "s3" for spec in plan.storage.values())
-    needs_vpc = any(get_handler(spec).requires_vpc for spec in plan.storage.values())
+    needs_vpc = any(get_handler(spec).requires_vpc for spec in plan.storage.values()) or has_jobs
     s3_bucket_keys: list[str] = []
 
     if needs_vpc:
@@ -86,6 +92,59 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
                 "tags": {"skaal-app": app.name},
             },
         }
+
+    if has_jobs:
+        resources["jobs-redis-subnet-group"] = {
+            "type": "aws:elasticache:SubnetGroup",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-jobs",
+                "subnetIds": "${defaultSubnetIds}",
+                "description": f"Redis subnet group for Skaal jobs on {app.name}",
+            },
+        }
+        resources["jobs-redis-sg"] = {
+            "type": "aws:ec2:SecurityGroup",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-jobs-redis",
+                "description": "Redis access for Skaal background jobs",
+                "vpcId": "${defaultVpcId}",
+                "ingress": [
+                    {
+                        "protocol": "tcp",
+                        "fromPort": 6379,
+                        "toPort": 6379,
+                        "securityGroups": ["${lambda-sg.id}"],
+                    }
+                ],
+                "egress": [
+                    {
+                        "protocol": "-1",
+                        "fromPort": 0,
+                        "toPort": 0,
+                        "cidrBlocks": ["0.0.0.0/0"],
+                    }
+                ],
+                "tags": {"skaal-app": app.name, "skaal-component": "jobs-redis"},
+            },
+        }
+        resources["jobs-redis"] = {
+            "type": "aws:elasticache:ReplicationGroup",
+            "properties": {
+                "replicationGroupId": f"${{pulumi.stack}}-{resource_slug(app.name, max_len=20)}-jobs",
+                "description": f"Background jobs Redis for {app.name}",
+                "engine": "redis",
+                "engineVersion": "7.1",
+                "nodeType": "${jobsRedisNodeType}",
+                "numCacheClusters": 1,
+                "port": 6379,
+                "subnetGroupName": "${jobs-redis-subnet-group.name}",
+                "securityGroupIds": ["${jobs-redis-sg.id}"],
+                "atRestEncryptionEnabled": True,
+                "transitEncryptionEnabled": False,
+                "tags": {"skaal-app": app.name, "skaal-component": "jobs-redis"},
+            },
+        }
+        env_vars["SKAAL_JOBS_REDIS_URL"] = "redis://${jobs-redis.primaryEndpointAddress}:6379"
 
     for qualified_name, spec in plan.storage.items():
         class_name = qualified_name.split(".")[-1]
@@ -326,6 +385,34 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
         }
         lambda_depends_on.append("${lambda-secrets-attach}")
 
+    if has_jobs:
+        resources["jobs-worker-invoke-policy"] = {
+            "type": "aws:iam:Policy",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-jobs-worker-invoke",
+                "policy": {
+                    "fn::toJSON": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": _LAMBDA_INVOKE_ACTIONS,
+                                "Resource": "${jobs-worker-fn.arn}",
+                            }
+                        ],
+                    }
+                },
+            },
+        }
+        resources["jobs-worker-invoke-attach"] = {
+            "type": "aws:iam:RolePolicyAttachment",
+            "properties": {
+                "role": "${lambda-role.name}",
+                "policyArn": "${jobs-worker-invoke-policy.arn}",
+            },
+        }
+        lambda_depends_on.append("${jobs-worker-invoke-attach}")
+
     lambda_props: dict[str, Any] = {
         "name": f"${{pulumi.stack}}-{app.name}",
         "runtime": "${lambdaRuntime}",
@@ -337,6 +424,10 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
         "memorySize": "${lambdaMemoryMb}",
         "environment": {"variables": env_vars},
     }
+    if has_jobs:
+        lambda_props["environment"]["variables"]["SKAAL_JOBS_WORKER_FUNCTION"] = (
+            "${jobs-worker-fn.name}"
+        )
     if needs_vpc:
         lambda_props["vpcConfig"] = {
             "subnetIds": "${defaultSubnetIds}",
@@ -355,6 +446,59 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
         "properties": lambda_props,
         "options": {"dependsOn": lambda_depends_on},
     }
+
+    if has_jobs:
+        worker_env_vars = dict(env_vars)
+        worker_env_vars["SKAAL_JOBS_WORKER_MAX_BURSTS"] = "${jobsWorkerMaxBursts}"
+        worker_env_vars["SKAAL_JOBS_WORKER_MAX_JOBS"] = "${jobsWorkerMaxJobs}"
+        worker_props: dict[str, Any] = {
+            "name": f"${{pulumi.stack}}-{app.name}-jobs-worker",
+            "runtime": "${lambdaRuntime}",
+            "architectures": ["${lambdaArchitecture}"],
+            "handler": "worker.handler",
+            "role": "${lambda-role.arn}",
+            "code": {"fn::fileArchive": "./lambda_package"},
+            "timeout": "${lambdaTimeout}",
+            "memorySize": "${lambdaMemoryMb}",
+            "environment": {"variables": worker_env_vars},
+        }
+        if needs_vpc:
+            worker_props["vpcConfig"] = {
+                "subnetIds": "${defaultSubnetIds}",
+                "securityGroupIds": ["${lambda-sg.id}"],
+                "vpcId": "${defaultVpcId}",
+            }
+        resources["jobs-worker-fn"] = {
+            "type": "aws:lambda:Function",
+            "properties": worker_props,
+            "options": {"dependsOn": lambda_depends_on + ["${jobs-redis}"]},
+        }
+        resources["jobs-worker-rule"] = {
+            "type": "aws:events:Rule",
+            "properties": {
+                "name": f"${{pulumi.stack}}-{app.name}-jobs-worker",
+                "scheduleExpression": "rate(1 minute)",
+                "isEnabled": True,
+            },
+            "options": {"dependsOn": ["${jobs-worker-fn}"]},
+        }
+        resources["jobs-worker-target"] = {
+            "type": "aws:events:Target",
+            "properties": {
+                "rule": "${jobs-worker-rule.name}",
+                "arn": "${jobs-worker-fn.arn}",
+                "input": json.dumps({"_skaal_jobs_worker": True}),
+            },
+        }
+        resources["jobs-worker-permission"] = {
+            "type": "aws:lambda:Permission",
+            "properties": {
+                "action": "lambda:InvokeFunction",
+                "function": "${jobs-worker-fn.name}",
+                "principal": "events.amazonaws.com",
+                "sourceArn": "${jobs-worker-rule.arn}",
+            },
+        }
 
     add_aws_apigw_resources(app, plan, resources, config)
 
@@ -435,6 +579,7 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
     outputs: dict[str, str] = {
         "apiUrl": "${default-stage.invokeUrl}",
         "lambdaArn": "${lambda-fn.arn}",
+        **({"jobsWorkerArn": "${jobs-worker-fn.arn}"} if has_jobs else {}),
         **{f"bucket{k.capitalize()}": value for k, value in bucket_outputs.items()},
         **{f"table{k.capitalize()}": value for k, value in table_outputs.items()},
         **{f"dbEndpoint{k.capitalize()}": value for k, value in db_outputs.items()},

@@ -35,6 +35,8 @@ _RESOURCE_TYPES: dict[str, str] = {
     "aws:apigatewayv2:Stage": "aws:apigatewayv2/stage:Stage",
     "aws:dynamodb:Table": "aws:dynamodb/table:Table",
     "aws:ec2:SecurityGroup": "aws:ec2/securityGroup:SecurityGroup",
+    "aws:elasticache:ReplicationGroup": "aws:elasticache/replicationGroup:ReplicationGroup",
+    "aws:elasticache:SubnetGroup": "aws:elasticache/subnetGroup:SubnetGroup",
     "aws:events:Rule": "aws:cloudwatch/eventRule:EventRule",
     "aws:events:Target": "aws:cloudwatch/eventTarget:EventTarget",
     "aws:iam:Policy": "aws:iam/policy:Policy",

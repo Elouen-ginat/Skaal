@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from skaal.deploy.backends import get_handler
 from skaal.deploy.builders.apigw import add_gcp_api_gateway
-from skaal.deploy.builders.common import resource_slug
+from skaal.deploy.builders.common import app_has_jobs, resource_slug
 from skaal.deploy.config import (
     CloudRunDeployConfig,
     CloudSQLDeployConfig,
@@ -28,7 +28,8 @@ def build_pulumi_stack(
     stack_profile: StackProfile | None = None,
 ) -> PulumiStack:
     deploy = CloudRunDeployConfig.model_validate(plan.deploy_config)
-    needs_vpc = any(get_handler(spec).requires_vpc for spec in plan.storage.values())
+    has_jobs = app_has_jobs(app)
+    needs_vpc = any(get_handler(spec).requires_vpc for spec in plan.storage.values()) or has_jobs
 
     profile_env: dict[str, str] = (stack_profile or {}).get("env") or {}
     profile_invokers: list[str] = (stack_profile or {}).get("invokers") or []
@@ -43,6 +44,8 @@ def build_pulumi_stack(
         "cloudRunMinInstances": {"type": "integer", "default": deploy.min_instances},
         "cloudRunMaxInstances": {"type": "integer", "default": deploy.max_instances},
     }
+    if has_jobs:
+        config["jobsRedisSizeGb"] = {"type": "integer", "default": 1}
 
     for qualified_name, spec in plan.storage.items():
         class_name = qualified_name.split(".")[-1]
@@ -130,6 +133,20 @@ def build_pulumi_stack(
             container_envs.append(
                 {"name": env_var, "value": f"redis://${{{resource_key}.host}}:6379"}
             )
+
+    if has_jobs:
+        resources["jobs-redis"] = {
+            "type": "gcp:redis:Instance",
+            "properties": {
+                "tier": "BASIC",
+                "memorySizeGb": "${jobsRedisSizeGb}",
+                "region": "${gcp:region}",
+                "redisVersion": "REDIS_7_0",
+            },
+        }
+        container_envs.append(
+            {"name": "SKAAL_JOBS_REDIS_URL", "value": "redis://${jobs-redis.host}:6379"}
+        )
 
     secret_injector = GcpSecretInjector()
     sentinel = secret_injector.SECRET_SENTINEL

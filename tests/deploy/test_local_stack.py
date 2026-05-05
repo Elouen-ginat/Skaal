@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from skaal.components import APIGateway, Proxy, Route
+from skaal.deploy.backends.wiring import build_wiring
 from skaal.deploy.builders.local import build_pulumi_stack
 from skaal.deploy.targets.local import generate_artifacts
 from skaal.plan import PlanFile, StorageSpec
@@ -150,6 +151,32 @@ def test_generate_artifacts_writes_dockerignore(tmp_path: Path):
     generated_pyproject = (output_dir / "pyproject.toml").read_text(encoding="utf-8")
     assert '"skaal[serve,runtime]"' in generated_pyproject
     assert '"apscheduler>=3.10' not in generated_pyproject
+
+
+def test_local_build_namespaces_sqlite_kv_stores_even_without_wire_flag() -> None:
+    plan = PlanFile(
+        app_name="demo",
+        storage={
+            "demo.Tasks": StorageSpec(
+                variable_name="demo.Tasks",
+                backend="sqlite",
+                kind="kv",
+                wire_params={
+                    "class_name": "SqliteBackend",
+                    "module": "sqlite_backend",
+                    "env_prefix": "SKAAL_SQLITE_PATH",
+                },
+            )
+        },
+    )
+
+    imports, overrides = build_wiring(plan, local=True)
+
+    assert "from skaal.backends.sqlite_backend import SqliteBackend" in imports
+    assert (
+        '"Tasks": SqliteBackend(os.environ["SKAAL_SQLITE_PATH_TASKS"], namespace="Tasks"),'
+        in overrides
+    )
 
 
 def test_generate_artifacts_includes_declared_module_build_dependencies(tmp_path: Path):

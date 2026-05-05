@@ -120,6 +120,9 @@ def package_lambda(
         )
 
     shutil.copy2(artifacts_dir / "handler.py", package_dir / "handler.py")
+    worker_path = artifacts_dir / "worker.py"
+    if worker_path.exists():
+        shutil.copy2(worker_path, package_dir / "worker.py")
 
     top_package = source_module.split(".")[0]
     source_dir = project_root / top_package
