@@ -496,9 +496,7 @@ class AppRef(ExternalComponent):
             if url:
                 return url.rstrip("/")
         target = self.secret.env_var if self.secret else "<unset>"
-        raise RuntimeError(
-            f"AppRef {self.name!r}: set base_url= or the {target!r} env var."
-        )
+        raise RuntimeError(f"AppRef {self.name!r}: set base_url= or the {target!r} env var.")
 
     async def call(self, fn_name: str, **kwargs: Any) -> Any:
         """Call a function on the remote Skaal app via ``POST /{fn_name}``."""

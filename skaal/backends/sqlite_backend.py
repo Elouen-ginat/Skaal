@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, List, cast
@@ -68,11 +69,35 @@ class SqliteBackend:
                 key   TEXT NOT NULL,
                 ns    TEXT NOT NULL DEFAULT '',
                 value TEXT NOT NULL,
+                expires_at REAL,
                 PRIMARY KEY (ns, key)
             )
             """
         )
+        await self._ensure_ttl_schema()
         await self._db.commit()
+
+    async def _ensure_ttl_schema(self) -> None:
+        assert self._db is not None
+        async with self._db.execute("PRAGMA table_info(kv)") as cursor:
+            columns = {row[1] for row in await cursor.fetchall()}
+        if "expires_at" not in columns:
+            await self._db.execute("ALTER TABLE kv ADD COLUMN expires_at REAL")
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kv_ns_expires_at ON kv (ns, expires_at)"
+        )
+
+    def _expiry_deadline(self, ttl: float | None) -> float | None:
+        if ttl is None:
+            return None
+        return time.time() + ttl
+
+    async def _purge_expired(self) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            "DELETE FROM kv WHERE expires_at IS NOT NULL AND expires_at <= ?",
+            (time.time(),),
+        )
 
     async def _ensure_connected(self) -> None:
         if self._db is None:
@@ -95,22 +120,28 @@ class SqliteBackend:
     async def get(self, key: str) -> Any | None:
         await self._ensure_connected()
         async with self._db.execute(
-            "SELECT value FROM kv WHERE ns = ? AND key = ?",
-            (self.namespace, key),
+            (
+                "SELECT value FROM kv WHERE ns = ? AND key = ? "
+                "AND (expires_at IS NULL OR expires_at > ?)"
+            ),
+            (self.namespace, key, time.time()),
         ) as cursor:
             row = await cursor.fetchone()
         if row is None:
             return None
         return json.loads(row[0])
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         await self._ensure_connected()
+        await self._purge_expired()
         await self._db.execute(
             """
-            INSERT INTO kv (ns, key, value) VALUES (?, ?, ?)
-            ON CONFLICT (ns, key) DO UPDATE SET value = excluded.value
+            INSERT INTO kv (ns, key, value, expires_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT (ns, key) DO UPDATE SET
+                value = excluded.value,
+                expires_at = excluded.expires_at
             """,
-            (self.namespace, key, json.dumps(value)),
+            (self.namespace, key, json.dumps(value), self._expiry_deadline(ttl)),
         )
         await self._db.commit()
 
@@ -125,8 +156,11 @@ class SqliteBackend:
     async def list(self) -> list[tuple[str, Any]]:
         await self._ensure_connected()
         async with self._db.execute(
-            "SELECT key, value FROM kv WHERE ns = ?",
-            (self.namespace,),
+            (
+                "SELECT key, value FROM kv WHERE ns = ? "
+                "AND (expires_at IS NULL OR expires_at > ?) ORDER BY key"
+            ),
+            (self.namespace, time.time()),
         ) as cursor:
             rows = await cursor.fetchall()
         return [(row[0], json.loads(row[1])) for row in rows]
@@ -136,8 +170,8 @@ class SqliteBackend:
         limit = _normalize_limit(limit)
         decoded = _validate_cursor(cursor, mode="list")
         last_key = decoded.get("last_key")
-        query = "SELECT key, value FROM kv WHERE ns = ?"
-        params: list[Any] = [self.namespace]
+        query = "SELECT key, value FROM kv WHERE ns = ? AND (expires_at IS NULL OR expires_at > ?)"
+        params: list[Any] = [self.namespace, time.time()]
         if last_key is not None:
             query += " AND key > ?"
             params.append(last_key)
@@ -158,8 +192,11 @@ class SqliteBackend:
         # Escape LIKE wildcards to prevent injection: % and _ are special in LIKE
         escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         async with self._db.execute(
-            "SELECT key, value FROM kv WHERE ns = ? AND key LIKE ? ESCAPE '\\'",
-            (self.namespace, f"{escaped_prefix}%"),
+            (
+                "SELECT key, value FROM kv WHERE ns = ? AND key LIKE ? ESCAPE '\\' "
+                "AND (expires_at IS NULL OR expires_at > ?) ORDER BY key"
+            ),
+            (self.namespace, f"{escaped_prefix}%", time.time()),
         ) as cursor:
             rows = await cursor.fetchall()
         return [(row[0], json.loads(row[1])) for row in rows]
@@ -170,8 +207,11 @@ class SqliteBackend:
         decoded = _validate_cursor(cursor, mode="scan", extra={"prefix": prefix})
         last_key = decoded.get("last_key")
         escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        query = "SELECT key, value FROM kv WHERE ns = ? AND key LIKE ? ESCAPE '\\'"
-        params: list[Any] = [self.namespace, f"{escaped_prefix}%"]
+        query = (
+            "SELECT key, value FROM kv WHERE ns = ? AND key LIKE ? ESCAPE '\\' "
+            "AND (expires_at IS NULL OR expires_at > ?)"
+        )
+        params: list[Any] = [self.namespace, f"{escaped_prefix}%", time.time()]
         if last_key is not None:
             query += " AND key > ?"
             params.append(last_key)
@@ -212,8 +252,11 @@ class SqliteBackend:
         partition_path = f"$.{index.partition_key}"
 
         if index.sort_key is None:
-            query = "SELECT key, value FROM kv WHERE ns = ? AND json_extract(value, ?) = ?"
-            params: list[Any] = [self.namespace, partition_path, key]
+            query = (
+                "SELECT key, value FROM kv WHERE ns = ? AND json_extract(value, ?) = ? "
+                "AND (expires_at IS NULL OR expires_at > ?)"
+            )
+            params: list[Any] = [self.namespace, partition_path, key, time.time()]
             last_key = decoded.get("last_key")
             if last_key is not None:
                 query += " AND key > ?"
@@ -240,9 +283,10 @@ class SqliteBackend:
         sort_path = f"$.{index.sort_key}"
         query = (
             "SELECT key, value, json_extract(value, ?) AS sort_value "
-            "FROM kv WHERE ns = ? AND json_extract(value, ?) = ?"
+            "FROM kv WHERE ns = ? AND json_extract(value, ?) = ? "
+            "AND (expires_at IS NULL OR expires_at > ?)"
         )
-        params = [sort_path, self.namespace, partition_path, key]
+        params = [sort_path, self.namespace, partition_path, key, time.time()]
         if decoded.get("has_last_sort"):
             last_sort = decoded.get("last_sort")
             last_key = decoded.get("last_key")
@@ -295,8 +339,10 @@ class SqliteBackend:
 
             await self._db.execute(
                 """
-                INSERT INTO kv (ns, key, value) VALUES (?, ?, ?)
-                ON CONFLICT (ns, key) DO UPDATE SET value = excluded.value
+                INSERT INTO kv (ns, key, value, expires_at) VALUES (?, ?, ?, NULL)
+                ON CONFLICT (ns, key) DO UPDATE SET
+                    value = excluded.value,
+                    expires_at = excluded.expires_at
                 """,
                 (self.namespace, key, json.dumps(new_value)),
             )
@@ -306,7 +352,7 @@ class SqliteBackend:
             await self._db.rollback()
             raise
 
-    async def atomic_update(self, key: str, fn: Any) -> Any:
+    async def atomic_update(self, key: str, fn: Any, *, ttl: float | None = None) -> Any:
         """Atomically read, apply fn, write back, and return the result.
 
         Uses BEGIN IMMEDIATE to prevent concurrent writers — safe across
@@ -316,18 +362,23 @@ class SqliteBackend:
         await self._db.execute("BEGIN IMMEDIATE")
         try:
             async with self._db.execute(
-                "SELECT value FROM kv WHERE ns = ? AND key = ?",
-                (self.namespace, key),
+                (
+                    "SELECT value FROM kv WHERE ns = ? AND key = ? "
+                    "AND (expires_at IS NULL OR expires_at > ?)"
+                ),
+                (self.namespace, key, time.time()),
             ) as cursor:
                 row = await cursor.fetchone()
             current = json.loads(row[0]) if row else None
             updated = fn(current)
             await self._db.execute(
                 """
-                INSERT INTO kv (ns, key, value) VALUES (?, ?, ?)
-                ON CONFLICT (ns, key) DO UPDATE SET value = excluded.value
+                INSERT INTO kv (ns, key, value, expires_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT (ns, key) DO UPDATE SET
+                    value = excluded.value,
+                    expires_at = excluded.expires_at
                 """,
-                (self.namespace, key, json.dumps(updated)),
+                (self.namespace, key, json.dumps(updated), self._expiry_deadline(ttl)),
             )
             await self._db.commit()
             return updated

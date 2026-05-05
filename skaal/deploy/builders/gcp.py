@@ -15,7 +15,7 @@ from skaal.deploy.config import (
     MemorystoreRedisDeployConfig,
 )
 from skaal.deploy.secrets import GcpSecretInjector
-from skaal.types import AppLike, PulumiStack, StackProfile
+from skaal.types import AppLike, CloudRunEnvVar, PulumiStack, StackProfile
 
 if TYPE_CHECKING:
     from skaal.plan import PlanFile
@@ -72,7 +72,7 @@ def build_pulumi_stack(
     }
     bucket_outputs: dict[str, str] = {}
 
-    container_envs: list[dict[str, str]] = []
+    container_envs: list[CloudRunEnvVar] = []
     for qualified_name, spec in plan.storage.items():
         class_name = qualified_name.split(".")[-1]
         handler = get_handler(spec)
@@ -161,8 +161,7 @@ def build_pulumi_stack(
                 "secretId": secret_id,
                 "role": statement["role"],
                 "member": (
-                    "serviceAccount:${cloud-run-service.template[0].spec[0]"
-                    ".serviceAccountName}"
+                    "serviceAccount:${cloud-run-service.template[0].spec[0]" ".serviceAccountName}"
                 ),
             },
             "options": {"dependsOn": ["${cloud-run-service}"]},
@@ -171,7 +170,7 @@ def build_pulumi_stack(
     if profile_env:
         existing_idx = {entry["name"]: index for index, entry in enumerate(container_envs)}
         for name, value in profile_env.items():
-            entry = {"name": name, "value": value}
+            entry: CloudRunEnvVar = {"name": name, "value": value}
             if name in existing_idx:
                 container_envs[existing_idx[name]] = entry
             else:

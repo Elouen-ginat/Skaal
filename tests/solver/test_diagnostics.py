@@ -12,7 +12,7 @@ from skaal.solver.diagnostics import (
 )
 from skaal.solver.explain import render_diagnosis
 from skaal.solver.storage import select_backend
-from skaal.types import Latency, Violation
+from skaal.types import Duration, Latency, Retention, Violation
 
 
 @pytest.fixture
@@ -105,7 +105,9 @@ def test_categorical_violation_has_no_slack(storage_catalog):
         storage_catalog,
     )
     by_name = {r.backend_name: r for r in reports}
-    durability_violations = [v for v in by_name["local-map"].violations if v.constraint == "durability"]
+    durability_violations = [
+        v for v in by_name["local-map"].violations if v.constraint == "durability"
+    ]
     assert durability_violations
     assert durability_violations[0].slack is None
 
@@ -168,8 +170,20 @@ def test_unsatisfiable_back_compat_aliases():
 def test_compute_candidates_evaluation():
     """Compute UNSAT mirrors storage shape."""
     instance_types = {
-        "t3-micro": {"display_name": "t3.micro", "vcpus": 1, "memory_gb": 1, "compute_types": ["cpu"], "cost_per_hour": 0.01},
-        "c5-xlarge": {"display_name": "c5.xlarge", "vcpus": 4, "memory_gb": 8, "compute_types": ["cpu"], "cost_per_hour": 0.20},
+        "t3-micro": {
+            "display_name": "t3.micro",
+            "vcpus": 1,
+            "memory_gb": 1,
+            "compute_types": ["cpu"],
+            "cost_per_hour": 0.01,
+        },
+        "c5-xlarge": {
+            "display_name": "c5.xlarge",
+            "vcpus": 4,
+            "memory_gb": 8,
+            "compute_types": ["cpu"],
+            "cost_per_hour": 0.20,
+        },
     }
     reports = evaluate_compute_candidates({"memory": 16}, instance_types)
     by_name = {r.backend_name: r for r in reports}
@@ -183,3 +197,20 @@ def test_violation_dataclass_is_frozen():
     v = Violation(constraint="read_latency", requested="< 1ms", offered="≤ 5ms", slack=4.0)
     with pytest.raises(Exception):
         v.constraint = "x"  # type: ignore[misc]
+
+
+def test_retention_diagnostic_reports_ttl_capability() -> None:
+    reports = evaluate_storage_candidates(
+        {"retention": Retention(duration=Duration("1m"), policy="expire")},
+        {
+            "local": {
+                "display_name": "Local",
+                "storage_kinds": ["kv"],
+                "supports_ttl": False,
+                "cost_per_gb_month": 0.0,
+            }
+        },
+    )
+    violation = reports[0].violations[0]
+    assert violation.constraint == "retention"
+    assert violation.offered == "no"

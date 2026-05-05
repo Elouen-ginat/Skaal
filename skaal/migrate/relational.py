@@ -23,16 +23,20 @@ from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from skaal.migrate.engine import MigrationKind, state_dir
 from skaal.relational import get_backend, is_relational_model
 from skaal.types.relational import (
+    RelationalMigrationBackend,
     RelationalMigrationOp,
     RelationalMigrationPlan,
     RelationalMigrationStatus,
     RelationalMigrationStep,
+    RelationalModelType,
     RelationalRevision,
+    SupportsSqlalchemyDsn,
+    SupportsSqlalchemyUrl,
 )
 
 _ENV_PY = '''\
@@ -146,8 +150,8 @@ class _BackendGroup:
     """One resolved relational backend and the models that resolve to it."""
 
     name: str
-    backend: Any
-    models: list[type] = field(default_factory=list)
+    backend: RelationalMigrationBackend
+    models: list[RelationalModelType] = field(default_factory=list)
 
     @property
     def table_names(self) -> set[str]:
@@ -165,6 +169,18 @@ def _backend_class_short(backend: Any) -> str:
     return short or name.lower()
 
 
+def _as_relational_model(model: object) -> RelationalModelType:
+    if isinstance(model, type) and hasattr(model, "__tablename__"):
+        return cast(RelationalModelType, model)
+    raise TypeError(f"{model!r} is not a concrete relational model.")
+
+
+def _as_migration_backend(backend: object) -> RelationalMigrationBackend:
+    if isinstance(backend, SupportsSqlalchemyUrl | SupportsSqlalchemyDsn):
+        return backend
+    raise TypeError(f"{type(backend).__name__} does not expose a SQLAlchemy URL for migrations.")
+
+
 def _collect_groups(app: Any) -> list[_BackendGroup]:
     """Group registered relational SQLModels by *database*, not by backend instance.
 
@@ -177,7 +193,8 @@ def _collect_groups(app: Any) -> list[_BackendGroup]:
     for obj in app._collect_all().values():
         if not is_relational_model(obj):
             continue
-        backend = get_backend(obj)
+        model = _as_relational_model(obj)
+        backend = _as_migration_backend(get_backend(obj))
         base = _backend_class_short(backend)
         key = (base, _alembic_url(backend))
         group = seen.get(key)
@@ -191,7 +208,7 @@ def _collect_groups(app: Any) -> list[_BackendGroup]:
             group = _BackendGroup(name=label, backend=backend)
             groups.append(group)
             seen[key] = group
-        group.models.append(obj)
+        group.models.append(model)
     return groups
 
 
@@ -278,11 +295,11 @@ def downgrade() -> None:
 '''
 
 
-def _alembic_url(backend: Any) -> str:
+def _alembic_url(backend: RelationalMigrationBackend) -> str:
     """Return a SQLAlchemy URL string for *backend*'s relational engine."""
-    if hasattr(backend, "_sqlalchemy_url"):
+    if isinstance(backend, SupportsSqlalchemyUrl):
         return backend._sqlalchemy_url()
-    if hasattr(backend, "_sqlalchemy_dsn"):
+    if isinstance(backend, SupportsSqlalchemyDsn):
         return backend._sqlalchemy_dsn()
     raise TypeError(f"{type(backend).__name__} does not expose a SQLAlchemy URL for migrations.")
 

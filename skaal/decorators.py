@@ -14,6 +14,7 @@ from skaal.types import (
     DecommissionPolicy,
     Durability,
     Latency,
+    Retention,
     Scale,
     ScaleStrategy,
     SecondaryIndex,
@@ -31,6 +32,12 @@ def _coerce_enum(value: E | str | None, enum_type: type[E]) -> E | None:
     if value is None or isinstance(value, enum_type):
         return value
     return enum_type(value)
+
+
+def _coerce_retention(value: Retention | str | None) -> Retention | None:
+    if value is None or isinstance(value, Retention):
+        return value
+    return Retention.parse(value)
 
 
 def _apply_metadata(target: C, attribute: str, metadata: Any) -> C:
@@ -53,7 +60,7 @@ def _build_storage_metadata(
     access_pattern: AccessPattern | str,
     write_throughput: Throughput | str | None,
     residency: str | None,
-    retention: str | None,
+    retention: Retention | str | None,
     auto_optimize: bool,
     decommission_policy: DecommissionPolicy | None,
     collocate_with: str | None,
@@ -69,7 +76,7 @@ def _build_storage_metadata(
         "access_pattern": _coerce_enum(access_pattern, AccessPattern),
         "write_throughput": _coerce_enum(write_throughput, Throughput),
         "residency": residency,
-        "retention": retention,
+        "retention": _coerce_retention(retention),
         "auto_optimize": auto_optimize,
         "decommission_policy": decommission_policy,
         "collocate_with": collocate_with,
@@ -150,7 +157,7 @@ def storage(
     access_pattern: AccessPattern | str | None = None,
     write_throughput: Throughput | str | None = None,
     residency: str | None = None,
-    retention: str | None = None,
+    retention: Retention | str | None = None,
     auto_optimize: bool = False,
     decommission_policy: DecommissionPolicy | None = None,
     collocate_with: str | None = None,
@@ -171,7 +178,7 @@ def storage(
     access_pattern: AccessPattern | str | None = None,
     write_throughput: Throughput | str | None = None,
     residency: str | None = None,
-    retention: str | None = None,
+    retention: Retention | str | None = None,
     auto_optimize: bool = False,
     decommission_policy: DecommissionPolicy | None = None,
     collocate_with: str | None = None,
@@ -191,7 +198,7 @@ def storage(
     access_pattern: AccessPattern | str | None = None,
     write_throughput: Throughput | str | None = None,
     residency: str | None = None,
-    retention: str | None = None,
+    retention: Retention | str | None = None,
     auto_optimize: bool = False,
     decommission_policy: DecommissionPolicy | None = None,
     collocate_with: str | None = None,

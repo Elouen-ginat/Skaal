@@ -21,6 +21,7 @@ access_patterns = ["random-read", "random-write", "pub-sub", "event-log",
                    "append-only", "bulk-read", "transactional", "sequential",
                    "write-heavy", "worm"]
 cost_per_gb_month = 0.0
+supports_ttl = true
 notes = "Pure in-process Python dict. Used by LocalRuntime automatically."
 
 [storage.sqlite.wire]
@@ -38,6 +39,7 @@ max_size_gb   = 500
 storage_kinds = ["kv", "relational"]
 access_patterns = ["random-read", "random-write", "transactional", "sequential"]
 cost_per_gb_month = 0.0
+supports_ttl = true
 notes = "Persistent local storage via aiosqlite. Use `skaal run --persist`."
 
 [storage.local-redis.wire]
@@ -58,6 +60,7 @@ max_size_gb   = 0
 storage_kinds = ["kv"]
 access_patterns = ["random-read", "random-write", "pub-sub", "event-log"]
 cost_per_gb_month = 0.0
+supports_ttl = true
 notes = "Local Redis instance. Use `skaal run --redis redis://localhost:6379`."
 
 [storage.chroma-local.wire]

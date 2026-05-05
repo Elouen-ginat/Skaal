@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
@@ -73,6 +74,19 @@ class FirestoreBackend:
         ).decode("ascii")
         return f"{index_name}:{token}"
 
+    def _expiry_deadline(self, ttl: float | None) -> datetime | None:
+        if ttl is None:
+            return None
+        return datetime.now(timezone.utc) + timedelta(seconds=ttl)
+
+    def _is_expired_data(self, data: dict[str, Any] | None) -> bool:
+        if not data:
+            return False
+        expires_at = data.get("expires_at")
+        if expires_at is None:
+            return False
+        return expires_at <= datetime.now(timezone.utc)
+
     def _read_index_bucket(self, index_name: str, partition_key: Any) -> list[dict[str, Any]]:
         doc = self._idx_col().document(self._index_bucket_id(index_name, partition_key)).get()
         if not doc.exists:
@@ -131,15 +145,24 @@ class FirestoreBackend:
             doc = self._col().document(key).get()
             if not doc.exists:
                 return None
+            data = doc.to_dict()
+            if self._is_expired_data(data):
+                return None
             return json.loads(doc.get("value"))
 
         return await self._run(_get)
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         def _set() -> None:
             doc = self._col().document(key).get()
             old_value = json.loads(doc.get("value")) if doc.exists and doc.get("value") else None
-            self._col().document(key).set({"pk": key, "value": json.dumps(value)})
+            self._col().document(key).set(
+                {
+                    "pk": key,
+                    "value": json.dumps(value),
+                    "expires_at": self._expiry_deadline(ttl),
+                }
+            )
             self._sync_indexes(key, old_value, value)
 
         await self._run(_set)
@@ -171,7 +194,7 @@ class FirestoreBackend:
             last_key = decoded.get("last_key") if decoded else None
             if last_key is not None:
                 query = query.where("pk", ">", last_key)
-            docs = list(query.limit(limit + 1).stream())
+            docs = [doc for doc in query.stream() if not self._is_expired_data(doc.to_dict())]
             page_docs = docs[:limit]
             has_more = len(docs) > limit
             items = []
@@ -210,7 +233,7 @@ class FirestoreBackend:
                 )
             elif decoded and decoded.get("last_key"):
                 query = query.where("pk", ">", decoded["last_key"])
-            docs = list(query.limit(limit + 1).stream())
+            docs = [doc for doc in query.stream() if not self._is_expired_data(doc.to_dict())]
             page_docs = docs[:limit]
             has_more = len(docs) > limit
             items = []
@@ -245,13 +268,29 @@ class FirestoreBackend:
         def _query_index() -> Page[Any]:
             entries = self._read_index_bucket(index_name, key)
             offset = int(decoded.get("offset", 0)) if decoded else 0
-            page_entries = entries[offset : offset + limit]
-            has_more = offset + len(page_entries) < len(entries)
-            items = []
-            for entry in page_entries:
+            live_entries: list[tuple[dict[str, Any], dict[str, Any]]] = []
+            stale_keys: set[str] = set()
+            for entry in entries:
                 doc = self._col().document(entry["pk"]).get()
-                if doc.exists and doc.get("value") is not None:
-                    items.append(json.loads(doc.get("value")))
+                data = doc.to_dict() if doc.exists else None
+                if (
+                    not doc.exists
+                    or data is None
+                    or data.get("value") is None
+                    or self._is_expired_data(data)
+                ):
+                    stale_keys.add(entry["pk"])
+                    continue
+                live_entries.append((entry, data))
+            if stale_keys:
+                self._write_index_bucket(
+                    index_name,
+                    key,
+                    [entry for entry in entries if entry["pk"] not in stale_keys],
+                )
+            page_entries = live_entries[offset : offset + limit]
+            has_more = len(live_entries) > offset + limit
+            items = [json.loads(data["value"]) for _, data in page_entries]
             next_cursor = None
             if has_more:
                 next_cursor = _encode_cursor(
@@ -259,7 +298,7 @@ class FirestoreBackend:
                         "mode": "index",
                         "index_name": index_name,
                         "key": _cursor_identity(key),
-                        "offset": offset + len(page_entries),
+                        "offset": offset + len(items),
                     }
                 )
             return Page(items=items, next_cursor=next_cursor, has_more=has_more)
@@ -287,7 +326,13 @@ class FirestoreBackend:
 
         return await self._run(_increment)
 
-    async def atomic_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        *,
+        ttl: float | None = None,
+    ) -> Any:
         """Atomically read, apply *fn*, and write back inside a Firestore transaction.
 
         Firestore retries the transaction internally on contention; after the
@@ -313,10 +358,24 @@ class FirestoreBackend:
             def _update_in_txn(txn: Any) -> Any:
                 nonlocal previous_value
                 doc = doc_ref.get(transaction=txn)
-                current = json.loads(doc.get("value")) if doc.exists else None
+                current_data = doc.to_dict() if doc.exists else None
+                current = (
+                    None
+                    if self._is_expired_data(current_data)
+                    else json.loads(doc.get("value"))
+                    if doc.exists
+                    else None
+                )
                 previous_value = current
                 updated = fn(current)
-                txn.set(doc_ref, {"pk": key, "value": json.dumps(updated)})
+                txn.set(
+                    doc_ref,
+                    {
+                        "pk": key,
+                        "value": json.dumps(updated),
+                        "expires_at": self._expiry_deadline(ttl),
+                    },
+                )
                 return updated
 
             try:

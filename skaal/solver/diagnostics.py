@@ -64,6 +64,15 @@ def _categorical_offered(spec: dict[str, Any], spec_key: str) -> str:
     return ", ".join(values)
 
 
+def _ttl_offered(spec: dict[str, Any]) -> str:
+    if not spec.get("supports_ttl", False):
+        return "no"
+    cap = spec.get("max_ttl_seconds")
+    if cap is None:
+        return "yes"
+    return f"yes (max {cap}s)"
+
+
 # Map constraint-key → (offered_text, slack) extractor.
 _OfferedFn = Any  # Callable[[Any, dict], tuple[str | None, float | None]]
 _SLACK_RULES: dict[str, _OfferedFn] = {
@@ -76,7 +85,7 @@ _SLACK_RULES: dict[str, _OfferedFn] = {
     "durability": lambda v, s: (_categorical_offered(s, "durability"), None),
     "consistency": lambda v, s: (_categorical_offered(s, "consistency"), None),
     "residency": lambda v, s: (_categorical_offered(s, "residency"), None),
-    "retention": lambda v, s: (_categorical_offered(s, "retention"), None),
+    "retention": lambda v, s: (_ttl_offered(s), None),
 }
 
 

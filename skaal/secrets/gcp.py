@@ -10,9 +10,15 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import cast
 
 from skaal.errors import SecretMissingError, require_extra
-from skaal.types.secret import ResolvedSecret, SecretProvider, SecretSpec
+from skaal.types.secret import (
+    GcpSecretManagerClient,
+    ResolvedSecret,
+    SecretProvider,
+    SecretSpec,
+)
 
 _LOG = logging.getLogger("skaal.secrets.gcp")
 
@@ -42,7 +48,7 @@ class GcpSecretManagerResolver:
     provider: SecretProvider = "gcp-secret-manager"
 
     def __init__(self) -> None:
-        self._client: object | None = None
+        self._client: GcpSecretManagerClient | None = None
 
     @require_extra(
         "secrets-gcp",
@@ -57,13 +63,16 @@ class GcpSecretManagerResolver:
                 raise
             return ResolvedSecret(name=spec.name, value=None, provider=self.provider)
 
-        from google.cloud import secretmanager  # type: ignore[import-not-found]
+        from google.cloud import secretmanager
 
         if self._client is None:
-            self._client = secretmanager.SecretManagerServiceAsyncClient()
+            self._client = cast(
+                GcpSecretManagerClient,
+                secretmanager.SecretManagerServiceAsyncClient(),
+            )
 
         try:
-            response = await self._client.access_secret_version(name=path)  # type: ignore[attr-defined]
+            response = await self._client.access_secret_version(name=path)
             value = response.payload.data.decode("utf-8")
         except Exception as exc:  # noqa: BLE001 — wrap with Skaal context
             _LOG.warning("GCP Secret Manager fetch failed for %s: %s", spec.name, exc)
@@ -80,11 +89,9 @@ class GcpSecretManagerResolver:
     async def close(self) -> None:
         if self._client is None:
             return
-        close = getattr(self._client, "close", None)
-        if close is not None:
-            result = close()
-            if hasattr(result, "__await__"):
-                await result
+        result = self._client.close()
+        if result is not None:
+            await result
         self._client = None
 
 

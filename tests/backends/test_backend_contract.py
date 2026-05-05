@@ -7,6 +7,7 @@ The tests are parametrized over every backend factory discovered through
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
@@ -242,6 +243,16 @@ class TestCRUDContract:
 
             assert await b.atomic_update("doc", bump) == {"n": 2}
             assert await b.get("doc") == {"n": 2}
+
+    @pytest.mark.asyncio
+    async def test_ttl_expiry_hides_values_from_reads(
+        self, backend_factory: Any, tmp_path: Path
+    ) -> None:
+        async with backend_factory(tmp_path) as b:
+            await b.set("ttl", {"value": 1}, ttl=0.02)
+            await asyncio.sleep(0.05)
+            assert await b.get("ttl") is None
+            assert dict(await b.scan("ttl")) == {}
 
 
 # ── Plugin registry coverage ──────────────────────────────────────────────────
