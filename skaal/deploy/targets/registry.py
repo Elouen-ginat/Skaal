@@ -52,6 +52,7 @@ class GenerateArtifacts(Protocol):
 
 BuildConfigStep: TypeAlias = Callable[[DeploymentContext, str], ConfigOverrides]
 RunnerFactory: TypeAlias = Callable[[], PulumiRunner]
+RunnerProvider: TypeAlias = PulumiRunner | RunnerFactory
 
 
 @dataclass(frozen=True)
@@ -59,11 +60,14 @@ class TargetStrategy:
     name: TargetName
     default_region: str
     generate: GenerateArtifacts
-    runner_factory: RunnerFactory
     build_config: BuildConfigStep
+    runner: RunnerProvider
     package: PackageStep | None = None
     post_up: PostUpStep | None = None
     output_keys: tuple[str, ...] = ()
+
+    def resolve_runner(self) -> PulumiRunner:
+        return self.runner() if callable(self.runner) else self.runner
 
 
 @lru_cache(maxsize=1)
@@ -169,7 +173,7 @@ _AWS_STRATEGY = TargetStrategy(
     name="aws",
     default_region="us-east-1",
     generate=aws_target.generate_artifacts,
-    runner_factory=_runner_factory,
+    runner=_runner_factory,
     build_config=_aws_config,
     package=_aws_package,
     output_keys=("apiUrl",),
@@ -178,7 +182,7 @@ _GCP_STRATEGY = TargetStrategy(
     name="gcp",
     default_region="us-central1",
     generate=gcp_target.generate_artifacts,
-    runner_factory=_runner_factory,
+    runner=_runner_factory,
     build_config=_gcp_config,
     post_up=_gcp_post_up,
     output_keys=("serviceUrl", "imageRepository"),
@@ -187,7 +191,7 @@ _LOCAL_STRATEGY = TargetStrategy(
     name="local",
     default_region="",
     generate=local_target.generate_artifacts,
-    runner_factory=_runner_factory,
+    runner=_runner_factory,
     build_config=_local_config,
     package=_local_package,
     output_keys=("appUrl",),
@@ -254,7 +258,7 @@ class PulumiDeployTarget(DeployTarget):
         config = dict(self._strategy.build_config(context, self.default_region))
         if config_overrides:
             config.update(config_overrides)
-        outputs = self._strategy.runner_factory().deploy(
+        outputs = self._strategy.resolve_runner().deploy(
             RunnerPlan(
                 context=context,
                 config=config,
@@ -278,7 +282,7 @@ class PulumiDeployTarget(DeployTarget):
         return outputs
 
     def destroy_stack(self, artifacts_dir: Path, *, stack: str, yes: bool) -> None:
-        self._strategy.runner_factory().destroy(artifacts_dir, stack=stack, yes=yes)
+        self._strategy.resolve_runner().destroy(artifacts_dir, stack=stack, yes=yes)
 
 
 _aws = PulumiDeployTarget(_AWS_STRATEGY)

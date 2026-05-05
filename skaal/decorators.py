@@ -40,6 +40,14 @@ def _coerce_retention(value: Retention | str | None) -> Retention | None:
     return Retention.parse(value)
 
 
+def _coerce_throughput(
+    value: Throughput | str | int | float | None,
+) -> Throughput | int | float | None:
+    if value is None or isinstance(value, (Throughput, int, float)):
+        return value
+    return Throughput(value)
+
+
 def _apply_metadata(target: C, attribute: str, metadata: Any) -> C:
     setattr(target, attribute, metadata)
     return target
@@ -58,7 +66,7 @@ def _build_storage_metadata(
     durability: Durability | str,
     size_hint: str | None,
     access_pattern: AccessPattern | str,
-    write_throughput: Throughput | str | None,
+    write_throughput: Throughput | str | int | float | None,
     residency: str | None,
     retention: Retention | str | None,
     auto_optimize: bool,
@@ -74,7 +82,7 @@ def _build_storage_metadata(
         "durability": _coerce_enum(durability, Durability),
         "size_hint": size_hint,
         "access_pattern": _coerce_enum(access_pattern, AccessPattern),
-        "write_throughput": _coerce_enum(write_throughput, Throughput),
+        "write_throughput": _coerce_throughput(write_throughput),
         "residency": residency,
         "retention": _coerce_retention(retention),
         "auto_optimize": auto_optimize,
@@ -155,7 +163,7 @@ def storage(
     durability: Durability | str = Durability.PERSISTENT,
     size_hint: str | None = None,
     access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | None = None,
+    write_throughput: Throughput | str | int | float | None = None,
     residency: str | None = None,
     retention: Retention | str | None = None,
     auto_optimize: bool = False,
@@ -176,7 +184,7 @@ def storage(
     durability: Durability | str = Durability.PERSISTENT,
     size_hint: str | None = None,
     access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | None = None,
+    write_throughput: Throughput | str | int | float | None = None,
     residency: str | None = None,
     retention: Retention | str | None = None,
     auto_optimize: bool = False,
@@ -196,7 +204,7 @@ def storage(
     durability: Durability | str = Durability.PERSISTENT,
     size_hint: str | None = None,
     access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | None = None,
+    write_throughput: Throughput | str | int | float | None = None,
     residency: str | None = None,
     retention: Retention | str | None = None,
     auto_optimize: bool = False,

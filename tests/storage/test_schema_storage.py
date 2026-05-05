@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import BaseModel
+from pydantic import Field as PydanticField
+from sqlmodel import Field, SQLModel, select
 
+from skaal import App, VectorStore, open_relational_session
 from skaal.backends.local_backend import LocalMap
 from skaal.decorators import storage as storage_decorator
 from skaal.storage import Store, _deserialize, _primary_key_field, _schema_hints, _serialize
@@ -446,14 +451,201 @@ async def test_store_query_index_pages_results_in_sort_key_order():
 # ── todo_api.py integration ────────────────────────────────────────────────────
 
 
+def _make_feature_complete_todo_app() -> App:
+    app = App("todos")
+
+    class Attachment(BaseModel):
+        url: str
+        name: str
+        mime_type: str = "application/octet-stream"
+
+    class Todo(BaseModel):
+        id: str
+        title: str
+        description: str = ""
+        done: bool = False
+        tags: list[str] = PydanticField(default_factory=list)
+        attachments: list[Attachment] = PydanticField(default_factory=list)
+        created_at: str = PydanticField(
+            default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        )
+        completed_at: str | None = None
+
+    class TodoSearchDocument(BaseModel):
+        id: str
+        title: str
+        content: str
+        done: bool = False
+
+    Todo.model_rebuild()
+
+    @app.storage(
+        read_latency="< 10ms",
+        durability="persistent",
+        access_pattern="random-read",
+    )
+    class Todos(Store[Todo]):
+        pass
+
+    @app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
+    class Comments(SQLModel, table=True):
+        __tablename__ = "todo_comments"
+
+        id: int | None = Field(default=None, primary_key=True)
+        todo_id: str = Field(index=True)
+        author: str
+        body: str
+        created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @app.storage(
+        kind="vector",
+        dim=64,
+        metric="cosine",
+        read_latency="< 30ms",
+        durability="persistent",
+    )
+    class TodoSearchIndex(VectorStore[TodoSearchDocument]):
+        __skaal_vector_text_fields__ = ("title", "content")
+
+    def _todo_to_search_doc(todo: Todo) -> TodoSearchDocument:
+        attachment_names = " ".join(attachment.name for attachment in todo.attachments)
+        content_parts = [
+            todo.description,
+            " ".join(todo.tags),
+            attachment_names,
+            "done" if todo.done else "open",
+        ]
+        return TodoSearchDocument(
+            id=todo.id,
+            title=todo.title,
+            content="\n".join(part for part in content_parts if part),
+            done=todo.done,
+        )
+
+    async def _sync_todo_search(todo: Todo) -> None:
+        await TodoSearchIndex.delete([todo.id])
+        await TodoSearchIndex.add([_todo_to_search_doc(todo)])
+
+    async def _comment_rows(todo_id: str) -> list[Comments]:
+        async with open_relational_session(Comments) as session:
+            result = await session.exec(
+                select(Comments).where(Comments.todo_id == todo_id).order_by(Comments.id)
+            )
+            return list(result.all())
+
+    @app.function()
+    async def create_todo(
+        id: str,
+        title: str,
+        description: str = "",
+        tags: list[str] | None = None,
+        attachments: list[dict] | None = None,
+    ) -> dict:
+        if await Todos.get(id) is not None:
+            return {"error": f"Todo {id!r} already exists"}
+        todo = Todo(
+            id=id,
+            title=title,
+            description=description,
+            tags=tags or [],
+            attachments=[Attachment(**item) for item in (attachments or [])],
+        )
+        await Todos.set(id, todo)
+        await _sync_todo_search(todo)
+        return todo.model_dump()
+
+    @app.function()
+    async def get_todo(id: str) -> dict:
+        todo = await Todos.get(id)
+        return todo.model_dump() if todo else {"error": f"Todo {id!r} not found"}
+
+    @app.function()
+    async def complete_todo(id: str) -> dict:
+        todo = await Todos.get(id)
+        if todo is None:
+            return {"error": f"Todo {id!r} not found"}
+        todo.done = True
+        todo.completed_at = datetime.now(timezone.utc).isoformat()
+        await Todos.set(id, todo)
+        await _sync_todo_search(todo)
+        return todo.model_dump()
+
+    @app.function()
+    async def add_attachment(
+        id: str, url: str, name: str, mime_type: str = "application/octet-stream"
+    ) -> dict:
+        todo = await Todos.get(id)
+        if todo is None:
+            return {"error": f"Todo {id!r} not found"}
+        todo.attachments.append(Attachment(url=url, name=name, mime_type=mime_type))
+        await Todos.set(id, todo)
+        await _sync_todo_search(todo)
+        return todo.model_dump()
+
+    @app.function()
+    async def add_comment(todo_id: str, author: str, body: str) -> dict:
+        if await Todos.get(todo_id) is None:
+            return {"error": f"Todo {todo_id!r} not found"}
+
+        async with open_relational_session(Comments) as session:
+            comment = Comments(todo_id=todo_id, author=author, body=body)
+            session.add(comment)
+            await session.commit()
+            await session.refresh(comment)
+        return comment.model_dump()
+
+    @app.function()
+    async def list_comments(todo_id: str) -> dict:
+        comments = await _comment_rows(todo_id)
+        return {
+            "comments": [comment.model_dump() for comment in comments],
+            "count": len(comments),
+        }
+
+    @app.function()
+    async def search_todos(query: str, k: int = 3, done: bool | None = None) -> dict:
+        results = await TodoSearchIndex.similarity_search(
+            query,
+            k=k,
+            filter={"done": done} if done is not None else None,
+        )
+        todos: list[dict] = []
+        seen: set[str] = set()
+        for result in results:
+            if result.id in seen:
+                continue
+            todo = await Todos.get(result.id)
+            if todo is None:
+                continue
+            seen.add(result.id)
+            todos.append(todo.model_dump())
+        return {"todos": todos, "count": len(todos)}
+
+    @app.function()
+    async def list_todos(done: bool | None = None) -> dict:
+        entries = await Todos.list()
+        todos = [value for _, value in entries]
+        if done is not None:
+            todos = [todo for todo in todos if todo.done == done]
+        return {"todos": [todo.model_dump() for todo in todos], "count": len(todos)}
+
+    @app.function()
+    async def delete_todo(id: str) -> dict:
+        await Todos.delete(id)
+        await TodoSearchIndex.delete([id])
+        return {"ok": True, "deleted": id}
+
+    return app
+
+
 @pytest.mark.asyncio
 async def test_todo_api_end_to_end(tmp_path):
-    """Full integration test of examples/todo_api.py with typed Store storage."""
+    """Full inline example test of a feature-complete todo app with LocalRuntime."""
     import json
 
-    from examples.todo_api import app as todo_app
     from skaal.runtime.local import LocalRuntime
 
+    todo_app = _make_feature_complete_todo_app()
     runtime = LocalRuntime.from_sqlite(todo_app, db_path=tmp_path / "todo_api.db")
 
     def invoke(name: str) -> str:

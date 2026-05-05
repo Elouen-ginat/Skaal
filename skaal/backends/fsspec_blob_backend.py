@@ -163,14 +163,14 @@ class FsspecBlobBackend:
             paths = list(self._filesystem.find(self._root_path, withdirs=False))
         except FileNotFoundError:
             return []
-        root_prefix = f"{self._root_path}/"
-        meta_prefix = f"{self._meta_root}/"
+        root_prefix = f"{self._normalize_path(self._root_path).lstrip('/')}/"
+        meta_prefix = f"{self._normalize_path(self._meta_root).lstrip('/')}/"
         keys: list[str] = []
         for raw_path in paths:
-            path = self._normalize_path(str(raw_path))
+            path = self._normalize_path(str(raw_path)).lstrip("/")
             if path.startswith(meta_prefix):
                 continue
-            if path == self._root_path:
+            if path == root_prefix.removesuffix("/"):
                 continue
             if not path.startswith(root_prefix):
                 continue
