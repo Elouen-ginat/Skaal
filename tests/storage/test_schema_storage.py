@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
-from sqlmodel import Field, SQLModel, select
+from sqlmodel import Field, SQLModel, col, select
 
 from skaal import App, VectorStore, open_relational_session
 from skaal.backends.local_backend import LocalMap
@@ -230,14 +230,19 @@ async def test_store_get_set_returns_model():
 
 
 @pytest.mark.asyncio
-async def test_store_accepts_dict_on_set():
+async def test_store_set_accepts_model_instance():
     class UserStore(Store[User]):
         pass
 
     UserStore.wire(LocalMap())
 
     await UserStore.set(
-        "u2", {"id": "u2", "name": "Grace", "address": {"street": "7 Cedar", "city": "SEA"}}
+        "u2",
+        User(
+            id="u2",
+            name="Grace",
+            address=Address(street="7 Cedar", city="SEA"),
+        ),
     )
     result = await UserStore.get("u2")
     assert isinstance(result, User)
@@ -277,6 +282,7 @@ async def test_store_nested_model_roundtrip():
     await UserStore.set("u1", user)
     result = await UserStore.get("u1")
 
+    assert result is not None
     assert result.scores == [1.5, 2.7, 3.9]
     assert result.address.country == "US"
 
@@ -344,6 +350,7 @@ async def test_store_update_replaces_value():
 
     assert result.name == "Karl Updated"
     stored = await UserCol.get("u1")
+    assert stored is not None
     assert stored.name == "Karl Updated"
 
 
@@ -377,6 +384,7 @@ async def test_store_update_accepts_atomic_function():
     result = await UserStore.update("u1", rename)
     assert result.name == "Lena Updated"
     stored = await UserStore.get("u1")
+    assert stored is not None
     assert stored.name == "Lena Updated"
 
 
@@ -489,7 +497,7 @@ def _make_feature_complete_todo_app() -> App:
 
     @app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
     class Comments(SQLModel, table=True):
-        __tablename__ = "todo_comments"
+        __tablename__ = "todo_comments"  # type: ignore[assignment]
 
         id: int | None = Field(default=None, primary_key=True)
         todo_id: str = Field(index=True)
@@ -529,7 +537,7 @@ def _make_feature_complete_todo_app() -> App:
     async def _comment_rows(todo_id: str) -> list[Comments]:
         async with open_relational_session(Comments) as session:
             result = await session.exec(
-                select(Comments).where(Comments.todo_id == todo_id).order_by(Comments.id)
+                select(Comments).where(Comments.todo_id == todo_id).order_by(col(Comments.id))
             )
             return list(result.all())
 

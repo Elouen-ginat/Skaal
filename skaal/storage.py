@@ -343,8 +343,6 @@ class Store(Generic[T]):
         key_field = cls.__skaal_key_field__
         if hasattr(item, key_field):
             return str(getattr(item, key_field))
-        if isinstance(item, dict) and key_field in item:
-            return str(item[key_field])
         raise ValueError(
             f"Cannot extract key field {key_field!r} from {type(item).__name__}. "
             f"Set __skaal_key_field__ on the storage class to override."

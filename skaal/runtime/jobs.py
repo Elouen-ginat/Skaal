@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -189,19 +190,22 @@ def job_handle_from_rq_job(job: Job, *, fallback_scheduled_for: datetime) -> Job
         scheduled_for = datetime.fromisoformat(scheduled_for_raw)
     else:
         scheduled_for = fallback_scheduled_for
-    return JobHandle(
-        job_id=job.id, job_name=job.description or job.func_name, scheduled_for=scheduled_for
-    )
+    job_name = job.description or job.func_name or job.id
+    return JobHandle(job_id=job.id, job_name=job_name, scheduled_for=scheduled_for)
 
 
 async def close_job_connection(connection: Any) -> None:
     close = getattr(connection, "aclose", None)
     if callable(close):
-        await close()
+        close_result = close()
+        if isinstance(close_result, Awaitable):
+            await close_result
         return
     close = getattr(connection, "close", None)
     if callable(close):
-        close()
+        close_result = close()
+        if isinstance(close_result, Awaitable):
+            await close_result
 
 
 __all__ = [

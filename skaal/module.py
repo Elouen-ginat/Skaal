@@ -32,10 +32,12 @@ from skaal.types import (
 )
 
 if TYPE_CHECKING:
+    from skaal.channel import Channel
     from skaal.schedule import Cron, Every
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
+ChannelT = TypeVar("ChannelT", bound="Channel[Any]")
 StorageKind = Literal["kv", "blob", "relational", "vector"]
 
 
@@ -109,7 +111,7 @@ class Module:
         self._agents: dict[str, Any] = {}
         self._functions: dict[str, Any] = {}
         self._jobs: dict[str, Any] = {}
-        self._channels: dict[str, Any] = {}
+        self._channels: dict[str, Channel[Any]] = {}
         self._patterns: dict[str, Any] = {}
         self._components: dict[str, Any] = {}
         self._schedules: dict[str, Any] = {}
@@ -439,6 +441,19 @@ class Module:
         if secret is not None and isinstance(secret, SecretRef):
             self.secret(secret)
         return component
+
+    def get_channel(self, channel_cls: type[ChannelT]) -> ChannelT:
+        """Return the registered channel instance for a decorated Channel subclass."""
+        channel = self._channels.get(channel_cls.__name__)
+        if channel is None:
+            raise KeyError(
+                f"Channel {channel_cls.__name__!r} is not registered with module {self.name!r}"
+            )
+        if not isinstance(channel, channel_cls):
+            raise TypeError(
+                f"Registered channel {channel_cls.__name__!r} is {type(channel).__name__}, expected {channel_cls.__name__}"
+            )
+        return channel
 
     def secret(self, ref: SecretRef) -> SecretRef:
         """Declare a secret consumed by this module's functions and agents.

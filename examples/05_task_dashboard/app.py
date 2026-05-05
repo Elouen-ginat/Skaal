@@ -59,14 +59,14 @@ import time
 import uuid
 from collections.abc import Coroutine, Mapping
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Field as SqlField
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, col, select
 
 from skaal import (
     App,
@@ -87,7 +87,7 @@ from skaal import (
 )
 from skaal.agent import Agent
 from skaal.decorators import handler
-from skaal.types import Persistent, Scale
+from skaal.types import Durability, Persistent, Scale, ScaleStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +347,7 @@ class TaskComments(SQLModel, table=True):
       - Cloud Spanner on gcp target
     """
 
-    __tablename__ = "task_comments"  # type: ignore[override]
+    __tablename__ = "task_comments"  # type: ignore[assignment]
 
     id: int | None = SqlField(default=None, primary_key=True)
     task_id: str = SqlField(index=True)
@@ -383,9 +383,12 @@ class TaskSearchIndex(VectorStore[TaskSearchDocument]):
 # ── Channel ───────────────────────────────────────────────────────────────────
 
 
-@skaal_app.channel(throughput="> 200 events/s", durability="persistent")
+@skaal_app.channel(throughput="> 200 events/s", durability=Durability.PERSISTENT)
 class Notifications(Channel[TaskNotification]):
     """Real-time task notifications broadcast to all connected workers."""
+
+
+notifications_channel = skaal_app.get_channel(Notifications)
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -400,8 +403,8 @@ class TaskProcessor(Agent):
     Receives TaskNotification messages and updates the tally.
     """
 
-    tasks_processed: Persistent[int] = 0
-    last_event_type: Persistent[str] = ""
+    tasks_processed: Annotated[int, Persistent] = 0
+    last_event_type: Annotated[str, Persistent] = ""
 
     @handler
     async def handle_notification(self, notification: TaskNotification) -> None:
@@ -542,7 +545,7 @@ async def create_task(
 @skaal_app.function(
     circuit_breaker=CircuitBreaker(failure_threshold=5, recovery_timeout_ms=30_000),
     # Compute latency/memory are cloud hints; on local the single process handles all
-    scale=Scale(instances="auto", strategy="round-robin"),
+    scale=Scale(instances="auto", strategy=ScaleStrategy.ROUND_ROBIN),
 )
 async def assign_task(task_id: str, user_id: str) -> dict:
     """
@@ -571,7 +574,7 @@ async def assign_task(task_id: str, user_id: str) -> dict:
         message=f"Task '{task.title}' assigned to {user.name}",
         severity="info",
     )
-    await Notifications.send(notification)
+    await notifications_channel.send(notification)
     await _refresh_stats()
     return task.model_dump()
 
@@ -677,7 +680,9 @@ async def list_task_comments(task_id: str) -> dict:
     """List all structured comments for a task from the relational store."""
     async with open_relational_session(TaskComments) as session:
         result = await session.exec(
-            select(TaskComments).where(TaskComments.task_id == task_id).order_by(TaskComments.id)
+            select(TaskComments)
+            .where(TaskComments.task_id == task_id)
+            .order_by(col(TaskComments.id))
         )
         comments = list(result.all())
     return {"comments": [c.model_dump() for c in comments], "count": len(comments)}
@@ -886,7 +891,7 @@ async def emit_assignment_notification(task_id: str, user_id: str) -> None:
     user = await Users.get(user_id)
     task = await Tasks.get(task_id)
     if user and task:
-        await Notifications.send(
+        await notifications_channel.send(
             TaskNotification(
                 task_id=task_id,
                 message=f"[saga] '{task.title}' → {user.name}",
@@ -951,7 +956,7 @@ def _task_row(task: dict, users: list[dict]) -> dbc.ListGroupItem:
     is_done = task["status"] == "done"
 
     # Build user options for the assign dropdown
-    user_options = [{"label": u["name"], "value": u["id"]} for u in users]
+    user_options: list[dbc.Select.Options] = [{"label": u["name"], "value": u["id"]} for u in users]
 
     task_id = task["id"]
 
