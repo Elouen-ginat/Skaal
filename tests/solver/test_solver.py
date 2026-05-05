@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal import App
+from skaal import App, BlobStore
 from skaal.catalog.loader import load_catalog
 from skaal.solver.solver import solve
 from skaal.solver.storage import UnsatisfiableConstraints, select_backend
@@ -137,6 +137,57 @@ def test_select_backend_reason_string():
     assert isinstance(reason, str) and len(reason) > 0
 
 
+def test_select_backend_blob_kind_aws() -> None:
+    catalog = load_catalog(target="aws")
+    storage_backends = catalog["storage"]
+
+    backend_name, reason = select_backend(
+        "Uploads",
+        {
+            "kind": "blob",
+            "durability": Durability.DURABLE,
+            "access_pattern": AccessPattern.BULK_READ,
+        },
+        storage_backends,
+        target="aws",
+    )
+    assert backend_name == "s3", f"Expected 's3' for blob workloads, got {backend_name!r}."
+    assert "kind=blob" in reason
+
+
+def test_select_backend_retention_requires_ttl_capability() -> None:
+    with pytest.raises(UnsatisfiableConstraints):
+        select_backend(
+            "Sessions",
+            {
+                "kind": "kv",
+                "retention": __import__("skaal.types", fromlist=["Retention"]).Retention.parse(
+                    "30m"
+                ),
+            },
+            {
+                "no-ttl": {
+                    "display_name": "No TTL",
+                    "storage_kinds": ["kv"],
+                    "cost_per_gb_month": 0.0,
+                }
+            },
+        )
+
+
+def test_solve_retention_flows_from_decorator_to_backend_selection() -> None:
+    app = App("ttl-solver")
+
+    @app.storage(read_latency="< 5ms", durability="ephemeral", retention="30m")
+    class Sessions:
+        pass
+
+    plan = solve(app, load_catalog(target="local"), target="local")
+    spec = plan.storage["ttl-solver.Sessions"]
+    assert spec.backend == "local-map"
+    assert "retention=30m (per-row TTL)" in spec.reason
+
+
 # ── solve() ───────────────────────────────────────────────────────────────────
 
 
@@ -217,8 +268,37 @@ def test_solve_serialization_roundtrip(tmp_path):
 
     out_path = tmp_path / "plan.skaal.lock"
     plan.write(out_path)
-
     loaded = PlanFile.read(out_path)
     assert loaded.app_name == plan.app_name
     assert set(loaded.storage.keys()) == set(plan.storage.keys())
     assert set(loaded.compute.keys()) == set(plan.compute.keys())
+
+
+def test_solve_blob_resource_keeps_blob_kind() -> None:
+    app = App("blob-solver")
+
+    @app.storage(kind="blob", read_latency="< 500ms", durability="durable")
+    class Uploads(BlobStore):
+        pass
+
+    catalog = load_catalog(target="aws")
+    plan = solve(app, catalog, target="aws")
+
+    spec = plan.storage["blob-solver.Uploads"]
+    assert spec.kind == "blob"
+    assert spec.backend == "s3"
+
+
+def test_solve_local_blob_resource_supports_durable_constraints() -> None:
+    app = App("blob-solver-local")
+
+    @app.storage(kind="blob", read_latency="< 500ms", durability="durable")
+    class Uploads(BlobStore):
+        pass
+
+    catalog = load_catalog(target="local")
+    plan = solve(app, catalog, target="local")
+
+    spec = plan.storage["blob-solver-local.Uploads"]
+    assert spec.kind == "blob"
+    assert spec.backend == "local-blob"

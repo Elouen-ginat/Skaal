@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
-from skaal.backends.kv.local_map import LocalMap
+from skaal.backends.local_backend import LocalMap
 from skaal.patterns import EventLog, Outbox, Saga, SagaStep
-from skaal.runtime._observer import InMemoryRuntimeObserver
-from skaal.runtime.engines.base import register_engine, start_engines_for
 from skaal.runtime.engines.eventlog import EventLogEngine
 from skaal.runtime.engines.outbox import OutboxEngine
 from skaal.runtime.engines.projection import ProjectionEngine
 from skaal.runtime.engines.saga import SagaEngine, SagaExecutor
+from skaal.types import ProjectionFailurePayload
 
 # ── EventLog push-based subscribe ────────────────────────────────────────────
 
@@ -45,57 +45,10 @@ async def test_eventlog_subscribe_wakes_on_append() -> None:
 async def test_eventlog_engine_start_stop() -> None:
     log: EventLog[dict] = EventLog(LocalMap())
     engine = EventLogEngine(log)
-    observer = InMemoryRuntimeObserver()
-    await engine.start(SimpleNamespace(observer=observer))
+    await engine.start(SimpleNamespace())
+    assert engine._started is True
     await engine.stop()
-
-    snapshot = observer.snapshot()
-    engines = snapshot["engines"]
-    engine_name = next(iter(engines))
-    assert engine_name.startswith("eventlog:")
-    assert engines[engine_name]["starts"] == 1
-    assert engines[engine_name]["stops"] == 1
-
-
-@pytest.mark.asyncio
-async def test_start_engines_for_dispatches_registered_patterns() -> None:
-    log: EventLog[dict] = EventLog(LocalMap())
-    saga = Saga("noop", steps=[])
-    app = SimpleNamespace(_collect_all=lambda: {"log": log, "saga": saga, "ignored": object()})
-    context = SimpleNamespace(functions={}, stores={})
-
-    engines = await start_engines_for(app, context)
-
-    assert [type(engine) for engine in engines] == [EventLogEngine, SagaEngine]
-    assert "noop" in context.sagas
-
-    for engine in reversed(engines):
-        await engine.stop()
-
-
-def test_register_engine_rejects_duplicate_pattern_registration() -> None:
-    class DuplicatePattern:
-        __skaal_pattern__ = {"pattern_type": "duplicate"}
-
-    @register_engine(DuplicatePattern)
-    class DuplicateEngine:
-        async def start(self, context: object) -> None:
-            return None
-
-        async def stop(self) -> None:
-            return None
-
-    with pytest.raises(RuntimeError, match="already registered"):
-
-        @register_engine(DuplicatePattern)
-        class SecondDuplicateEngine:
-            async def start(self, context: object) -> None:
-                return None
-
-            async def stop(self) -> None:
-                return None
-
-    assert DuplicateEngine is not None
+    assert engine._started is False
 
 
 # ── Projection ───────────────────────────────────────────────────────────────
@@ -106,7 +59,7 @@ async def test_projection_engine_applies_handler_to_each_event() -> None:
     source: EventLog[dict] = EventLog(LocalMap())
 
     class Summary:
-        totals: dict[str, int] = {}
+        totals: ClassVar[dict[str, int]] = {}
 
     async def apply(target: type, event: dict) -> None:
         k = event["k"]
@@ -118,10 +71,9 @@ async def test_projection_engine_applies_handler_to_each_event() -> None:
         target=Summary,
         handler="apply",
         checkpoint_every=1,
-        strict=False,
     )
     engine = ProjectionEngine(proj)  # type: ignore[arg-type]
-    context = SimpleNamespace(functions={"apply": apply}, observer=InMemoryRuntimeObserver())
+    context = SimpleNamespace(functions={"apply": apply})
     await engine.start(context)
 
     await asyncio.sleep(0.01)
@@ -139,72 +91,101 @@ async def test_projection_engine_applies_handler_to_each_event() -> None:
 
 
 @pytest.mark.asyncio
-async def test_projection_engine_persists_checkpoint_to_target_backend() -> None:
+async def test_projection_engine_strict_mode_stops_on_handler_failure() -> None:
     source: EventLog[dict] = EventLog(LocalMap())
 
-    class SummaryStore:
-        _backend = LocalMap()
+    class Summary:
+        totals: ClassVar[dict[str, int]] = {}
 
-    async def apply(_target: type, _event: dict) -> None:
-        return None
+    async def apply(target: type, event: dict) -> None:
+        if event["k"] == "boom":
+            raise RuntimeError("projection failed")
+        key = event["k"]
+        target.totals[key] = target.totals.get(key, 0) + event["delta"]
 
     proj = SimpleNamespace(
         source=source,
-        target=SummaryStore,
-        handler="apply",
-        checkpoint_every=2,
-        strict=False,
-    )
-    engine = ProjectionEngine(proj)  # type: ignore[arg-type]
-    await engine.start(
-        SimpleNamespace(functions={"apply": apply}, observer=InMemoryRuntimeObserver())
-    )
-
-    await asyncio.sleep(0.01)
-    await source.append({"id": 1})
-    await source.append({"id": 2})
-
-    for _ in range(50):
-        offset = await SummaryStore._backend.get("__projection__:apply:offset")
-        if offset == 1:
-            break
-        await asyncio.sleep(0.02)
-
-    assert await SummaryStore._backend.get("__projection__:apply:offset") == 1
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_projection_engine_strict_mode_surfaces_failures() -> None:
-    source: EventLog[dict] = EventLog(LocalMap())
-    observer = InMemoryRuntimeObserver()
-
-    class SummaryStore:
-        _backend = LocalMap()
-
-    async def apply(_target: type, _event: dict) -> None:
-        raise RuntimeError("projection failed")
-
-    proj = SimpleNamespace(
-        source=source,
-        target=SummaryStore,
+        target=Summary,
         handler="apply",
         checkpoint_every=1,
         strict=True,
     )
     engine = ProjectionEngine(proj)  # type: ignore[arg-type]
-    await engine.start(SimpleNamespace(functions={"apply": apply}, observer=observer))
+    context = SimpleNamespace(functions={"apply": apply})
+    await engine.start(context)
 
     await asyncio.sleep(0.01)
-    await source.append({"id": 1})
+    await source.append({"k": "ok", "delta": 1})
+    for _ in range(20):
+        if Summary.totals.get("ok") == 1:
+            break
+        await asyncio.sleep(0.02)
 
+    await source.append({"k": "boom", "delta": 1})
+
+    for _ in range(20):
+        if engine._task is not None and engine._task.done():
+            break
+        await asyncio.sleep(0.02)
+
+    assert Summary.totals == {"ok": 1}
+    assert engine._failures == 1
+    assert engine._task is not None
+    assert engine._task.done() is True
     with pytest.raises(RuntimeError, match="projection failed"):
-        assert engine._task is not None
-        await asyncio.wait_for(engine._task, timeout=1.0)
+        await engine._task
 
-    stream = observer.snapshot()["events"]["streams"]["apply"]
-    assert stream["failed"] == 1
-    assert stream["last_error"] == "RuntimeError('projection failed')"
+
+@pytest.mark.asyncio
+async def test_projection_engine_dead_letters_failed_event_and_continues() -> None:
+    source: EventLog[dict] = EventLog(LocalMap())
+    dead_letter = _FakeChannel()
+
+    class Summary:
+        totals: ClassVar[dict[str, int]] = {}
+
+    async def apply(target: type, event: dict) -> None:
+        if event["k"] == "boom":
+            raise RuntimeError("projection failed")
+        key = event["k"]
+        target.totals[key] = target.totals.get(key, 0) + event["delta"]
+
+    proj = SimpleNamespace(
+        source=source,
+        target=Summary,
+        handler="apply",
+        checkpoint_every=1,
+        strict=False,
+        dead_letter=dead_letter,
+    )
+    engine = ProjectionEngine(proj)  # type: ignore[arg-type]
+    context = SimpleNamespace(functions={"apply": apply})
+    await engine.start(context)
+
+    await asyncio.sleep(0.01)
+    await source.append({"k": "ok", "delta": 1})
+    await source.append({"k": "boom", "delta": 99})
+    await source.append({"k": "ok", "delta": 2})
+
+    for _ in range(30):
+        if Summary.totals.get("ok") == 3 and len(dead_letter.sent) == 1:
+            break
+        await asyncio.sleep(0.02)
+
+    assert Summary.totals == {"ok": 3}
+    assert engine._failures == 1
+    assert engine._task is not None
+    assert engine._task.done() is False
+    assert dead_letter.sent == [
+        {
+            "pattern": "projection",
+            "handler": "apply",
+            "offset": 1,
+            "event": {"k": "boom", "delta": 99},
+            "error": {"type": "RuntimeError", "message": "projection failed"},
+        }
+    ]
+    await engine.stop()
 
 
 # ── Saga ─────────────────────────────────────────────────────────────────────
@@ -294,14 +275,14 @@ async def test_saga_engine_registers_executor_on_context() -> None:
 
 class _FakeChannel:
     def __init__(self) -> None:
-        self.sent: list[object] = []
+        self.sent: list[ProjectionFailurePayload] = []
 
-    async def send(self, payload: object) -> None:
+    async def send(self, payload: ProjectionFailurePayload) -> None:
         self.sent.append(payload)
 
 
 class _Storage:
-    _backend = None  # type: ignore[assignment]
+    _backend: ClassVar[LocalMap | None] = None
 
 
 @pytest.mark.asyncio
@@ -331,65 +312,5 @@ async def test_outbox_relay_publishes_pending_rows() -> None:
     # At-least-once → rows deleted after delivery.
     remaining = await backend.scan("outbox:")
     assert remaining == []
-
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_outbox_restart_rebinds_write_helper_to_current_backend() -> None:
-    backend_one = LocalMap()
-    backend_two = LocalMap()
-    chan = _FakeChannel()
-    ob = Outbox(channel=chan, storage=_Storage, delivery="at-least-once")
-
-    _Storage._backend = backend_one
-    engine = OutboxEngine(ob, poll_interval=0.01)
-    await engine.start(SimpleNamespace())
-    await ob.write("order-1", {"event": "placed", "id": 1})  # type: ignore[attr-defined]
-
-    for _ in range(50):
-        if len(chan.sent) == 1:
-            break
-        await asyncio.sleep(0.02)
-
-    await engine.stop()
-
-    _Storage._backend = backend_two
-    await engine.start(SimpleNamespace())
-    await ob.write("order-2", {"event": "placed", "id": 2})  # type: ignore[attr-defined]
-
-    for _ in range(50):
-        if len(chan.sent) == 2:
-            break
-        await asyncio.sleep(0.02)
-
-    assert [payload["id"] for payload in chan.sent] == [1, 2]  # type: ignore[index]
-    assert await backend_one.scan("outbox:") == []
-    assert await backend_two.scan("outbox:") == []
-
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_outbox_exactly_once_marks_row_delivered() -> None:
-    backend = LocalMap()
-    _Storage._backend = backend
-    chan = _FakeChannel()
-    ob = Outbox(channel=chan, storage=_Storage, delivery="exactly-once")
-
-    engine = OutboxEngine(ob, poll_interval=0.01)
-    await engine.start(SimpleNamespace())
-    await ob.write("order-1", {"event": "placed", "id": 1})  # type: ignore[attr-defined]
-
-    for _ in range(50):
-        remaining = await backend.scan("outbox:")
-        if remaining and remaining[0][1].get("delivered") is True:
-            break
-        await asyncio.sleep(0.02)
-
-    remaining = await backend.scan("outbox:")
-    assert len(remaining) == 1
-    assert remaining[0][1]["delivered"] is True
-    assert chan.sent == [{"event": "placed", "id": 1}]
 
     await engine.stop()

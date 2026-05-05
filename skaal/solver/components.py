@@ -16,9 +16,25 @@ No other changes are required.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from skaal.solver.targets import TargetFamily, resolve_family
+from skaal.types.deploy import (
+    AppRefConfig,
+    AuthConfig,
+    ComponentConfig,
+    CronTriggerConfig,
+    EveryTriggerConfig,
+    ExternalComponentConfig,
+    ExternalObservabilityConfig,
+    ExternalQueueConfig,
+    ExternalStorageConfig,
+    GatewayConfig,
+    RateLimitConfig,
+    RouteSpec,
+    ScheduleTriggerConfig,
+)
 
 if TYPE_CHECKING:
     from skaal.components import ComponentBase
@@ -87,7 +103,10 @@ def _resolve_provisioned_impl(
     5. The *kind* string itself as a last resort.
     """
     # 1. Explicit pin takes absolute precedence
-    pinned = getattr(component, "implementation", None)
+    if hasattr(component, "implementation"):
+        pinned = component.implementation
+    else:
+        pinned = None
     if pinned:
         return pinned, f"{kind} implementation={pinned!r} (explicitly pinned)"
 
@@ -113,6 +132,146 @@ def _resolve_provisioned_impl(
     return kind, f"default implementation for kind={kind!r}"
 
 
+def _serialize_component_value(value: object) -> object:
+    if isinstance(value, Enum):
+        return value.value
+    return value
+
+
+def _base_external_config(comp_meta: dict[str, Any]) -> ExternalComponentConfig:
+    return ExternalComponentConfig(
+        external=True,
+        secret_name=cast(str | None, comp_meta["secret_name"]),
+        latency_ms=cast(float | None, comp_meta["latency_ms"]),
+        region=cast(str | None, comp_meta["region"]),
+    )
+
+
+def _normalize_routes(raw_routes: list[dict[str, Any]]) -> list[RouteSpec]:
+    routes: list[RouteSpec] = []
+    for route in raw_routes:
+        routes.append(
+            RouteSpec(
+                path=cast(str, route["path"]),
+                target=cast(str, route["target"]),
+                methods=list(cast(list[str], route["methods"])),
+                strip_prefix=cast(bool, route["strip_prefix"])
+                if "strip_prefix" in route
+                else False,
+                timeout_ms=cast(int | None, route["timeout_ms"]) if "timeout_ms" in route else None,
+                rewrite=cast(str | None, route["rewrite"]) if "rewrite" in route else None,
+            )
+        )
+    return routes
+
+
+def _normalize_auth_config(raw_auth: dict[str, Any] | None) -> AuthConfig | None:
+    if raw_auth is None:
+        return None
+    return AuthConfig(
+        provider=cast(str, raw_auth["provider"]),
+        issuer=cast(str | None, raw_auth["issuer"]),
+        audience=cast(str | None, raw_auth["audience"]),
+        header=cast(str, raw_auth["header"]),
+        required=cast(bool, raw_auth["required"]),
+    )
+
+
+def _normalize_rate_limit(raw_rate_limit: dict[str, Any] | None) -> RateLimitConfig | None:
+    if raw_rate_limit is None:
+        return None
+    return RateLimitConfig(
+        requests_per_second=cast(float | int, raw_rate_limit["requests_per_second"]),
+        burst=cast(int | None, raw_rate_limit["burst"]),
+        scope=cast(str | None, raw_rate_limit["scope"]),
+    )
+
+
+def _encode_component_config(kind: str, comp_meta: dict[str, Any]) -> ComponentConfig:
+    if kind in {"proxy", "api-gateway"}:
+        return GatewayConfig(
+            routes=_normalize_routes(cast(list[dict[str, Any]], comp_meta["routes"])),
+            auth=_normalize_auth_config(
+                cast(dict[str, Any] | None, comp_meta["auth"]) if "auth" in comp_meta else None
+            ),
+            rate_limit=_normalize_rate_limit(
+                cast(dict[str, Any] | None, comp_meta["rate_limit"])
+                if "rate_limit" in comp_meta
+                else None
+            ),
+            cors_origins=cast(list[str] | None, comp_meta["cors_origins"])
+            if "cors_origins" in comp_meta
+            else None,
+            tls=cast(bool | None, comp_meta["tls"]) if "tls" in comp_meta else None,
+            latency_ms=cast(float | None, comp_meta["latency_ms"])
+            if "latency_ms" in comp_meta
+            else None,
+            health_check_path=cast(str | None, comp_meta["health_check_path"])
+            if "health_check_path" in comp_meta
+            else None,
+            implementation=cast(str | None, comp_meta["implementation"]),
+        )
+
+    if kind == "schedule-trigger":
+        trigger_type = cast(str, comp_meta["trigger_type"])
+        raw_trigger = cast(dict[str, Any], comp_meta["trigger"])
+        trigger: CronTriggerConfig | EveryTriggerConfig
+        if trigger_type == "cron":
+            trigger = CronTriggerConfig(expression=cast(str, raw_trigger["expression"]))
+        else:
+            trigger = EveryTriggerConfig(interval=cast(str, raw_trigger["interval"]))
+        return ScheduleTriggerConfig(
+            trigger=trigger,
+            trigger_type=cast("Literal['cron', 'every']", trigger_type),
+            target_function=cast(str, comp_meta["target_function"]),
+            timezone=cast(str, comp_meta["timezone"]),
+            emit_to=cast(str | None, comp_meta["emit_to"]),
+        )
+
+    if kind == "external-storage":
+        base = _base_external_config(comp_meta)
+        return ExternalStorageConfig(
+            external=base.external,
+            secret_name=base.secret_name,
+            latency_ms=base.latency_ms,
+            region=base.region,
+            access_pattern=cast(str, _serialize_component_value(comp_meta["access_pattern"])),
+            durability=cast(str, _serialize_component_value(comp_meta["durability"])),
+        )
+
+    if kind == "external-queue":
+        base = _base_external_config(comp_meta)
+        return ExternalQueueConfig(
+            external=base.external,
+            secret_name=base.secret_name,
+            latency_ms=base.latency_ms,
+            region=base.region,
+            throughput=cast(str | None, comp_meta["throughput"]),
+        )
+
+    if kind == "external-observability":
+        base = _base_external_config(comp_meta)
+        return ExternalObservabilityConfig(
+            external=base.external,
+            secret_name=base.secret_name,
+            latency_ms=base.latency_ms,
+            region=base.region,
+            provider=cast(str, comp_meta["provider"]),
+        )
+
+    if kind == "app-ref":
+        base = _base_external_config(comp_meta)
+        return AppRefConfig(
+            external=base.external,
+            secret_name=base.secret_name,
+            latency_ms=base.latency_ms,
+            region=base.region,
+            timeout_ms=cast(int, comp_meta["timeout_ms"]),
+        )
+
+    raise ValueError(f"Unsupported component kind {kind!r}")
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 
@@ -128,7 +287,8 @@ def encode_component(
       an implementation via :func:`_resolve_provisioned_impl` and returns a
       spec with ``provisioned=True``.
     - **ExternalComponent**: returns a pass-through spec with
-      ``provisioned=False`` and the ``connection_env`` forwarded as-is.
+      ``provisioned=False`` and the ``secret_name`` (if any) referencing an
+      entry in :attr:`PlanFile.secrets`.
 
     Args:
         name:      The component's ``.name`` attribute.
@@ -144,7 +304,7 @@ def encode_component(
 
     kind = component._skaal_component_kind
     comp_meta = component.__skaal_component__
-    extra_config = {k: v for k, v in comp_meta.items() if k not in ("kind", "name")}
+    config = _encode_component_config(kind, comp_meta)
 
     if isinstance(component, ExternalComponent):
         return ComponentSpec(
@@ -152,8 +312,8 @@ def encode_component(
             kind=kind,
             implementation=None,
             provisioned=False,
-            connection_env=comp_meta.get("connection_env"),
-            config=extra_config,
+            secret_name=cast(str | None, comp_meta["secret_name"]),
+            config=config,
             reason="external component — not provisioned by Skaal",
         )
 
@@ -163,7 +323,7 @@ def encode_component(
         kind=kind,
         implementation=impl,
         provisioned=True,
-        connection_env=None,
-        config=extra_config,
+        secret_name=None,
+        config=config,
         reason=reason,
     )

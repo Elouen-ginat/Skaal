@@ -2,29 +2,45 @@
 
 from __future__ import annotations
 
+import weakref
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
+from datetime import datetime
+
 # TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypeVar, cast, overload
 
 from skaal.types import (
     AccessPattern,
+    BeforeInvoke,
     Bulkhead,
     CircuitBreaker,
     Compute,
     DecommissionPolicy,
     Durability,
+    Duration,
+    JobHandle,
+    JobSpec,
     Latency,
     RateLimitPolicy,
+    Retention,
     RetryPolicy,
     Scale,
+    SecondaryIndex,
+    SecretRef,
     Throughput,
 )
+from skaal.types.invoke import AuthClaims
+from skaal.types.protocols import AsyncPublishTarget
 
 if TYPE_CHECKING:
+    from skaal.channel import Channel
     from skaal.schedule import Cron, Every
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
-BucketName = Literal["storage", "agents", "functions", "channels"]
+ChannelT = TypeVar("ChannelT", bound="Channel[Any]")
+StorageKind = Literal["kv", "blob", "relational", "vector"]
 
 
 class ModuleExport:
@@ -65,6 +81,27 @@ class ModuleExport:
         )
 
 
+@dataclass(slots=True)
+class _BeforeInvokeContext:
+    function_name: str
+    kwargs: dict[str, Any]
+    is_stream: bool
+    attempt: int
+    headers: Mapping[str, str]
+    auth_claims: AuthClaims | None
+    auth_subject: str | None
+    trace_id: str | None
+    span_id: str | None
+
+
+class _HasName(Protocol):
+    name: str
+
+
+class _HasDunderName(Protocol):
+    __name__: str
+
+
 class Module:
     """
     A reusable, composable Skaal fragment.
@@ -96,51 +133,39 @@ class Module:
         self._storage: dict[str, Any] = {}
         self._agents: dict[str, Any] = {}
         self._functions: dict[str, Any] = {}
-        self._channels: dict[str, Any] = {}
+        self._jobs: dict[str, Any] = {}
+        self._channels: dict[str, Channel[Any]] = {}
         self._patterns: dict[str, Any] = {}
         self._components: dict[str, Any] = {}
         self._schedules: dict[str, Any] = {}
+        self._secrets: dict[str, SecretRef] = {}
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}  # namespace → mounted module
+        self._before_invoke: list[BeforeInvoke] = []
+        self._runtime_ref: weakref.ReferenceType[Any] | None = None
 
     # ── Registration decorators ────────────────────────────────────────────
-
-    def _register_storage(
-        self,
-        decorator_fn: Callable[..., Callable[[C], C]],
-        cls_to_decorate: C | None,
-        **kwargs: Any,
-    ) -> C | Callable[[C], C]:
-        """Build the outer decorator from *decorator_fn*, register the result
-        in ``self._storage``, and apply the dual ``@app.storage`` /
-        ``@app.storage(...)`` calling convention."""
-        outer = decorator_fn(**kwargs)
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._storage[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
 
     @overload
     def storage(
         self,
         cls_to_decorate: C,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
-        write_throughput: Throughput | str | None = ...,
+        access_pattern: AccessPattern | str | None = ...,
+        write_throughput: Throughput | str | int | float | None = ...,
         residency: str | None = ...,
-        retention: str | None = ...,
+        retention: Retention | str | None = ...,
         auto_optimize: bool = ...,
         decommission_policy: DecommissionPolicy | None = ...,
         collocate_with: str | None = ...,
+        indexes: list[SecondaryIndex] | None = ...,
     ) -> C: ...
 
     @overload
@@ -148,34 +173,42 @@ class Module:
         self,
         cls_to_decorate: None = ...,
         *,
+        kind: StorageKind | str = ...,
+        dim: int | None = ...,
+        metric: str = ...,
         read_latency: Latency | str | None = ...,
         write_latency: Latency | str | None = ...,
         durability: Durability | str = ...,
         size_hint: str | None = ...,
-        access_pattern: AccessPattern | str = ...,
-        write_throughput: Throughput | str | None = ...,
+        access_pattern: AccessPattern | str | None = ...,
+        write_throughput: Throughput | str | int | float | None = ...,
         residency: str | None = ...,
-        retention: str | None = ...,
+        retention: Retention | str | None = ...,
         auto_optimize: bool = ...,
         decommission_policy: DecommissionPolicy | None = ...,
         collocate_with: str | None = ...,
+        indexes: list[SecondaryIndex] | None = ...,
     ) -> Callable[[C], C]: ...
 
     def storage(
         self,
         cls_to_decorate: C | None = None,
         *,
+        kind: StorageKind | str = "kv",
+        dim: int | None = None,
+        metric: str = "cosine",
         read_latency: Latency | str | None = None,
         write_latency: Latency | str | None = None,
         durability: Durability | str = Durability.PERSISTENT,
         size_hint: str | None = None,
-        access_pattern: AccessPattern | str = AccessPattern.RANDOM_READ,
-        write_throughput: Throughput | str | None = None,
+        access_pattern: AccessPattern | str | None = None,
+        write_throughput: Throughput | str | int | float | None = None,
         residency: str | None = None,
-        retention: str | None = None,
+        retention: Retention | str | None = None,
         auto_optimize: bool = False,
         decommission_policy: DecommissionPolicy | None = None,
         collocate_with: str | None = None,
+        indexes: list[SecondaryIndex] | None = None,
     ) -> C | Callable[[C], C]:
         """Register a storage class with infrastructure constraints.
 
@@ -189,9 +222,11 @@ class Module:
         """
         from skaal.decorators import storage as _storage_dec
 
-        return self._register_storage(
-            _storage_dec,
-            cls_to_decorate,
+        storage_decorator = cast(Callable[..., Any], _storage_dec)
+        outer = storage_decorator(
+            kind=kind,
+            dim=dim,
+            metric=metric,
             read_latency=read_latency,
             write_latency=write_latency,
             durability=durability,
@@ -203,141 +238,17 @@ class Module:
             auto_optimize=auto_optimize,
             decommission_policy=decommission_policy,
             collocate_with=collocate_with,
+            indexes=indexes,
         )
 
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: C,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
+        def decorator(cls: C) -> C:
+            annotated = outer(cls)
+            self._storage[cls.__name__] = annotated
+            return annotated
 
-    @overload
-    def relational(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def relational(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a SQLModel relational table with infrastructure constraints."""
-        from skaal.decorators import relational as _relational_dec
-
-        return self._register_storage(
-            _relational_dec,
-            cls_to_decorate,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-        )
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: C,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> C: ...
-
-    @overload
-    def vector(
-        self,
-        cls_to_decorate: None = ...,
-        *,
-        dim: int,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        write_throughput: Throughput | str | None = ...,
-        residency: str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
-    ) -> Callable[[C], C]: ...
-
-    def vector(
-        self,
-        cls_to_decorate: C | None = None,
-        *,
-        dim: int,
-        metric: str = "cosine",
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        write_throughput: Throughput | str | None = None,
-        residency: str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
-    ) -> C | Callable[[C], C]:
-        """Register a typed vector store with infrastructure constraints."""
-        from skaal.decorators import vector as _vector_dec
-
-        return self._register_storage(
-            _vector_dec,
-            cls_to_decorate,
-            dim=dim,
-            metric=metric,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            write_throughput=write_throughput,
-            residency=residency,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-        )
+        if cls_to_decorate is None:
+            return decorator
+        return decorator(cls_to_decorate)
 
     @overload
     def agent(self, cls_to_decorate: C, *, persistent: bool = ...) -> C: ...
@@ -382,6 +293,7 @@ class Module:
         circuit_breaker: CircuitBreaker | None = ...,
         rate_limit: RateLimitPolicy | None = ...,
         bulkhead: Bulkhead | None = ...,
+        secrets: list[SecretRef] | None = ...,
     ) -> F: ...
 
     @overload
@@ -395,6 +307,7 @@ class Module:
         circuit_breaker: CircuitBreaker | None = ...,
         rate_limit: RateLimitPolicy | None = ...,
         bulkhead: Bulkhead | None = ...,
+        secrets: list[SecretRef] | None = ...,
     ) -> Callable[[F], F]: ...
 
     def function(
@@ -407,6 +320,7 @@ class Module:
         circuit_breaker: CircuitBreaker | None = None,
         rate_limit: RateLimitPolicy | None = None,
         bulkhead: Bulkhead | None = None,
+        secrets: list[SecretRef] | None = None,
     ) -> F | Callable[[F], F]:
         """Register a compute function with optional constraints and resilience policies.
 
@@ -415,7 +329,7 @@ class Module:
             def my_func(): ...
 
         Or:
-            @app.function(compute=...)
+            @app.function(compute=..., secrets=[Secret("DB_DSN")])
             def my_func(): ...
         """
 
@@ -432,12 +346,70 @@ class Module:
             setattr(fn, "__skaal_compute__", _compute)
             if scale is not None:
                 setattr(fn, "__skaal_scale__", scale)
+            if secrets:
+                setattr(fn, "__skaal_secrets__", tuple(secrets))
+                for ref in secrets:
+                    self.secret(ref)
             self._functions[fn.__name__] = fn
             return fn
 
         if fn_to_decorate is None:
             return decorator
         return decorator(fn_to_decorate)
+
+    @overload
+    def job(
+        self,
+        fn_to_decorate: F,
+        *,
+        retry: RetryPolicy | None = ...,
+    ) -> F: ...
+
+    @overload
+    def job(
+        self,
+        fn_to_decorate: None = ...,
+        *,
+        retry: RetryPolicy | None = ...,
+    ) -> Callable[[F], F]: ...
+
+    def job(
+        self,
+        fn_to_decorate: F | None = None,
+        *,
+        retry: RetryPolicy | None = None,
+    ) -> F | Callable[[F], F]:
+        """Register a background job handler executed by the runtime worker."""
+
+        def decorator(fn: F) -> F:
+            setattr(fn, "__skaal_job__", JobSpec(name=fn.__name__, retry=retry))
+            self._jobs[fn.__name__] = fn
+            return fn
+
+        if fn_to_decorate is None:
+            return decorator
+        return decorator(fn_to_decorate)
+
+    async def enqueue(
+        self,
+        job: str | Callable[..., Any],
+        *args: Any,
+        delay: Duration | str | None = None,
+        run_at: datetime | None = None,
+        idempotency_key: str | None = None,
+        **kwargs: Any,
+    ) -> JobHandle:
+        """Queue a registered background job on the active runtime."""
+        job_name, _ = self._resolve_job(job)
+        runtime = self._require_runtime()
+        return await runtime.enqueue_job(
+            job_name,
+            *args,
+            delay=delay,
+            run_at=run_at,
+            idempotency_key=idempotency_key,
+            **kwargs,
+        )
 
     def channel(
         self,
@@ -480,9 +452,47 @@ class Module:
         return decorator
 
     def attach(self, component: Any) -> Any:
-        """Attach an external or provisioned component to this module."""
+        """Attach an external or provisioned component to this module.
+
+        If the component carries a :class:`~skaal.types.SecretRef`
+        (e.g. ``ExternalStorage(secret=...)``) the secret is auto-declared
+        so the runtime registry resolves it without a separate
+        ``app.secret(...)`` call.
+        """
+        from skaal.components import ExternalComponent
+
         self._components[component.name] = component
+        if isinstance(component, ExternalComponent) and component.secret is not None:
+            self.secret(component.secret)
         return component
+
+    def get_channel(self, channel_cls: type[ChannelT]) -> ChannelT:
+        """Return the registered channel instance for a decorated Channel subclass."""
+        channel = self._channels.get(channel_cls.__name__)
+        if channel is None:
+            raise KeyError(
+                f"Channel {channel_cls.__name__!r} is not registered with module {self.name!r}"
+            )
+        if not isinstance(channel, channel_cls):
+            raise TypeError(
+                f"Registered channel {channel_cls.__name__!r} is {type(channel).__name__}, expected {channel_cls.__name__}"
+            )
+        return channel
+
+    def secret(self, ref: SecretRef) -> SecretRef:
+        """Declare a secret consumed by this module's functions and agents.
+
+        The declaration is collected into ``PlanFile.secrets`` at plan time and
+        resolved by the runtime :class:`~skaal.secrets.SecretRegistry` at boot.
+        """
+        existing = self._secrets.get(ref.name)
+        if existing is not None and existing != ref:
+            raise ValueError(
+                f"Secret {ref.name!r} re-declared with different parameters: "
+                f"{existing} vs {ref}"
+            )
+        self._secrets[ref.name] = ref
+        return ref
 
     @overload
     def schedule(
@@ -490,7 +500,7 @@ class Module:
         fn_to_decorate: F,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = ...,
+        emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> F: ...
 
@@ -500,7 +510,7 @@ class Module:
         fn_to_decorate: None = ...,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = ...,
+        emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> Callable[[F], F]: ...
 
@@ -509,7 +519,7 @@ class Module:
         fn_to_decorate: F | None = None,
         *,
         trigger: "Every | Cron",
-        emit_to: Any | None = None,
+        emit_to: AsyncPublishTarget[object] | None = None,
         timezone: str = "UTC",
     ) -> F | Callable[[F], F]:
         """Register a background function triggered on a time-based schedule.
@@ -551,7 +561,7 @@ class Module:
                 trigger=trigger,
                 target_function=fn.__name__,
                 timezone=timezone,
-                emit_to=emit_to.name if emit_to is not None else None,
+                emit_to=_schedule_emit_target_name(emit_to),
             )
             self._components[st.name] = st
             return fn
@@ -568,9 +578,26 @@ class Module:
 
             auth.pattern(UserEventLog)
         """
-        name = getattr(p, "name", None) or getattr(p, "__class__", type(p)).__name__
+        name = _resource_registration_name(p)
         self._patterns[name] = p
         return p
+
+    def add_before_invoke(self, hook: BeforeInvoke) -> BeforeInvoke:
+        """Register a hook that runs before every resilience-wrapped invocation."""
+        self._before_invoke.append(hook)
+        return hook
+
+    async def invoke(self, fn: str | Callable[..., Any], **kwargs: Any) -> Any:
+        """Invoke a registered function through the active runtime's resilience stack."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return await runtime.invoke(function_name, kwargs)
+
+    def invoke_stream(self, fn: str | Callable[..., Any], **kwargs: Any) -> AsyncIterator[Any]:
+        """Invoke a registered async iterator function through the active runtime."""
+        function_name, _ = self._resolve_invokable(fn)
+        runtime = self._require_runtime()
+        return runtime.invoke_stream(function_name, kwargs)
 
     # ── Export / import API ────────────────────────────────────────────────
 
@@ -584,27 +611,33 @@ class Module:
 
         Returns a ``ModuleExport`` handle for cross-module references.
         """
-        registered: dict[BucketName, dict[str, Any]] = {
+        registered: dict[str, dict[str, Any]] = {
             "storage": self._storage,
             "agents": self._agents,
             "functions": self._functions,
             "channels": self._channels,
         }
-        exports: dict[BucketName, dict[str, Any]] = {
-            "storage": {},
-            "agents": {},
-            "functions": {},
-            "channels": {},
-        }
+
+        exp_storage: dict[str, Any] = {}
+        exp_agents: dict[str, Any] = {}
+        exp_functions: dict[str, Any] = {}
+        exp_channels: dict[str, Any] = {}
 
         for sym in symbols:
-            sym_name = getattr(sym, "__name__", repr(sym))
+            sym_name = _symbol_export_name(sym)
             found = False
             for bucket_name, bucket in registered.items():
                 if sym_name in bucket:
                     self._exports.add(sym_name)
                     found = True
-                    exports[bucket_name][sym_name] = sym
+                    if bucket_name == "storage":
+                        exp_storage[sym_name] = sym
+                    elif bucket_name == "agents":
+                        exp_agents[sym_name] = sym
+                    elif bucket_name == "functions":
+                        exp_functions[sym_name] = sym
+                    elif bucket_name == "channels":
+                        exp_channels[sym_name] = sym
                     break
             if not found:
                 raise ValueError(
@@ -613,10 +646,10 @@ class Module:
                 )
 
         return ModuleExport(
-            storage=exports["storage"],
-            agents=exports["agents"],
-            functions=exports["functions"],
-            channels=exports["channels"],
+            storage=exp_storage,
+            agents=exp_agents,
+            functions=exp_functions,
+            channels=exp_channels,
             namespace=self.name,
         )
 
@@ -705,6 +738,8 @@ class Module:
             result[f"{prefix}{name}"] = obj
         for name, obj in self._functions.items():
             result[f"{prefix}{name}"] = obj
+        for name, obj in self._jobs.items():
+            result[f"{prefix}{name}"] = obj
         for name, obj in self._channels.items():
             result[f"{prefix}{name}"] = obj
         for name, obj in self._patterns.items():
@@ -728,6 +763,137 @@ class Module:
 
         return result
 
+    def _collect_secrets(self) -> dict[str, SecretRef]:
+        """Recursively collect declared secrets from this module and submodules.
+
+        Secrets are *not* namespaced: the runtime registry keys on the
+        logical name so callers can write ``app.secrets.get("DB_DSN")``
+        regardless of which submodule declared it.  Re-declarations with
+        identical parameters are de-duplicated; conflicting declarations
+        raise.
+        """
+        out: dict[str, SecretRef] = {}
+
+        def _merge(src: dict[str, SecretRef]) -> None:
+            for name, ref in src.items():
+                existing = out.get(name)
+                if existing is not None and existing != ref:
+                    raise ValueError(
+                        f"Secret {name!r} re-declared with different parameters: "
+                        f"{existing} vs {ref}"
+                    )
+                out[name] = ref
+
+        _merge(self._secrets)
+        for sub in self._submodules.values():
+            _merge(sub._collect_secrets())
+        return out
+
+    def _collect_jobs(self) -> dict[str, Any]:
+        """Recursively collect background job handlers, regardless of export status."""
+        result: dict[str, Any] = {}
+        prefix = f"{self.name}." if self.name else ""
+
+        for name, obj in self._jobs.items():
+            result[f"{prefix}{name}"] = obj
+
+        for ns, sub in self._submodules.items():
+            sub_prefix = f"{prefix}{ns}." if ns else prefix
+            for qname, obj in sub._collect_jobs().items():
+                bare = qname[len(sub.name) + 1 :] if qname.startswith(sub.name + ".") else qname
+                result[f"{sub_prefix}{bare}"] = obj
+
+        return result
+
+    def _bind_runtime(self, runtime: Any) -> None:
+        self._runtime_ref = weakref.ref(runtime)
+        for submodule in self._submodules.values():
+            submodule._bind_runtime(runtime)
+
+    def _unbind_runtime(self, runtime: Any) -> None:
+        if self._runtime_ref is not None and self._runtime_ref() is runtime:
+            self._runtime_ref = None
+        for submodule in self._submodules.values():
+            submodule._unbind_runtime(runtime)
+
+    def _require_runtime(self) -> Any:
+        runtime = self._runtime_ref() if self._runtime_ref is not None else None
+        if runtime is None:
+            raise RuntimeError(
+                "No active Skaal runtime is bound to this app. "
+                "Start or construct a runtime before calling app.invoke(...)."
+            )
+        return runtime
+
+    async def _prepare_invoke_kwargs(
+        self,
+        function_name: str,
+        kwargs: dict[str, Any],
+        *,
+        is_stream: bool,
+        attempt: int,
+        headers: Mapping[str, str] | None = None,
+        auth_claims: Mapping[str, Any] | None = None,
+        auth_subject: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+    ) -> dict[str, Any]:
+        ctx = _BeforeInvokeContext(
+            function_name=function_name,
+            kwargs=dict(kwargs),
+            is_stream=is_stream,
+            attempt=attempt,
+            headers=dict(headers or {}),
+            auth_claims=cast(AuthClaims | None, dict(auth_claims or {}) or None),
+            auth_subject=auth_subject,
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+        for hook in self._before_invoke:
+            await hook(ctx)
+        return ctx.kwargs
+
+    def _resolve_invokable(self, fn: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        invokables = {
+            name: obj
+            for name, obj in self._collect_all().items()
+            if callable(obj)
+            and (hasattr(obj, "__skaal_compute__") or hasattr(obj, "__skaal_schedule__"))
+        }
+
+        if isinstance(fn, str):
+            direct = invokables.get(fn)
+            if direct is not None:
+                return fn, direct
+            for function_name, obj in invokables.items():
+                if _callable_name(obj) == fn:
+                    return function_name, obj
+            raise KeyError(f"No invokable function named {fn!r}")
+
+        for function_name, obj in invokables.items():
+            if obj is fn:
+                return function_name, obj
+
+        raise KeyError(f"Callable {fn!r} is not registered with module {self.name!r}")
+
+    def _resolve_job(self, job: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        jobs = self._collect_jobs()
+
+        if isinstance(job, str):
+            direct = jobs.get(job)
+            if direct is not None:
+                return job, direct
+            for job_name, obj in jobs.items():
+                if _callable_name(obj) == job:
+                    return job_name, obj
+            raise KeyError(f"No job named {job!r}")
+
+        for job_name, obj in jobs.items():
+            if obj is job:
+                return job_name, obj
+
+        raise KeyError(f"Callable {job!r} is not registered as a job on module {self.name!r}")
+
     # ── Introspection ──────────────────────────────────────────────────────
 
     def describe(self) -> dict[str, Any]:
@@ -737,10 +903,12 @@ class Module:
             "storage": list(self._storage.keys()),
             "agents": list(self._agents.keys()),
             "functions": list(self._functions.keys()),
+            "jobs": list(self._jobs.keys()),
             "channels": list(self._channels.keys()),
             "patterns": list(self._patterns.keys()),
             "schedules": list(self._schedules.keys()),
             "components": list(self._components.keys()),
+            "secrets": list(self._secrets.keys()),
             "submodules": {k: v.describe() for k, v in self._submodules.items()},
             "exports": list(self._exports),
         }
@@ -752,3 +920,37 @@ class Module:
             f"agents={list(self._agents)}, "
             f"functions={list(self._functions)})"
         )
+
+
+def _schedule_emit_target_name(target: AsyncPublishTarget[object] | None) -> str | None:
+    if target is None:
+        return None
+    explicit_name = _explicit_name(target)
+    if explicit_name is not None:
+        return explicit_name
+    return type(target).__name__
+
+
+def _resource_registration_name(resource: object) -> str:
+    explicit_name = _explicit_name(resource)
+    if explicit_name is not None:
+        return explicit_name
+    return type(resource).__name__
+
+
+def _symbol_export_name(symbol: object) -> str:
+    if hasattr(symbol, "__name__"):
+        return cast(_HasDunderName, symbol).__name__
+    return repr(symbol)
+
+
+def _callable_name(value: Callable[..., Any]) -> str | None:
+    if hasattr(value, "__name__"):
+        return cast(_HasDunderName, value).__name__
+    return None
+
+
+def _explicit_name(value: object) -> str | None:
+    if hasattr(value, "name"):
+        return cast(_HasName, value).name
+    return None

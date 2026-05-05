@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from skaal.errors import UnsatisfiableConstraints
 from skaal.solver.targets import is_serverless, resolve_family
 
-
-class UnsatisfiableConstraints(Exception):
-    """Raised when the Z3 solver cannot satisfy the declared constraints."""
-
-    def __init__(self, variable_name: str, reason: str = "") -> None:
-        self.variable_name = variable_name
-        self.reason = reason
-        super().__init__(f"Cannot satisfy constraints for {variable_name!r}. {reason}")
+__all__ = [
+    "UnsatisfiableConstraints",
+    "select_backend",
+]
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -76,7 +73,14 @@ def _check_residency(value: Any, spec: dict[str, Any]) -> bool:
 
 
 def _check_retention(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("retention", [])
+    if value is None or getattr(value, "policy", None) != "expire":
+        return True
+    if not spec.get("supports_ttl", False):
+        return False
+    duration = getattr(value, "duration", None)
+    seconds = getattr(duration, "seconds", None)
+    cap = spec.get("max_ttl_seconds")
+    return seconds is None or cap is None or seconds <= cap
 
 
 _CONSTRAINT_CHECKERS: dict[str, ConstraintChecker] = {
@@ -110,7 +114,7 @@ _CONSTRAINT_FORMATTERS: dict[str, ConstraintFormatter] = {
     "size_hint": lambda v: f"size_hint={v} GB",
     "consistency": lambda v: f"consistency={_enum_value(v)}",
     "residency": lambda v: f"residency={_enum_value(v)}",
-    "retention": lambda v: f"retention={_enum_value(v)}",
+    "retention": lambda v: f"retention={v} (per-row TTL)",
 }
 
 
@@ -236,12 +240,30 @@ def select_backend(
         cost_terms.append(If(sel_vars[name], base_cost + vpc_penalty, 0))
     opt.minimize(Sum(cost_terms))
 
+    # Make equally cheap solutions deterministic across Python/Z3 versions.
+    # Prefer the first backend in catalog order when the primary cost objective ties.
+    tie_break_terms = [If(sel_vars[name], index, 0) for index, name in enumerate(backend_names)]
+    opt.minimize(Sum(tie_break_terms))
+
     result = opt.check()
     if result != sat:
+        from skaal.solver.diagnostics import build_diagnosis, evaluate_storage_candidates
+
         reasons = _build_error_reasons(constraints)
+        diagnosis = build_diagnosis(
+            resource_name=variable_name,
+            resource_kind="storage",
+            requested={
+                key: _CONSTRAINT_FORMATTERS[key](v)
+                for key, v in constraints.items()
+                if v is not None and key in _CONSTRAINT_FORMATTERS
+            },
+            candidates=evaluate_storage_candidates(constraints, backends),
+        )
         raise UnsatisfiableConstraints(
             variable_name,
             f"No backend satisfies: {', '.join(reasons) or 'constraints'}",
+            diagnosis=diagnosis,
         )
 
     model = opt.model()

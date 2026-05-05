@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, model_validator
 
 
 class LatencyRange(BaseModel):
@@ -25,6 +25,8 @@ class StorageBackendSpec(BaseModel):
     access_patterns: list[str] = Field(default_factory=list)
     cost_per_gb_month: float = 0.0
     requires_vpc: bool = False
+    supports_ttl: bool = False
+    max_ttl_seconds: int | None = None
     regions: list[str] = Field(default_factory=lambda: ["all"])
     notes: str = ""
     # Deployment-time provisioning parameters (not used by the solver).
@@ -36,8 +38,18 @@ class StorageBackendSpec(BaseModel):
     # Code-generation wiring metadata (not used by the solver).
     # Populated from the optional [storage.<name>.wire] TOML subsection.
     # Tells deploy generators which Python class to instantiate and how to
-    # connect it.  Validated as deploy Wiring metadata at catalog load time.
+    # connect it.  Validated as a BackendHandler at catalog load time.
     wire: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_retention(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "retention" in data:
+            raise ValueError(
+                "storage.retention is no longer supported in catalogs; use supports_ttl and "
+                "optional max_ttl_seconds instead."
+            )
+        return data
 
 
 class ComputeBackendSpec(BaseModel):
@@ -87,7 +99,7 @@ class Catalog(BaseModel):
         """
         # Import here to avoid a circular dependency at module level
         # (deploy.config doesn't import catalog, so the dependency is one-way).
-        from skaal.backends._spec import Wiring
+        from skaal.deploy.backends.handler import BackendHandler
         from skaal.deploy.config import (
             compute_deploy_config,
             storage_deploy_config,
@@ -100,7 +112,7 @@ class Catalog(BaseModel):
                 storage_deploy_config(k, spec.deploy)  # raises ValueError on bad config
             if spec.wire:
                 try:
-                    TypeAdapter(Wiring).validate_python(spec.wire)
+                    BackendHandler.model_validate(spec.wire)  # raises ValueError on bad wire
                 except Exception as exc:
                     raise ValueError(f"Invalid [storage.{k}.wire] configuration: {exc}") from exc
             storage[k] = spec

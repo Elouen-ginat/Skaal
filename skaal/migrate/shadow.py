@@ -87,16 +87,16 @@ class ShadowBackend:
         else:
             raise ValueError(f"Invalid migration stage: {self.stage}")
 
-    async def set(self, key: str, value: Any) -> None:
+    async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         if self.stage in (
             MigrationStage.SHADOW_WRITE,
             MigrationStage.SHADOW_READ,
             MigrationStage.DUAL_READ,
         ):
-            await self.source.set(key, value)
-            await self.target.set(key, value)
+            await self.source.set(key, value, ttl=ttl)
+            await self.target.set(key, value, ttl=ttl)
         elif self.stage in (MigrationStage.NEW_PRIMARY, MigrationStage.CLEANUP):
-            await self.target.set(key, value)
+            await self.target.set(key, value, ttl=ttl)
         else:
             raise ValueError(f"Invalid migration stage: {self.stage}")
 
@@ -159,7 +159,13 @@ class ShadowBackend:
         else:
             raise ValueError(f"Invalid migration stage: {self.stage}")
 
-    async def atomic_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        *,
+        ttl: float | None = None,
+    ) -> Any:
         """Atomically read-modify-write, routing to the active backend(s).
 
         Stages SHADOW_WRITE–DUAL_READ: update source (authoritative) and mirror the result to target.
@@ -170,11 +176,11 @@ class ShadowBackend:
             MigrationStage.SHADOW_READ,
             MigrationStage.DUAL_READ,
         ):
-            result = await self.source.atomic_update(key, fn)
-            await self.target.set(key, result)
+            result = await self.source.atomic_update(key, fn, ttl=ttl)
+            await self.target.set(key, result, ttl=ttl)
             return result
         elif self.stage in (MigrationStage.NEW_PRIMARY, MigrationStage.CLEANUP):
-            return await self.target.atomic_update(key, fn)
+            return await self.target.atomic_update(key, fn, ttl=ttl)
         else:
             raise ValueError(f"Invalid migration stage: {self.stage}")
 

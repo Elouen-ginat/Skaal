@@ -5,10 +5,12 @@ Demonstrates most Skaal features in one realistic application:
 
   Storage
   -------
-    - Sessions   Store[SessionState]   ephemeral, random-read (Redis / Memorystore)
-    - Users      Store[User]           persistent, collocated with Tasks
-    - Tasks      Store[Task]           persistent, random-read
-    - Stats      Store[StatsView]      persistent, write-heavy (aggregations)
+    - Sessions      Store[SessionState]        ephemeral, random-read (Redis / Memorystore)
+    - Users         Store[User]                persistent, collocated with Tasks
+    - Tasks         Store[Task]                persistent, random-read
+    - Stats         Store[StatsView]           persistent, write-heavy (aggregations)
+    - TaskComments  TaskComments (relational)  persistent, transactional SQL (collocated with Tasks)
+    - TaskSearch    TaskSearchIndex (vector)   persistent, 64-dim cosine semantic search
 
   Patterns
   --------
@@ -51,15 +53,20 @@ Plan for AWS:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Coroutine, Mapping
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from sqlmodel import Field as SqlField
+from sqlmodel import SQLModel, col, select
 
 from skaal import (
     App,
@@ -74,10 +81,13 @@ from skaal import (
     SagaStep,
     ScheduleContext,
     Store,
+    VectorStore,
+    open_relational_session,
+    sync_run,
 )
 from skaal.agent import Agent
 from skaal.decorators import handler
-from skaal.types import Persistent, Scale
+from skaal.types import Durability, Persistent, Scale, ScaleStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +95,7 @@ logger = logging.getLogger(__name__)
 
 Priority = Literal["low", "medium", "high", "critical"]
 TaskStatus = Literal["open", "in_progress", "done", "cancelled"]
+BackgroundJobState = Literal["queued", "running", "succeeded", "failed"]
 
 
 class User(BaseModel):
@@ -141,6 +152,75 @@ class StatsView(BaseModel):
     cancelled_tasks: int = 0
     critical_open: int = 0
     last_updated: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class TaskSearchDocument(BaseModel):
+    """Flattened task document indexed in the vector store for semantic search."""
+
+    id: str
+    title: str
+    content: str  # description + space-joined tags
+    priority: str = "medium"
+    status: str = "open"
+
+
+class BackgroundJobRecord(BaseModel):
+    """Queue-backed job state rendered directly in the dashboard UI."""
+
+    id: str
+    task_id: str
+    task_title: str | None = None
+    job_id: str | None = None
+    job_name: str = "task-dashboard.process_task_digest"
+    requested_by: str | None = None
+    status: BackgroundJobState = "queued"
+    requested_delay: str | None = None
+    message: str = "Queued"
+    result_summary: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    scheduled_for: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    completed_at: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_record(cls, value: Any) -> Any:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            return value
+
+        data = dict(value)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        payload = data.get("payload")
+        payload_data = payload if isinstance(payload, Mapping) else {}
+        result = data.get("result")
+        result_data = result if isinstance(result, Mapping) else {}
+        queue_id = str(data.get("id") or data.get("job_id") or uuid.uuid4())
+        task_id = str(
+            data.get("task_id")
+            or payload_data.get("task_id")
+            or result_data.get("task_id")
+            or queue_id
+        )
+        status = str(data.get("status") or "queued")
+        if status not in {"queued", "running", "succeeded", "failed"}:
+            status = "queued"
+
+        data.setdefault("id", queue_id)
+        data.setdefault("task_id", task_id)
+        data.setdefault("task_title", data.get("title") or data.get("task_name"))
+        data.setdefault("job_name", "task-dashboard.process_task_digest")
+        data.setdefault("message", data.get("error") or data.get("message") or "Queued")
+        data.setdefault("created_at", timestamp)
+        data.setdefault("scheduled_for", data.get("created_at") or timestamp)
+        data["status"] = status
+
+        if data.get("result_summary") is None:
+            if isinstance(result, str):
+                data["result_summary"] = result
+
+        return data
 
 
 # ── Skaal app declaration ─────────────────────────────────────────────────────
@@ -201,6 +281,16 @@ class Stats(Store[StatsView]):
     """Aggregated counters rebuilt on every task mutation."""
 
 
+@skaal_app.storage(
+    read_latency="< 10ms",
+    durability="persistent",
+    access_pattern="random-read",
+    collocate_with="task-dashboard.Tasks",
+)
+class BackgroundJobs(Store[BackgroundJobRecord]):
+    """Small read-model for queued background job work and its outcomes."""
+
+
 # ── Event log ─────────────────────────────────────────────────────────────────
 
 
@@ -238,12 +328,67 @@ class RecentAuditEvents(Store[AuditEvent]):
     """
 
 
+# ── Relational ────────────────────────────────────────────────────────────────
+
+
+@skaal_app.storage(
+    kind="relational",
+    read_latency="< 20ms",
+    durability="persistent",
+    collocate_with="task-dashboard.Tasks",
+)
+class TaskComments(SQLModel, table=True):
+    """
+    Structured per-task comments in the relational tier.
+
+    Solver maps to:
+      - SQLite locally (--persist flag)
+      - Aurora Serverless on aws-lambda target
+      - Cloud Spanner on gcp target
+    """
+
+    __tablename__ = "task_comments"  # type: ignore[assignment]
+
+    id: int | None = SqlField(default=None, primary_key=True)
+    task_id: str = SqlField(index=True)
+    author: str
+    body: str
+    created_at: str = SqlField(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+# ── Vector ────────────────────────────────────────────────────────────────────
+
+
+@skaal_app.storage(
+    kind="vector",
+    dim=64,
+    metric="cosine",
+    read_latency="< 30ms",
+    durability="persistent",
+    collocate_with="task-dashboard.Tasks",
+)
+class TaskSearchIndex(VectorStore[TaskSearchDocument]):
+    """
+    Semantic search index over task titles, descriptions, and tags.
+
+    Solver maps to:
+      - In-process numpy index locally
+      - Amazon OpenSearch Serverless on aws-lambda target
+      - Vertex AI Matching Engine on gcp target
+    """
+
+    __skaal_vector_text_fields__ = ("title", "content")
+
+
 # ── Channel ───────────────────────────────────────────────────────────────────
 
 
-@skaal_app.channel(throughput="> 200 events/s", durability="persistent")
+@skaal_app.channel(throughput="> 200 events/s", durability=Durability.PERSISTENT)
 class Notifications(Channel[TaskNotification]):
     """Real-time task notifications broadcast to all connected workers."""
+
+
+notifications_channel = skaal_app.get_channel(Notifications)
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -258,8 +403,8 @@ class TaskProcessor(Agent):
     Receives TaskNotification messages and updates the tally.
     """
 
-    tasks_processed: Persistent[int] = 0
-    last_event_type: Persistent[str] = ""
+    tasks_processed: Annotated[int, Persistent] = 0
+    last_event_type: Annotated[str, Persistent] = ""
 
     @handler
     async def handle_notification(self, notification: TaskNotification) -> None:
@@ -327,6 +472,40 @@ async def daily_task_report(ctx: ScheduleContext) -> None:
     )
 
 
+# ── Internal helpers (vector sync) ───────────────────────────────────────────
+
+
+def _task_to_search_doc(task: Task) -> TaskSearchDocument:
+    content_parts = [task.description, " ".join(task.tags)]
+    return TaskSearchDocument(
+        id=task.id,
+        title=task.title,
+        content="\n".join(p for p in content_parts if p),
+        priority=task.priority,
+        status=task.status,
+    )
+
+
+async def _sync_task_search(task: Task) -> None:
+    """Upsert a task document in the vector index."""
+    await TaskSearchIndex.delete([task.id])
+    await TaskSearchIndex.add([_task_to_search_doc(task)])
+
+
+def _task_digest_summary(task: Task, owner_name: str | None) -> str:
+    next_action = {
+        "critical": "Escalate immediately and assign an owner in this sprint.",
+        "high": "Move it into active execution and confirm blockers today.",
+        "medium": "Schedule the next concrete step and keep it visible in the backlog.",
+        "low": "Keep it parked until higher-priority work is cleared.",
+    }[task.priority]
+    owner_fragment = f"Owner: {owner_name}." if owner_name else "Owner: unassigned."
+    return (
+        f"{task.title} is {task.priority} priority and currently {task.status}. "
+        f"{owner_fragment} {next_action}"
+    )
+
+
 # ── Compute functions ─────────────────────────────────────────────────────────
 
 
@@ -352,6 +531,7 @@ async def create_task(
         owner_id=owner_id,
     )
     await Tasks.set(task_id, task)
+    await _sync_task_search(task)
 
     await _record_audit(
         AuditEvent(
@@ -365,7 +545,7 @@ async def create_task(
 @skaal_app.function(
     circuit_breaker=CircuitBreaker(failure_threshold=5, recovery_timeout_ms=30_000),
     # Compute latency/memory are cloud hints; on local the single process handles all
-    scale=Scale(instances="auto", strategy="round-robin"),
+    scale=Scale(instances="auto", strategy=ScaleStrategy.ROUND_ROBIN),
 )
 async def assign_task(task_id: str, user_id: str) -> dict:
     """
@@ -394,7 +574,7 @@ async def assign_task(task_id: str, user_id: str) -> dict:
         message=f"Task '{task.title}' assigned to {user.name}",
         severity="info",
     )
-    await Notifications.send(notification)
+    await notifications_channel.send(notification)
     await _refresh_stats()
     return task.model_dump()
 
@@ -429,6 +609,7 @@ async def delete_task(task_id: str, user_id: str | None = None) -> dict:
     if task is None:
         return {"error": f"Task {task_id!r} not found"}
     await Tasks.delete(task_id)
+    await TaskSearchIndex.delete([task_id])
     await _record_audit(AuditEvent(event_type="deleted", task_id=task_id, user_id=user_id))
     await _refresh_stats()
     return {"ok": True, "deleted": task_id}
@@ -478,6 +659,153 @@ async def list_users() -> dict:
     entries = await Users.list()
     users = [u.model_dump() for _, u in entries]
     return {"users": users, "count": len(users)}
+
+
+@skaal_app.function()
+async def add_task_comment(task_id: str, author: str, body: str) -> dict:
+    """Insert a structured comment for a task using relational storage."""
+    if await Tasks.get(task_id) is None:
+        return {"error": f"Task {task_id!r} not found"}
+
+    async with open_relational_session(TaskComments) as session:
+        comment = TaskComments(task_id=task_id, author=author, body=body)
+        session.add(comment)
+        await session.commit()
+        await session.refresh(comment)
+    return comment.model_dump()
+
+
+@skaal_app.function()
+async def list_task_comments(task_id: str) -> dict:
+    """List all structured comments for a task from the relational store."""
+    async with open_relational_session(TaskComments) as session:
+        result = await session.exec(
+            select(TaskComments)
+            .where(TaskComments.task_id == task_id)
+            .order_by(col(TaskComments.id))
+        )
+        comments = list(result.all())
+    return {"comments": [c.model_dump() for c in comments], "count": len(comments)}
+
+
+@skaal_app.function()
+async def search_tasks(query: str, k: int = 5, status: TaskStatus | None = None) -> dict:
+    """Semantic task lookup backed by the vector store."""
+    results = await TaskSearchIndex.similarity_search(
+        query,
+        k=k,
+        filter={"status": status} if status is not None else None,
+    )
+    tasks: list[dict] = []
+    seen: set[str] = set()
+    for result in results:
+        if result.id in seen:
+            continue
+        task = await Tasks.get(result.id)
+        if task is None:
+            continue
+        seen.add(result.id)
+        tasks.append(task.model_dump())
+    return {"tasks": tasks, "count": len(tasks)}
+
+
+@skaal_app.job(retry=RetryPolicy(max_attempts=2, backoff="linear", base_delay_ms=250))
+async def process_task_digest(queue_id: str) -> None:
+    """Generate a short async digest for a task and persist the result for the UI."""
+    record = await BackgroundJobs.get(queue_id)
+    if record is None:
+        return
+
+    record.status = "running"
+    record.started_at = datetime.now(timezone.utc).isoformat()
+    record.message = "Generating task digest"
+    await BackgroundJobs.set(queue_id, record)
+
+    task = await Tasks.get(record.task_id)
+    if task is None:
+        record.status = "failed"
+        record.completed_at = datetime.now(timezone.utc).isoformat()
+        record.message = "Task not found"
+        await BackgroundJobs.set(queue_id, record)
+        return
+
+    await asyncio.sleep(0.25)
+
+    owner_name: str | None = None
+    if task.owner_id:
+        owner = await Users.get(task.owner_id)
+        owner_name = owner.name if owner is not None else None
+
+    summary = _task_digest_summary(task, owner_name)
+    record.task_title = task.title
+    record.status = "succeeded"
+    record.completed_at = datetime.now(timezone.utc).isoformat()
+    record.message = "Digest ready"
+    record.result_summary = summary
+    await BackgroundJobs.set(queue_id, record)
+    await _record_audit(
+        AuditEvent(
+            event_type="background_digest_completed",
+            task_id=task.id,
+            user_id=record.requested_by,
+            payload={"queue_id": queue_id, "job_id": record.job_id, "summary": summary},
+        )
+    )
+
+
+async def enqueue_task_digest(
+    task_id: str,
+    *,
+    requested_by: str | None = None,
+    delay: str | None = None,
+) -> BackgroundJobRecord:
+    """Create a queue record and enqueue the background digest job."""
+    task = await Tasks.get(task_id)
+    if task is None:
+        raise ValueError(f"Task {task_id!r} not found")
+
+    queue_id = str(uuid.uuid4())
+    record = BackgroundJobRecord(
+        id=queue_id,
+        task_id=task_id,
+        task_title=task.title,
+        requested_by=requested_by,
+        requested_delay=delay,
+        message="Queued digest job",
+    )
+    await BackgroundJobs.set(queue_id, record)
+
+    handle = await skaal_app.enqueue(process_task_digest, queue_id, delay=delay)
+    record.job_id = handle.job_id
+    record.job_name = handle.job_name
+    record.scheduled_for = handle.scheduled_for.isoformat()
+    record.message = "Scheduled" if delay else "Queued and waiting for worker"
+    await BackgroundJobs.set(queue_id, record)
+    return record
+
+
+def _run_runtime_awaitable(awaitable: Coroutine[Any, Any, Any]) -> Any:
+    """Run runtime-bound async work on the active runtime loop when available."""
+    try:
+        runtime = skaal_app._require_runtime()
+    except RuntimeError:
+        return sync_run(awaitable)
+
+    deadline = time.monotonic() + 1.0
+    loop = getattr(runtime, "_job_loop", None)
+    while getattr(runtime, "_background_jobs_thread_started", False) and (
+        loop is None or loop.is_closed() or not loop.is_running()
+    ):
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
+        loop = getattr(runtime, "_job_loop", None)
+
+    if loop is None or loop.is_closed() or not loop.is_running():
+        return sync_run(awaitable)
+
+    future = asyncio.run_coroutine_threadsafe(awaitable, loop)
+    return future.result()
 
 
 # ── Internal helper (not exposed as a Skaal function) ────────────────────────
@@ -563,7 +891,7 @@ async def emit_assignment_notification(task_id: str, user_id: str) -> None:
     user = await Users.get(user_id)
     task = await Tasks.get(task_id)
     if user and task:
-        await Notifications.send(
+        await notifications_channel.send(
             TaskNotification(
                 task_id=task_id,
                 message=f"[saga] '{task.title}' → {user.name}",
@@ -602,6 +930,13 @@ STATUS_COLORS = {
     "cancelled": "secondary",
 }
 
+JOB_STATUS_COLORS = {
+    "queued": "secondary",
+    "running": "info",
+    "succeeded": "success",
+    "failed": "danger",
+}
+
 
 def _stat_card(title: str, value: str | int, color: str = "primary") -> dbc.Card:
     return dbc.Card(
@@ -621,12 +956,30 @@ def _task_row(task: dict, users: list[dict]) -> dbc.ListGroupItem:
     is_done = task["status"] == "done"
 
     # Build user options for the assign dropdown
-    user_options = [{"label": u["name"], "value": u["id"]} for u in users]
+    user_options: list[dbc.Select.Options] = [{"label": u["name"], "value": u["id"]} for u in users]
+
+    task_id = task["id"]
 
     return dbc.ListGroupItem(
         dbc.Row(
             [
-                dbc.Col(html.Strong(task["title"]), width=3),
+                dbc.Col(
+                    [
+                        html.Strong(task["title"]),
+                        html.Br(),
+                        dcc.Clipboard(
+                            content=task_id,
+                            title="Copy task ID",
+                            style={"display": "inline", "cursor": "pointer", "color": "#6c757d"},
+                        ),
+                        html.Code(
+                            task_id,
+                            style={"fontSize": "0.7rem", "marginLeft": "4px"},
+                            className="text-muted",
+                        ),
+                    ],
+                    width=3,
+                ),
                 dbc.Col(
                     dbc.Badge(task["priority"], color=PRIORITY_COLORS[task["priority"]]), width=1
                 ),
@@ -677,6 +1030,122 @@ def _task_row(task: dict, users: list[dict]) -> dbc.ListGroupItem:
                 ),
             ],
             align="center",
+        ),
+    )
+
+
+def _background_job_row(job: BackgroundJobRecord) -> dbc.ListGroupItem:
+    title = job.task_title or job.task_id
+    detail = [
+        f"task={job.task_id[:8]}..." if len(job.task_id) > 8 else f"task={job.task_id}",
+        f"scheduled={job.scheduled_for[:19]}",
+    ]
+    if job.completed_at:
+        detail.append(f"completed={job.completed_at[:19]}")
+    return dbc.ListGroupItem(
+        [
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.Strong(title),
+                            html.Div(" · ".join(detail), className="text-muted small"),
+                            html.Div(job.message, className="small mt-1"),
+                        ],
+                        width=9,
+                    ),
+                    dbc.Col(
+                        dbc.Badge(job.status, color=JOB_STATUS_COLORS[job.status]),
+                        width=3,
+                        className="text-end",
+                    ),
+                ],
+                align="center",
+            ),
+            html.Div(job.result_summary, className="small text-muted mt-2")
+            if job.result_summary
+            else None,
+        ]
+    )
+
+
+# ── Seed data ─────────────────────────────────────────────────────────────────
+
+_SEED_USER_ALICE = "seed-user-alice"
+_SEED_USER_BOB = "seed-user-bob"
+_SEED_TASK_1 = "seed-task-001"
+_SEED_TASK_2 = "seed-task-002"
+_SEED_TASK_3 = "seed-task-003"
+
+
+def _seed_demo_data() -> None:
+    """Populate demo users, tasks, and comments if the store is empty."""
+    if Tasks.sync_list():
+        return  # already seeded
+
+    # Users
+    alice = User(id=_SEED_USER_ALICE, name="Alice", email="alice@example.com")
+    bob = User(id=_SEED_USER_BOB, name="Bob", email="bob@example.com")
+    Users.sync_set(alice.id, alice)
+    Users.sync_set(bob.id, bob)
+
+    # Tasks (KV store — always works locally)
+    t1 = Task(
+        id=_SEED_TASK_1,
+        title="Migrate auth service to mTLS",
+        description="Replace API-key auth with mutual TLS across all internal services.",
+        priority="critical",
+        status="open",
+        tags=["security", "infrastructure"],
+    )
+    t2 = Task(
+        id=_SEED_TASK_2,
+        title="Add pagination to task list",
+        description="The task list has no pagination; it breaks at ~500 rows.",
+        priority="high",
+        status="in_progress",
+        owner_id=_SEED_USER_ALICE,
+        tags=["frontend", "performance"],
+    )
+    t3 = Task(
+        id=_SEED_TASK_3,
+        title="Write onboarding docs",
+        description="Cover local setup, skaal run, and the plan/deploy workflow.",
+        priority="medium",
+        status="done",
+        owner_id=_SEED_USER_BOB,
+        tags=["docs"],
+    )
+    for task in (t1, t2, t3):
+        Tasks.sync_set(task.id, task)
+
+    # Vector index — best-effort (requires skaal[vector])
+    try:
+        for task in (t1, t2, t3):
+            sync_run(_sync_task_search(task))
+    except Exception:
+        logger.debug("Vector index seed skipped (skaal[vector] not installed)")
+
+    # Relational comments — best-effort (requires --persist or a relational backend)
+    try:
+        sync_run(
+            add_task_comment(
+                _SEED_TASK_1, "Alice", "Confirmed: all services still use API keys. Priority: P0."
+            )
+        )
+        sync_run(
+            add_task_comment(
+                _SEED_TASK_1, "Bob", "Started cert rotation plan — draft PR up for review."
+            )
+        )
+    except Exception:
+        logger.debug("Relational comment seed skipped (no relational backend available)")
+
+    # Stats
+    Stats.sync_update(
+        "global",
+        lambda _: StatsView(
+            total_tasks=3, open_tasks=1, in_progress_tasks=1, done_tasks=1, critical_open=1
         ),
     )
 
@@ -932,8 +1401,129 @@ dash_app.layout = dbc.Container(
                             ),
                             className="mb-3",
                         ),
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H6("Background Job Queue", className="card-title"),
+                                    html.P(
+                                        "Queue async task digests with the Skaal jobs API. "
+                                        "Copy a task ID from the board and enqueue immediate or delayed work.",
+                                        className="text-muted small",
+                                    ),
+                                    dbc.Input(
+                                        id="inp-background-task-id",
+                                        placeholder="Task ID",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Select(
+                                        id="inp-background-delay",
+                                        options=[
+                                            {"label": "Run immediately", "value": ""},
+                                            {"label": "Delay 2 seconds", "value": "2s"},
+                                            {"label": "Delay 10 seconds", "value": "10s"},
+                                        ],
+                                        value="",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Queue Digest Job",
+                                        id="btn-queue-digest",
+                                        color="dark",
+                                        className="w-100",
+                                    ),
+                                    html.Div(id="background-job-feedback", className="mt-2"),
+                                    html.Hr(),
+                                    html.Div(id="background-job-list"),
+                                ]
+                            ),
+                            className="mb-3",
+                        ),
                         html.Div(id="health-panel"),
                     ],
+                ),
+                # ── Tab 5: Search & Comments ───────────────────────────
+                dbc.Tab(
+                    label="Search & Comments",
+                    tab_id="tab-search",
+                    children=dbc.Row(
+                        [
+                            # ── Semantic search column ─────────────────
+                            dbc.Col(
+                                [
+                                    html.H5("Semantic Search", className="mt-3"),
+                                    html.P(
+                                        'Backed by @app.storage(kind="vector") — cosine similarity over '
+                                        "task titles, descriptions, and tags.",
+                                        className="text-muted small",
+                                    ),
+                                    dbc.InputGroup(
+                                        [
+                                            dbc.Input(
+                                                id="inp-search",
+                                                placeholder="e.g. urgent infrastructure work",
+                                            ),
+                                            dbc.Button(
+                                                "Search",
+                                                id="btn-search",
+                                                color="primary",
+                                            ),
+                                        ],
+                                        className="mb-2",
+                                    ),
+                                    html.Div(id="search-results"),
+                                ],
+                                width=6,
+                            ),
+                            # ── Comments column ────────────────────────
+                            dbc.Col(
+                                [
+                                    html.H5("Task Comments", className="mt-3"),
+                                    html.P(
+                                        'Backed by @app.storage(kind="relational") — SQL rows '
+                                        "collocated with Tasks.",
+                                        className="text-muted small",
+                                    ),
+                                    dbc.Input(
+                                        id="inp-comment-task",
+                                        placeholder="Task ID",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Input(
+                                        id="inp-comment-author",
+                                        placeholder="Author",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Textarea(
+                                        id="inp-comment-body",
+                                        placeholder="Comment…",
+                                        rows=2,
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Add Comment",
+                                        id="btn-add-comment",
+                                        color="secondary",
+                                        className="w-100 mb-3",
+                                    ),
+                                    html.Div(id="comment-feedback"),
+                                    html.Hr(),
+                                    dbc.Input(
+                                        id="inp-list-task",
+                                        placeholder="Task ID to list comments",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Load Comments",
+                                        id="btn-list-comments",
+                                        color="outline-secondary",
+                                        size="sm",
+                                    ),
+                                    html.Div(id="comment-list", className="mt-2"),
+                                ],
+                                width=6,
+                            ),
+                        ]
+                    ),
                 ),
             ],
         ),
@@ -946,11 +1536,14 @@ dash_app.layout = dbc.Container(
 
 @callback(
     Output("session-id", "data"),
+    Output("action-result", "data", allow_duplicate=True),
     Input("boot", "n_intervals"),
     State("session-id", "data"),
+    prevent_initial_call="initial_duplicate",
 )
-def init_session(_, existing_id: str | None) -> str:
-    """Assign a stable session ID on first load."""
+def init_session(_, existing_id: str | None):
+    """Assign a stable session ID on first load and seed demo data."""
+    _seed_demo_data()
     if existing_id:
         Sessions.sync_update(
             existing_id,
@@ -959,10 +1552,10 @@ def init_session(_, existing_id: str | None) -> str:
                 | {"last_seen": datetime.now(timezone.utc).isoformat()}
             ),
         )
-        return existing_id
+        return existing_id, {"op": "boot"}
     sid = str(uuid.uuid4())
     Sessions.sync_set(sid, SessionState(session_id=sid))
-    return sid
+    return sid, {"op": "boot"}
 
 
 @callback(
@@ -1324,7 +1917,7 @@ def trigger_scheduled_job(*_):
     opening a second loop via asyncio.run() causes
     "Future attached to a different loop" errors.
     Using sync_* methods instead spawns a fresh OS thread per call (via
-    _sync_run), each with its own event loop, so no loop is shared.
+    sync_run), each with its own event loop, so no loop is shared.
     """
     ctx = dash.callback_context
     if not ctx.triggered:
@@ -1365,6 +1958,62 @@ def trigger_scheduled_job(*_):
         return dbc.Alert(f"Error: {exc}", color="danger")
 
     return dash.no_update
+
+
+@callback(
+    Output("background-job-feedback", "children"),
+    Output("action-result", "data", allow_duplicate=True),
+    Input("btn-queue-digest", "n_clicks"),
+    State("inp-background-task-id", "value"),
+    State("inp-background-delay", "value"),
+    State("session-id", "data"),
+    prevent_initial_call=True,
+)
+def handle_background_job_enqueue(_, task_id, delay, session_id):
+    """Queue a digest job for the selected task and persist the queue metadata."""
+    if not task_id:
+        return dbc.Alert("Task ID is required.", color="warning"), dash.no_update
+
+    try:
+        record = _run_runtime_awaitable(
+            enqueue_task_digest(task_id.strip(), requested_by=session_id, delay=delay or None)
+        )
+    except ValueError as exc:
+        return dbc.Alert(str(exc), color="warning"), dash.no_update
+    except Exception as exc:
+        return dbc.Alert(f"Queue error: {exc}", color="danger"), dash.no_update
+
+    scheduled = "now" if not record.requested_delay else record.scheduled_for[:19]
+    return (
+        dbc.Alert(
+            f"Queued digest job for '{record.task_title or record.task_id}' (scheduled {scheduled}).",
+            color="success",
+            duration=5000,
+        ),
+        {"op": "background-job-enqueue", "queue_id": record.id},
+    )
+
+
+@callback(
+    Output("background-job-list", "children"),
+    Input("main-tabs", "active_tab"),
+    Input("poll", "n_intervals"),
+    Input("action-result", "data"),
+)
+def refresh_background_jobs(active_tab, _, __):
+    """Render the newest queued background jobs for the system-health view."""
+    if active_tab != "tab-health":
+        return dash.no_update
+
+    listed_jobs = _run_runtime_awaitable(BackgroundJobs.list())
+    entries = sorted(
+        (job for _, job in listed_jobs),
+        key=lambda job: job.created_at,
+        reverse=True,
+    )[:8]
+    if not entries:
+        return dbc.ListGroup([dbc.ListGroupItem("No background jobs queued yet.", color="light")])
+    return dbc.ListGroup([_background_job_row(job) for job in entries])
 
 
 @callback(
@@ -1465,6 +2114,107 @@ def refresh_health(active_tab, _):
             ],
             color="warning",
         )
+
+
+@callback(
+    Output("search-results", "children"),
+    Input("btn-search", "n_clicks"),
+    State("inp-search", "value"),
+    prevent_initial_call=True,
+)
+def handle_search(_, query):
+    """Run semantic search via the vector store and render matching tasks."""
+    if not query:
+        return dbc.Alert("Enter a search query.", color="warning")
+
+    try:
+        result = sync_run(search_tasks(query, k=5))
+        tasks = result.get("tasks", [])
+        if not tasks:
+            return dbc.Alert("No matching tasks found.", color="light")
+        return dbc.ListGroup(
+            [
+                dbc.ListGroupItem(
+                    dbc.Row(
+                        [
+                            dbc.Col(html.Strong(t["title"]), width=6),
+                            dbc.Col(
+                                dbc.Badge(t["priority"], color=PRIORITY_COLORS[t["priority"]]),
+                                width=2,
+                            ),
+                            dbc.Col(
+                                dbc.Badge(t["status"], color=STATUS_COLORS[t["status"]]),
+                                width=2,
+                            ),
+                            dbc.Col(t["id"][:8] + "…", width=2, className="text-muted small"),
+                        ],
+                        align="center",
+                    )
+                )
+                for t in tasks
+            ]
+        )
+    except Exception as exc:
+        return dbc.Alert(f"Search error: {exc}", color="danger")
+
+
+@callback(
+    Output("comment-feedback", "children"),
+    Output("comment-list", "children"),
+    Input("btn-add-comment", "n_clicks"),
+    Input("btn-list-comments", "n_clicks"),
+    State("inp-comment-task", "value"),
+    State("inp-comment-author", "value"),
+    State("inp-comment-body", "value"),
+    State("inp-list-task", "value"),
+    prevent_initial_call=True,
+)
+def handle_comments(add_clicks, list_clicks, task_id, author, body, list_task_id):
+    """Add or list task comments via the relational store."""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update
+
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "btn-add-comment":
+        if not task_id or not author or not body:
+            return dbc.Alert(
+                "Task ID, author, and body are required.", color="warning"
+            ), dash.no_update
+        try:
+            result = sync_run(add_task_comment(task_id, author, body))
+            if "error" in result:
+                return dbc.Alert(result["error"], color="danger"), dash.no_update
+            return dbc.Alert(
+                f"Comment added by {author}.", color="success", duration=4000
+            ), dash.no_update
+        except Exception as exc:
+            return dbc.Alert(f"Error: {exc}", color="danger"), dash.no_update
+
+    if trigger == "btn-list-comments":
+        if not list_task_id:
+            return dash.no_update, dbc.Alert("Enter a Task ID to load comments.", color="warning")
+        try:
+            result = sync_run(list_task_comments(list_task_id))
+            comments = result.get("comments", [])
+            if not comments:
+                return dash.no_update, dbc.Alert("No comments for this task.", color="light")
+            items = [
+                dbc.ListGroupItem(
+                    [
+                        html.Strong(c["author"]),
+                        html.Span(f" · {c['created_at'][:16]}", className="text-muted small ms-2"),
+                        html.P(c["body"], className="mb-0 mt-1"),
+                    ]
+                )
+                for c in comments
+            ]
+            return dash.no_update, dbc.ListGroup(items)
+        except Exception as exc:
+            return dash.no_update, dbc.Alert(f"Error: {exc}", color="danger")
+
+    return dash.no_update, dash.no_update
 
 
 # ── Wire Dash into Skaal ──────────────────────────────────────────────────────

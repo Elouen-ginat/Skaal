@@ -36,6 +36,8 @@ Usage::
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from typing import (
     TYPE_CHECKING,
@@ -52,7 +54,14 @@ from typing import (
 if TYPE_CHECKING:
     from skaal.backends.base import StorageBackend
 
+from skaal.serialization import deserialize_value as _deserialize
+from skaal.serialization import serialize_value as _serialize
+from skaal.sync import run as _sync_run
+from skaal.types import TTL
+from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
+
 T = TypeVar("T")
+_PAGE_DRAIN_LIMIT = 1000
 
 
 def _is_pydantic(t: Any) -> bool:
@@ -62,44 +71,6 @@ def _is_pydantic(t: Any) -> bool:
         return isinstance(t, type) and issubclass(t, BaseModel)
     except ImportError:
         return False
-
-
-def _serialize(value: Any, value_type: type | None) -> Any:
-    """Convert *value* to a backend-storable form."""
-    if value_type is None:
-        return value
-    try:
-        from pydantic import BaseModel
-
-        if isinstance(value_type, type) and issubclass(value_type, BaseModel):
-            if isinstance(value, BaseModel):
-                return value.model_dump()
-            if isinstance(value, dict):
-                return value_type.model_validate(value).model_dump()
-    except ImportError:
-        pass
-    return value
-
-
-def _deserialize(raw: Any, value_type: type | None) -> Any:
-    """Reconstruct a typed value from the raw backend representation."""
-    if raw is None or value_type is None:
-        return raw
-    try:
-        from pydantic import BaseModel
-
-        if isinstance(value_type, type) and issubclass(value_type, BaseModel):
-            if isinstance(raw, value_type):
-                return raw
-            if isinstance(raw, (str, bytes)):
-                raw = json.loads(raw)
-            if isinstance(raw, dict):
-                from skaal.types.schema import apply_migrations
-
-                return value_type.model_validate(apply_migrations(raw, value_type))
-    except ImportError:
-        pass
-    return raw
 
 
 def _primary_key_field(model: type) -> str:
@@ -140,6 +111,187 @@ def _schema_hints(cls: type) -> dict[str, Any]:
     return hints
 
 
+def _normalize_limit(limit: int) -> int:
+    if limit <= 0:
+        raise ValueError("limit must be > 0")
+    return limit
+
+
+def _cursor_identity(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _encode_cursor(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str | None) -> CursorPayload:
+    if cursor is None:
+        return CursorPayload()
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, binascii.Error) as exc:
+        raise ValueError("Invalid cursor") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("Invalid cursor")
+    return CursorPayload(**decoded)
+
+
+def _validate_cursor(
+    cursor: str | None,
+    *,
+    mode: str,
+    extra: dict[str, Any] | None = None,
+) -> CursorPayload:
+    decoded = _decode_cursor(cursor)
+    expected = {"mode": mode, **(extra or {})}
+    for key, value in expected.items():
+        if decoded and decoded.get(key) != value:
+            raise ValueError("Cursor does not match this query")
+    return decoded
+
+
+def _sort_token(value: Any) -> tuple[int, Any]:
+    if value is None:
+        return (0, "")
+    if isinstance(value, bool):
+        return (1, int(value))
+    if isinstance(value, (int, float)):
+        return (2, value)
+    if isinstance(value, str):
+        return (3, value)
+    return (4, json.dumps(value, sort_keys=True, default=str))
+
+
+def _lex_sort_token(value: Any) -> str:
+    if value is None:
+        return "0:"
+    if isinstance(value, bool):
+        return f"1:{int(value)}"
+    if isinstance(value, (int, float)):
+        return f"2:{float(value):+030.10f}"
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return f"3:{encoded}"
+
+
+def _field_value(value: Any, field_name: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(field_name)
+    return getattr(value, field_name, None)
+
+
+def _configure_backend_indexes(backend: Any, indexes: list[SecondaryIndex]) -> None:
+    setattr(backend, "_skaal_secondary_indexes", {index.name: index for index in indexes})
+
+
+def _get_backend_indexes(backend: Any) -> dict[str, SecondaryIndex]:
+    indexes = getattr(backend, "_skaal_secondary_indexes", {})
+    if isinstance(indexes, dict):
+        normalized: dict[str, SecondaryIndex] = {}
+        for name, value in indexes.items():
+            if isinstance(value, SecondaryIndex):
+                normalized[name] = value
+                continue
+            if isinstance(value, dict):
+                normalized[name] = SecondaryIndex(name=name, **value)
+        return normalized
+    return {}
+
+
+def _backend_index_fields(index: SecondaryIndex) -> BackendIndexFields:
+    return BackendIndexFields(
+        partition_field=f"idx_{index.name}_pk",
+        sort_field=f"idx_{index.name}_sk" if index.sort_key is not None else None,
+    )
+
+
+def _page_items(
+    items: list[T],
+    *,
+    limit: int,
+    cursor: str | None,
+    mode: str,
+    extra: dict[str, Any] | None = None,
+) -> Page[T]:
+    limit = _normalize_limit(limit)
+    expected = {"mode": mode, **(extra or {})}
+    decoded = _validate_cursor(cursor, mode=mode, extra=extra)
+    offset = int(decoded.get("offset", 0)) if decoded else 0
+    if offset < 0:
+        raise ValueError("Cursor offset must be >= 0")
+    page_items = items[offset : offset + limit]
+    next_offset = offset + len(page_items)
+    has_more = next_offset < len(items)
+    next_cursor = None
+    if has_more:
+        next_cursor = _encode_cursor({**expected, "offset": next_offset})
+    return Page(items=page_items, next_cursor=next_cursor, has_more=has_more)
+
+
+def _list_page_from_entries(
+    entries: list[tuple[str, Any]],
+    *,
+    limit: int,
+    cursor: str | None,
+) -> Page[tuple[str, Any]]:
+    ordered = sorted(entries, key=lambda item: item[0])
+    return _page_items(ordered, limit=limit, cursor=cursor, mode="list")
+
+
+def _scan_page_from_entries(
+    entries: list[tuple[str, Any]],
+    *,
+    prefix: str,
+    limit: int,
+    cursor: str | None,
+) -> Page[tuple[str, Any]]:
+    ordered = sorted(entries, key=lambda item: item[0])
+    return _page_items(
+        ordered,
+        limit=limit,
+        cursor=cursor,
+        mode="scan",
+        extra={"prefix": prefix},
+    )
+
+
+def _query_index_from_entries(
+    entries: list[tuple[str, Any]],
+    *,
+    backend: Any,
+    index_name: str,
+    key: Any,
+    limit: int,
+    cursor: str | None,
+) -> Page[Any]:
+    indexes = _get_backend_indexes(backend)
+    index = indexes.get(index_name)
+    if index is None:
+        raise ValueError(f"No secondary index named {index_name!r}")
+
+    matches: list[tuple[str, Any, tuple[int, Any]]] = []
+    for primary_key, value in entries:
+        if _field_value(value, index.partition_key) != key:
+            continue
+        sort_value = (
+            _field_value(value, index.sort_key) if index.sort_key is not None else primary_key
+        )
+        matches.append((primary_key, value, _sort_token(sort_value)))
+
+    matches.sort(key=lambda item: (item[2], item[0]))
+    ordered_values = [value for _, value, _ in matches]
+    return _page_items(
+        ordered_values,
+        limit=limit,
+        cursor=cursor,
+        mode="index",
+        extra={"index_name": index_name, "key": _cursor_identity(key)},
+    )
+
+
 # Preserve the builtin ``list`` reference before ``Store`` defines a classmethod
 # with the same name.
 _List = list
@@ -160,6 +312,7 @@ class Store(Generic[T]):
     __skaal_key_type__: ClassVar[type] = str
     __skaal_value_type__: ClassVar[type | None] = None
     __skaal_key_field__: ClassVar[str] = "id"
+    __skaal_default_ttl_seconds__: ClassVar[float | None] = None
     _backend: ClassVar[StorageBackend | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -178,6 +331,22 @@ class Store(Generic[T]):
     def wire(cls, backend: StorageBackend) -> None:
         """Bind *backend* to this storage class."""
         cls._backend = backend
+        indexes = list(getattr(cls, "__skaal_storage__", {}).get("indexes", []))
+        retention = getattr(cls, "__skaal_storage__", {}).get("retention")
+        cls.__skaal_default_ttl_seconds__ = getattr(retention, "default_ttl_seconds", None)
+        _configure_backend_indexes(backend, indexes)
+
+    @classmethod
+    def _effective_ttl_seconds(
+        cls,
+        ttl: TTL | str | float | int | None,
+    ) -> float | None:
+        resolved = TTL.coerce(ttl)
+        if resolved is None:
+            return cls.__skaal_default_ttl_seconds__
+        if resolved.is_never:
+            return None
+        return resolved.seconds
 
     @classmethod
     def _ensure_wired(cls) -> None:
@@ -192,8 +361,6 @@ class Store(Generic[T]):
         key_field = cls.__skaal_key_field__
         if hasattr(item, key_field):
             return str(getattr(item, key_field))
-        if isinstance(item, dict) and key_field in item:
-            return str(item[key_field])
         raise ValueError(
             f"Cannot extract key field {key_field!r} from {type(item).__name__}. "
             f"Set __skaal_key_field__ on the storage class to override."
@@ -208,11 +375,21 @@ class Store(Generic[T]):
         return _deserialize(raw, cls.__skaal_value_type__)
 
     @classmethod
-    async def set(cls, key: str, value: T) -> None:
+    async def set(
+        cls,
+        key: str,
+        value: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Store *value* under *key*."""
         cls._ensure_wired()
         assert cls._backend is not None
-        await cls._backend.set(key, _serialize(value, cls.__skaal_value_type__))
+        await cls._backend.set(
+            key,
+            _serialize(value, cls.__skaal_value_type__),
+            ttl=cls._effective_ttl_seconds(ttl),
+        )
 
     @classmethod
     async def delete(cls, key: str) -> None:
@@ -224,18 +401,81 @@ class Store(Generic[T]):
     @classmethod
     async def list(cls) -> _List[tuple[str, T]]:
         """Return all ``(key, value)`` pairs."""
-        cls._ensure_wired()
-        assert cls._backend is not None
-        entries = await cls._backend.list()
-        return [(key, _deserialize(value, cls.__skaal_value_type__)) for key, value in entries]
+        items: _List[tuple[str, T]] = []
+        cursor: str | None = None
+        while True:
+            page = await cls.list_page(limit=_PAGE_DRAIN_LIMIT, cursor=cursor)
+            items.extend(page.items)
+            if not page.has_more:
+                return items
+            cursor = page.next_cursor
 
     @classmethod
     async def scan(cls, prefix: str = "") -> _List[tuple[str, T]]:
         """Return all ``(key, value)`` pairs where key starts with *prefix*."""
+        items: _List[tuple[str, T]] = []
+        cursor: str | None = None
+        while True:
+            page = await cls.scan_page(prefix=prefix, limit=_PAGE_DRAIN_LIMIT, cursor=cursor)
+            items.extend(page.items)
+            if not page.has_more:
+                return items
+            cursor = page.next_cursor
+
+    @classmethod
+    async def list_page(
+        cls,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[tuple[str, T]]:
         cls._ensure_wired()
         assert cls._backend is not None
-        entries = await cls._backend.scan(prefix)
-        return [(key, _deserialize(value, cls.__skaal_value_type__)) for key, value in entries]
+        page = await cls._backend.list_page(limit=limit, cursor=cursor)
+        return Page(
+            items=[
+                (key, _deserialize(value, cls.__skaal_value_type__)) for key, value in page.items
+            ],
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
+
+    @classmethod
+    async def scan_page(
+        cls,
+        prefix: str = "",
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[tuple[str, T]]:
+        cls._ensure_wired()
+        assert cls._backend is not None
+        page = await cls._backend.scan_page(prefix=prefix, limit=limit, cursor=cursor)
+        return Page(
+            items=[
+                (key, _deserialize(value, cls.__skaal_value_type__)) for key, value in page.items
+            ],
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
+
+    @classmethod
+    async def query_index(
+        cls,
+        index_name: str,
+        key: Any,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[T]:
+        cls._ensure_wired()
+        assert cls._backend is not None
+        page = await cls._backend.query_index(index_name, key, limit=limit, cursor=cursor)
+        return Page(
+            items=[_deserialize(value, cls.__skaal_value_type__) for value in page.items],
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
 
     @classmethod
     async def close(cls) -> None:
@@ -244,9 +484,14 @@ class Store(Generic[T]):
             await cls._backend.close()
 
     @classmethod
-    async def add(cls, item: T) -> None:
+    async def add(
+        cls,
+        item: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Store *item* using its inferred primary key."""
-        await cls.set(cls._extract_key(item), item)
+        await cls.set(cls._extract_key(item), item, ttl=ttl)
 
     @classmethod
     async def remove(cls, key: str) -> None:
@@ -265,14 +510,32 @@ class Store(Generic[T]):
 
     @overload
     @classmethod
-    async def update(cls, key: str, value_or_fn: Callable[[T | None], T]) -> T: ...
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T],
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T: ...
 
     @overload
     @classmethod
-    async def update(cls, key: str, value_or_fn: T) -> T: ...
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T: ...
 
     @classmethod
-    async def update(cls, key: str, value_or_fn: Callable[[T | None], T] | T) -> T:
+    async def update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T] | T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T:
         """
         Replace the value at *key* or atomically transform it.
 
@@ -289,72 +552,108 @@ class Store(Generic[T]):
                 updated = value_or_fn(current)
                 return _serialize(updated, value_type)
 
-            raw_result = await cls._backend.atomic_update(key, _wrapped)
+            raw_result = await cls._backend.atomic_update(
+                key,
+                _wrapped,
+                ttl=cls._effective_ttl_seconds(ttl),
+            )
             return _deserialize(raw_result, cls.__skaal_value_type__)
 
         payload = _serialize(value_or_fn, cls.__skaal_value_type__)
-        await cls.set(key, value_or_fn)
+        await cls.set(key, value_or_fn, ttl=ttl)
         return _deserialize(payload, cls.__skaal_value_type__)
 
     @classmethod
     def sync_get(cls, key: str) -> T | None:
         """Synchronous wrapper for :meth:`get`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         return _sync_run(cls.get(key))
 
     @classmethod
-    def sync_set(cls, key: str, value: T) -> None:
+    def sync_set(
+        cls,
+        key: str,
+        value: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
         """Synchronous wrapper for :meth:`set`."""
-        from skaal.backends.kv.local_map import _sync_run
-
-        _sync_run(cls.set(key, value))
+        _sync_run(cls.set(key, value, ttl=ttl))
 
     @classmethod
     def sync_delete(cls, key: str) -> None:
         """Synchronous wrapper for :meth:`delete`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         _sync_run(cls.delete(key))
 
     @classmethod
     def sync_list(cls) -> _List[tuple[str, T]]:
         """Synchronous wrapper for :meth:`list`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         return _sync_run(cls.list())
+
+    @classmethod
+    def sync_list_page(
+        cls,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[tuple[str, T]]:
+        """Synchronous wrapper for :meth:`list_page`."""
+        return _sync_run(cls.list_page(limit=limit, cursor=cursor))
 
     @classmethod
     def sync_scan(cls, prefix: str = "") -> _List[tuple[str, T]]:
         """Synchronous wrapper for :meth:`scan`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         return _sync_run(cls.scan(prefix))
 
     @classmethod
-    def sync_add(cls, item: T) -> None:
-        """Synchronous wrapper for :meth:`add`."""
-        from skaal.backends.kv.local_map import _sync_run
+    def sync_scan_page(
+        cls,
+        prefix: str = "",
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[tuple[str, T]]:
+        """Synchronous wrapper for :meth:`scan_page`."""
+        return _sync_run(cls.scan_page(prefix=prefix, limit=limit, cursor=cursor))
 
-        _sync_run(cls.add(item))
+    @classmethod
+    def sync_query_index(
+        cls,
+        index_name: str,
+        key: Any,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Page[T]:
+        """Synchronous wrapper for :meth:`query_index`."""
+        return _sync_run(cls.query_index(index_name, key, limit=limit, cursor=cursor))
+
+    @classmethod
+    def sync_add(
+        cls,
+        item: T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> None:
+        """Synchronous wrapper for :meth:`add`."""
+        _sync_run(cls.add(item, ttl=ttl))
 
     @classmethod
     def sync_all(cls) -> _List[T]:
         """Synchronous wrapper for :meth:`all`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         return _sync_run(cls.all())
 
     @classmethod
     def sync_find(cls, prefix: str = "") -> _List[T]:
         """Synchronous wrapper for :meth:`find`."""
-        from skaal.backends.kv.local_map import _sync_run
-
         return _sync_run(cls.find(prefix))
 
     @classmethod
-    def sync_update(cls, key: str, value_or_fn: Callable[[T | None], T] | T) -> T:
+    def sync_update(
+        cls,
+        key: str,
+        value_or_fn: Callable[[T | None], T] | T,
+        *,
+        ttl: TTL | str | float | int | None = None,
+    ) -> T:
         """Synchronous wrapper for :meth:`update`."""
-        from skaal.backends.kv.local_map import _sync_run
-
-        return _sync_run(cls.update(key, value_or_fn))
+        return _sync_run(cls.update(key, value_or_fn, ttl=ttl))
