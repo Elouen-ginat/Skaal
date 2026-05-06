@@ -1,6 +1,6 @@
 [package]
 name = "skaal-mesh"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Skaal runtime mesh — agent routing, state sync, and migration execution (PyO3)"
