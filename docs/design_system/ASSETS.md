@@ -55,12 +55,9 @@ These assets still ship from the existing `docs/design_system/` folder and are u
 | Asset | File | Purpose |
 |---|---|---|
 | Primary logo lockup | [skaal-logo.svg](skaal-logo.svg) | Main brand signature for docs and supporting surfaces |
-| Logo mark | [logo_variants/it-dot.svg](logo_variants/it-dot.svg) | Canonical standalone symbol |
-| Wide mark | [logo_variants/it-dot-wide.svg](logo_variants/it-dot-wide.svg) | Spacious hero and signage placements |
-| Tight mark | [logo_variants/it-dot-tight.svg](logo_variants/it-dot-tight.svg) | Compact placements |
-| Comparison sheet | [logo_variants/overview.svg](logo_variants/overview.svg) | Logo review board |
 | Favicon | [favicon.svg](favicon.svg) | Browser tab usage |
 | App icon | [app-icon.svg](app-icon.svg) | Launcher and icon surfaces |
+| Logo review preview | [preview/logo-marks.html](preview/logo-marks.html) | Current mark comparison sheet using published assets |
 
 ### Components
 
