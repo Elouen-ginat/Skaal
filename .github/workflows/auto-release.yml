@@ -1,0 +1,138 @@
+name: Auto Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-release-main
+  cancel-in-progress: false
+
+jobs:
+  bump-tag-and-release:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.actor.login != 'github-actions[bot]' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        id: bump
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path.cwd()
+          pyproject_path = root / "pyproject.toml"
+          pyproject_text = pyproject_path.read_text(encoding="utf-8")
+          match = re.search(r'^version = "(\d+)\.(\d+)\.(\d+)"$', pyproject_text, re.MULTILINE)
+          if match is None:
+              raise SystemExit("Could not find root package version in pyproject.toml")
+
+          major, minor, patch = map(int, match.groups())
+          old_version = f"{major}.{minor}.{patch}"
+          new_version = f"{major}.{minor}.{patch + 1}"
+
+          replacements = {
+              "pyproject.toml": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+                  (f'"skaal-mesh=={old_version}"', f'"skaal-mesh=={new_version}"'),
+              ],
+              "skaal/__init__.py": [
+                  (f'__version__ = "{old_version}"', f'__version__ = "{new_version}"'),
+              ],
+              "mesh/pyproject.toml": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+              ],
+              "Cargo.toml": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+              ],
+              "mesh/Cargo.toml": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+              ],
+              "skaal/deploy/pulumi/render.py": [
+                  (f'f\'version = "{old_version}"\\n\'', f'f\'version = "{new_version}"\\n\''),
+              ],
+              "skaal/cli/templates/init/pyproject.toml.tmpl": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+              ],
+              "tests/deploy/test_mesh_artifacts.py": [
+                  (f'version = "{old_version}"', f'version = "{new_version}"'),
+                  (
+                      f'skaal_mesh-{old_version}-cp311-cp311-manylinux2014_x86_64.whl',
+                      f'skaal_mesh-{new_version}-cp311-cp311-manylinux2014_x86_64.whl',
+                  ),
+              ],
+          }
+
+          changed_files: list[str] = []
+          for relative_path, file_replacements in replacements.items():
+              path = root / relative_path
+              text = path.read_text(encoding="utf-8")
+              updated = text
+              for old, new in file_replacements:
+                  if old not in updated:
+                      raise SystemExit(f"Expected string not found in {relative_path}: {old}")
+                  updated = updated.replace(old, new)
+              if updated != text:
+                  path.write_text(updated, encoding="utf-8")
+                  changed_files.append(relative_path)
+
+          if not changed_files:
+              raise SystemExit("Version bump did not modify any files")
+
+          github_output = Path(os.environ["GITHUB_OUTPUT"])
+          with github_output.open("a", encoding="utf-8") as handle:
+              handle.write(f"old_version={old_version}\n")
+              handle.write(f"new_version={new_version}\n")
+              handle.write(f"tag=v{new_version}\n")
+
+      - name: Commit and tag release
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git add \
+            Cargo.toml \
+            mesh/Cargo.toml \
+            mesh/pyproject.toml \
+            pyproject.toml \
+            skaal/__init__.py \
+            skaal/cli/templates/init/pyproject.toml.tmpl \
+            skaal/deploy/pulumi/render.py \
+            tests/deploy/test_mesh_artifacts.py
+          git commit -m "chore(release): bump version to ${NEW_TAG}"
+          git tag "${NEW_TAG}"
+          git push origin HEAD:main
+          git push origin "${NEW_TAG}"
+
+      - name: Dispatch release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: gh workflow run release.yml --ref "${NEW_TAG}"

@@ -131,7 +131,7 @@ def test_local_dev_uses_docker_build_stage_when_no_linux_wheel(tmp_path: Path) -
     mesh_dir = tmp_path / "mesh"
     mesh_dir.mkdir()
     (mesh_dir / "Cargo.toml").write_text(
-        '[package]\nname = "skaal-mesh"\nversion = "0.3.0"\n', encoding="utf-8"
+        '[package]\nname = "skaal-mesh"\nversion = "0.3.1"\n', encoding="utf-8"
     )
     (mesh_dir / "pyproject.toml").write_text(
         '[build-system]\nrequires = ["maturin"]\nbuild-backend = "maturin"\n', encoding="utf-8"
@@ -172,7 +172,7 @@ def test_local_dev_artifacts_bundle_linux_mesh_wheel_when_available(tmp_path: Pa
 
     wheels_dir = tmp_path / "target" / "wheels"
     wheels_dir.mkdir(parents=True)
-    wheel_name = "skaal_mesh-0.3.0-cp311-cp311-manylinux2014_x86_64.whl"
+    wheel_name = "skaal_mesh-0.3.1-cp311-cp311-manylinux2014_x86_64.whl"
     (wheels_dir / wheel_name).write_text("fake-wheel", encoding="utf-8")
 
     generate_local_artifacts(
