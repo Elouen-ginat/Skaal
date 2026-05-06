@@ -114,8 +114,8 @@ jobs:
               "tests/deploy/test_mesh_artifacts.py": [
                   (f'version = "{old_version}"', f'version = "{new_version}"'),
                   (
-                      f'skaal_mesh-{old_version}-cp311-cp311-manylinux2014_x86_64.whl',
-                      f'skaal_mesh-{new_version}-cp311-cp311-manylinux2014_x86_64.whl',
+                    f'skaal_mesh-{old_version}-',
+                    f'skaal_mesh-{new_version}-',
                   ),
               ],
           }
