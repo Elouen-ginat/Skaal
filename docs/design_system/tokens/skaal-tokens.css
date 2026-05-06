@@ -1,41 +1,34 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("colors_and_type.css");
 
 :root {
-  --skaal-color-ink: #0e1726;
-  --skaal-color-mist: #f6fbf9;
-  --skaal-color-grid: #a7b4c2;
-  --skaal-color-signal-teal: #13b5a8;
-  --skaal-color-solver-green: #9ae66e;
-  --skaal-color-cloud-blue: #5fa8ff;
-  --skaal-color-rust-copper: #c96a3d;
+  --skaal-font-heading: var(--font-heading);
+  --skaal-font-body: var(--font-body);
+  --skaal-font-mono: var(--font-mono);
 
-  --skaal-font-heading: "Space Grotesk", "Segoe UI", sans-serif;
-  --skaal-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
-  --skaal-font-mono: "IBM Plex Mono", "Cascadia Code", monospace;
+  --skaal-radius-card: var(--radius-card);
+  --skaal-radius-chip: var(--radius-chip);
+  --skaal-radius-icon: var(--radius-icon);
+  --skaal-stroke-fine: var(--stroke-fine);
+  --skaal-stroke-base: var(--stroke-base);
 
-  --skaal-radius-card: 16px;
-  --skaal-radius-chip: 14px;
-  --skaal-radius-icon: 18px;
-  --skaal-stroke-fine: 1.5px;
-  --skaal-stroke-base: 2px;
+  --skaal-shadow-soft: var(--shadow-soft);
+  --skaal-shadow-panel: var(--shadow-panel);
+  --skaal-shadow-hover: var(--shadow-hover);
 
-  --skaal-shadow-soft: 0 16px 40px rgba(14, 23, 38, 0.08);
-  --skaal-shadow-panel: 0 12px 28px rgba(14, 23, 38, 0.12);
-
-  --skaal-motion-fast: 140ms;
-  --skaal-motion-base: 180ms;
-  --skaal-motion-slow: 220ms;
-  --skaal-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --skaal-motion-fast: var(--motion-fast);
+  --skaal-motion-base: var(--motion-base);
+  --skaal-motion-slow: var(--motion-slow);
+  --skaal-ease-standard: var(--ease-standard);
 }
 
 [data-skaal-surface="light"] {
   background: linear-gradient(180deg, #ffffff 0%, var(--skaal-color-mist) 100%);
-  color: var(--skaal-color-ink);
+  color: var(--fg-1);
 }
 
 [data-skaal-surface="dark"] {
-  background: linear-gradient(180deg, #101b2b 0%, #0b1220 100%);
-  color: #f5fbff;
+  background: linear-gradient(180deg, #101b2b 0%, var(--bg-dark) 100%);
+  color: var(--fg-on-dark-1);
 }
 
 .skaal-chip {
@@ -48,11 +41,12 @@
   background: rgba(255, 255, 255, 0.86);
   box-shadow: var(--skaal-shadow-soft);
   font: 500 14px/1 var(--skaal-font-body);
+  color: var(--fg-1);
 }
 
 .skaal-code-surface {
   border-radius: var(--skaal-radius-card);
-  background: #0f1828;
+  background: var(--bg-code);
   color: #e5f3f7;
   box-shadow: var(--skaal-shadow-panel);
   font: 500 14px/1.6 var(--skaal-font-mono);

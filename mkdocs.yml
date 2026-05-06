@@ -7,7 +7,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
-  logo: design_system/logo_variants/it-dot.svg
+  custom_dir: docs/overrides
+  logo: design_system/app-icon.svg
   favicon: design_system/favicon.svg
   features:
     - navigation.instant
@@ -46,41 +47,6 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
 
-exclude_docs: |
-  backend_unification.md
-  dispatch_refactor.md
-  engine_dispatch.md
-  new_storage.md
-  runtime_audit.md
-  user_gaps.md
-  what_is_needed_for_prod.md
-  design/002-z3-backend-selection.md
-  design/003-catalog-toml-format.md
-  design/004-six-stage-migration.md
-  design/005-local-runtime-design.md
-  design/006-rust-mesh-architecture.md
-  design/007-schema-versioning.md
-  design/008-local-pulumi-migration.md
-  design/009-precompiled-mesh-wheels.md
-  design/010-deploy-submodule-refactor.md
-  design/011-deploy-submodule-implementation-plan.md
-  design/012-pulumi-automation-and-docker-py-refactor.md
-  design/013-logging-and-cli-verbosity.md
-  design/014-http-routing-overhaul.md
-  design/015-store-surface-implementation-plan.md
-  design/016-blob-storage-tier-implementation-plan.md
-  design/017-production-runtime-baseline-implementation-plan.md
-  design/018-agent-persistence-implementation-plan.md
-  design/019-simplification-report.md
-  design/020-skaal-init-and-dev-implementation-plan.md
-  design/021-solver-diagnostics-implementation-plan.md
-  design/022-catalog-overrides-implementation-plan.md
-  design/023-relational-migrations-implementation-plan.md
-  design/024-secret-injection-implementation-plan.md
-  design/025-per-row-ttl-implementation-plan.md
-  design/026-background-jobs-implementation-plan.md
-  design/027-backend-native-cursor-index-optimization-plan.md
-
 markdown_extensions:
   - admonition
   - attr_list
@@ -106,26 +72,75 @@ markdown_extensions:
 
 extra_css:
   - design_system/tokens/skaal-tokens.css
+  - design_system/styles/landing.css
   - assets/stylesheets/extra.css
 
 nav:
   - Home: index.md
   - Get Started: getting-started.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - 1. Build a Counter App: tutorials/first-app.md
+      - 2. Add a FastAPI Surface: tutorials/http-api.md
+      - 3. Plan, Build, and Deploy: tutorials/planning-and-deployment.md
+      - 4. Relational Data and Migrations: tutorials/relational-and-migrations.md
+      - 5. Files and Streaming: tutorials/files-and-streaming.md
   - Guides:
       - How It Works: how-it-works.md
       - Platform Features: platform-features.md
       - Examples: examples.md
       - CLI: cli.md
+      - CLI Configuration: cli-configuration.md
       - Catalogs: catalogs.md
       - HTTP Integration: http.md
   - Reference:
-      - Python API: reference/python-api.md
-      - Design System: design_system/README.md
+      - Python API:
+          - Overview: reference/python-api.md
+          - Core and Decorators: reference/python-api-core.md
+          - Data Surfaces: reference/python-api-data.md
+          - Patterns and Agents: reference/python-api-patterns.md
+          - Components and Scheduling: reference/python-api-components.md
+          - CLI-Parity API: reference/python-api-cli-parity.md
+          - Types and Policies: reference/python-api-types.md
+      - Design System: design_system/index.md
       - Design Assets: design_system/ASSETS.md
   - Architecture:
       - Constraint Model: design/001-infrastructure-as-constraints.md
 
 extra:
   homepage: https://github.com/Elouen-ginat/Skaal
+  header_links:
+    - label: Tutorials
+      link: tutorials/
+    - label: CLI
+      link: cli/
+    - label: CLI Config
+      link: cli-configuration/
+    - label: Python API
+      link: reference/python-api/
+    - label: Examples
+      link: examples/
+  footer_links:
+    - label: Pulumi
+      link: https://www.pulumi.com/docs/
+      external: true
+    - label: AWS
+      link: https://docs.aws.amazon.com/
+      external: true
+    - label: GCP
+      link: https://cloud.google.com/docs
+      external: true
+    - label: Docker
+      link: https://docs.docker.com/
+      external: true
+    - label: FastAPI
+      link: https://fastapi.tiangolo.com/
+      external: true
+    - label: Z3
+      link: https://z3prover.github.io/api/html/
+      external: true
+    - label: GitHub
+      link: https://github.com/Elouen-ginat/Skaal
+      external: true
 
 copyright: Copyright &copy; 2026 Skaal contributors

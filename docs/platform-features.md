@@ -4,55 +4,51 @@ Skaal is not only a solver wrapper. It gives you one application model across ty
 
 <div class="skaal-feature-grid">
   <section class="skaal-feature-card">
-    <img src="design_system/illustrations/stack-cubes.svg" alt="Illustration of stacked infrastructure layers." />
-    <div markdown="1">
-
-### Typed data surfaces
-
-- `Map[K, V]` and `Collection[T]` for application storage
-- `BlobStore` for files and object workflows
-- relational and vector tiers for SQL and embedding use cases
-- backend selection driven by catalogs for local, AWS, and GCP
-
+    <img src="../design_system/illustrations/stack-cubes.svg" alt="Illustration of stacked infrastructure layers." />
+    <div>
+      <h3>Typed data surfaces</h3>
+      <ul>
+        <li><code>Map[K, V]</code> and <code>Collection[T]</code> for application storage</li>
+        <li><code>BlobStore</code> for files and object workflows</li>
+        <li>relational and vector tiers for SQL and embedding use cases</li>
+        <li>backend selection driven by catalogs for local, AWS, and GCP</li>
+      </ul>
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="design_system/illustrations/analytics-screen.svg" alt="Dashboard illustration for runtime and observability capabilities." />
-    <div markdown="1">
-
-### Runtime and execution model
-
-- async-first runtime design
-- resilience policies on compute functions
-- schedules, channels, and background work support
-- local serving, hot reload, and mounted ASGI or WSGI apps
-
+    <img src="../design_system/illustrations/analytics-screen.svg" alt="Dashboard illustration for runtime and observability capabilities." />
+    <div>
+      <h3>Runtime and execution model</h3>
+      <ul>
+        <li>async-first runtime design</li>
+        <li>resilience policies on compute functions</li>
+        <li>schedules, channels, and background work support</li>
+        <li>local serving, hot reload, and mounted ASGI or WSGI apps</li>
+      </ul>
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="design_system/illustrations/cloud-route.svg" alt="Cloud route illustration showing movement from local to cloud targets." />
-    <div markdown="1">
-
-### Deployment without handwritten glue
-
-- generated Dockerfiles and runtime entry points
-- Pulumi programs and stack metadata
-- local target for Docker-backed development deployment
-- AWS and GCP packaging flows from the same app definition
-
+    <img src="../design_system/illustrations/cloud-route.svg" alt="Cloud route illustration showing movement from local to cloud targets." />
+    <div>
+      <h3>Deployment without handwritten glue</h3>
+      <ul>
+        <li>generated Dockerfiles and runtime entry points</li>
+        <li>Pulumi programs and stack metadata</li>
+        <li>local target for Docker-backed development deployment</li>
+        <li>AWS and GCP packaging flows from the same app definition</li>
+      </ul>
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="design_system/illustrations/code-console.svg" alt="Code console illustration for framework integration and developer workflow." />
-    <div markdown="1">
-
-### Framework and product integration
-
-- FastAPI, Starlette, and Dash fit the mounted-app model well
-- plugin discovery for backends, channels, and catalogs
-- example apps for APIs, streaming, uploads, dashboards, and mesh flows
-- Python API equivalents of the CLI for orchestration and testing
-
+    <img src="../design_system/illustrations/code-console.svg" alt="Code console illustration for framework integration and developer workflow." />
+    <div>
+      <h3>Framework and product integration</h3>
+      <ul>
+        <li>FastAPI, Starlette, and Dash fit the mounted-app model well</li>
+        <li>plugin discovery for backends, channels, and catalogs</li>
+        <li>example apps for APIs, streaming, uploads, dashboards, and mesh flows</li>
+        <li>Python API equivalents of the CLI for orchestration and testing</li>
+      </ul>
     </div>
   </section>
 </div>

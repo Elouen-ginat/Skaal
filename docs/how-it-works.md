@@ -4,51 +4,35 @@ Skaal keeps the application model stable and treats infrastructure selection as 
 
 <div class="skaal-flow-grid">
   <section class="skaal-flow-card">
-    <img src="design_system/components/constraint-tokens.svg" alt="Constraint tokens showing latency, durability, and throughput specifications." />
-    <div markdown="1">
-
-### 1. Declare the behavior you need
-
-Use typed surfaces like `Map`, `Collection`, `BlobStore`, or `VectorStore`, then attach constraints with decorators such as `@storage`, `@function`, `@schedule`, and `@channel`.
-
-The app code describes required behavior, not vendor-specific infrastructure.
-
+    <img src="../design_system/components/constraint-tokens.svg" alt="Constraint tokens showing latency, durability, and throughput specifications." />
+    <div>
+      <h3>1. Declare the behavior you need</h3>
+      <p>Use typed surfaces like <code>Map</code>, <code>Collection</code>, <code>BlobStore</code>, or <code>VectorStore</code>, then attach constraints with decorators such as <code>@storage</code>, <code>@function</code>, <code>@schedule</code>, and <code>@channel</code>.</p>
+      <p>The app code describes required behavior, not vendor-specific infrastructure.</p>
     </div>
   </section>
   <section class="skaal-flow-card">
-    <img src="design_system/components/backend-card.svg" alt="Backend evaluation card showing a viable infrastructure option." />
-    <div markdown="1">
-
-### 2. Load the environment catalog
-
-Catalogs describe the backend options available for a target environment. A local catalog might expose SQLite and filesystem storage. An AWS catalog might expose DynamoDB, S3, Lambda, and EventBridge.
-
-That gives the solver a bounded search space grounded in real infrastructure capabilities.
-
+    <img src="../design_system/components/backend-card.svg" alt="Backend evaluation card showing a viable infrastructure option." />
+    <div>
+      <h3>2. Load the environment catalog</h3>
+      <p>Catalogs describe the backend options available for a target environment. A local catalog might expose SQLite and filesystem storage. An AWS catalog might expose DynamoDB, S3, Lambda, and EventBridge.</p>
+      <p>That gives the solver a bounded search space grounded in real infrastructure capabilities.</p>
     </div>
   </section>
   <section class="skaal-flow-card">
-    <img src="design_system/components/plan-graph-example.svg" alt="Plan graph showing a selected route through infrastructure options." />
-    <div markdown="1">
-
-### 3. Solve for the cheapest viable path
-
-The Z3-backed planner evaluates the declared constraints against the catalog and selects a backend mix that satisfies them. The output is a plan, not a guess: the chosen route is explicit, explainable, and target-aware.
-
-This is the core Skaal trade. The solver owns infrastructure selection so your app code does not have to.
-
+    <img src="../design_system/components/plan-graph-example.svg" alt="Plan graph showing a selected route through infrastructure options." />
+    <div>
+      <h3>3. Solve for the cheapest viable path</h3>
+      <p>The Z3-backed planner evaluates the declared constraints against the catalog and selects a backend mix that satisfies them. The output is a plan, not a guess: the chosen route is explicit, explainable, and target-aware.</p>
+      <p>This is the core Skaal trade. The solver owns infrastructure selection so your app code does not have to.</p>
     </div>
   </section>
   <section class="skaal-flow-card">
-    <img src="design_system/components/pulumi-output.svg" alt="Generated Pulumi output and deployment artifacts panel." />
-    <div markdown="1">
-
-### 4. Generate artifacts and run them
-
-Once a plan exists, Skaal generates the runnable surface for the chosen target: Dockerfiles, runtime entry points, Pulumi programs, stack metadata, and local deployment outputs.
-
-You can run locally, or deploy the same application model to AWS or GCP.
-
+    <img src="../design_system/components/pulumi-output.svg" alt="Generated Pulumi output and deployment artifacts panel." />
+    <div>
+      <h3>4. Generate artifacts and run them</h3>
+      <p>Once a plan exists, Skaal generates the runnable surface for the chosen target: Dockerfiles, runtime entry points, Pulumi programs, stack metadata, and local deployment outputs.</p>
+      <p>You can run locally, or deploy the same application model to AWS or GCP.</p>
     </div>
   </section>
 </div>
@@ -66,25 +50,23 @@ The same shape applies to cloud targets. You swap the target and catalog, not th
 ## What stays stable
 
 <div class="skaal-split-callout">
-  <div markdown="1">
-
-### Stable across environments
-
-- Your `App` and `Module` definitions
-- Your typed storage and compute surfaces
-- Your mounted HTTP framework shape
-- Your public application logic
-
+  <div>
+    <h3>Stable across environments</h3>
+    <ul>
+      <li>Your <code>App</code> and <code>Module</code> definitions</li>
+      <li>Your typed storage and compute surfaces</li>
+      <li>Your mounted HTTP framework shape</li>
+      <li>Your public application logic</li>
+    </ul>
   </div>
-  <div markdown="1">
-
-### Environment-specific inputs
-
-- The catalog file
-- The deployment target
-- Region, project, and stack settings
-- Secrets and external connection details
-
+  <div>
+    <h3>Environment-specific inputs</h3>
+    <ul>
+      <li>The catalog file</li>
+      <li>The deployment target</li>
+      <li>Region, project, and stack settings</li>
+      <li>Secrets and external connection details</li>
+    </ul>
   </div>
 </div>
 

@@ -205,9 +205,9 @@ Start by browsing [examples](examples) and the generated local deployment output
 - [CLI guide](docs/cli.md)
 - [HTTP integration](docs/http.md)
 - [Catalogs](docs/catalogs.md)
-- [Backend unification notes](docs/backend_unification.md)
-- [Runtime audit](docs/runtime_audit.md)
-- [Architecture decisions](docs/design)
+- [Backend unification notes](notes/backend_unification.md)
+- [Runtime audit](notes/runtime_audit.md)
+- [Archived design notes](notes/design)
 
 [Back to top](#top)
 

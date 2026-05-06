@@ -1,76 +1,88 @@
-# Skaal Design System Assets
+# Skaal Design System Inventory
 
-This inventory is derived from the design board in [docs/design_system/design_asset.png](design_asset.png) and the direction documented in [docs/design_system/README.md](README.md).
+This inventory now covers both the published `design_system/` assets and the newly added source materials that define the refreshed docs theme.
 
-## Brand Core
-
-| Asset | File | Purpose |
-|---|---|---|
-| Primary logo lockup | [docs/design_system/skaal-logo.svg](skaal-logo.svg) | Main brand signature for docs, decks, and hero surfaces |
-| Chosen logo mark | [docs/design_system/logo_variants/it-dot.svg](logo_variants/it-dot.svg) | Canonical standalone symbol |
-| Wide mark | [docs/design_system/logo_variants/it-dot-wide.svg](logo_variants/it-dot-wide.svg) | Spacious placements and overview compositions |
-| Tight mark | [docs/design_system/logo_variants/it-dot-tight.svg](logo_variants/it-dot-tight.svg) | Dense placements and small utility contexts |
-| Alternate cut mark | [docs/design_system/logo_variants/cut-rail.svg](logo_variants/cut-rail.svg) | Expresses evaluation and narrowing |
-| Alternate step mark | [docs/design_system/logo_variants/step-rail.svg](logo_variants/step-rail.svg) | Expresses staged progression |
-| Alternate linked mark | [docs/design_system/logo_variants/linked-rail.svg](logo_variants/linked-rail.svg) | Expresses connected system topology |
-| Logo contact sheet | [docs/design_system/logo_variants/overview.svg](logo_variants/overview.svg) | Side-by-side comparison for review |
-| Favicon | [docs/design_system/favicon.svg](favicon.svg) | Browser tab and bookmark usage |
-| App icon | [docs/design_system/app-icon.svg](app-icon.svg) | Desktop and launcher usage |
-
-## Iconography
+## Foundation Files
 
 | Asset | File | Purpose |
 |---|---|---|
-| Icon sprite sheet | [docs/design_system/icons/sprite.svg](icons/sprite.svg) | Source definitions for UI/product icons |
-| Iconography overview | [docs/design_system/icons/iconography.svg](icons/iconography.svg) | Review sheet for the icon family |
+| Published token entry point | [skaal-tokens.css](tokens/skaal-tokens.css) | Token file loaded by the docs site |
+| Integrated foundation source | [colors_and_type.css](tokens/colors_and_type.css) | Semantic color and typography source now shipped inside the design system |
+| Shared landing component layer | [landing.css](styles/landing.css) | Canonical landing components consumed by both MkDocs and the preview reference |
+| Landing reference HTML | [landing-page.html](preview/landing-page.html) | Canonical layout reference for the docs homepage refresh |
+| Landing preview adapter | [landing.css](preview/landing.css) | Preview-only shell styles layered on top of the shared landing component CSS |
 
-Included icons: Constraints, Solver, Plan Graph, Selected Route, Compute, Storage, Blob, Database, Vector, Schedule, Deploy, Target.
+## Preview Library
 
-## UI Components
+All preview files now live under `docs/design_system/preview/`.
+
+| Preview | File | Purpose |
+|---|---|---|
+| Shared preview card wrapper | [_card.css](preview/_card.css) | Base frame for the HTML previews |
+| Buttons | [buttons.html](preview/buttons.html) | Primary, accent, secondary, ghost, and danger button states |
+| Cards | [cards.html](preview/cards.html) | Step-card structure and kicker treatment |
+| Backend card | [backend-card.html](preview/backend-card.html) | Evaluated backend candidate surface |
+| Constraint chips | [chips-constraint.html](preview/chips-constraint.html) | Constraint badge vocabulary |
+| Code surface | [code-surface.html](preview/code-surface.html) | Dark code panel styling |
+| Terminal block | [terminal-block.html](preview/terminal-block.html) | CLI and observability surface |
+| Plan graph | [plan-graph.html](preview/plan-graph.html) | Selected-route and candidate visualization |
+| Forms | [forms.html](preview/forms.html) | Input, field, and control treatment |
+| Icons | [icons.html](preview/icons.html) | Icon-set review sheet |
+| Landing page reference | [landing-page.html](preview/landing-page.html) | Fully integrated landing reference using the local preview assets |
+| Landing preview adapter | [landing.css](preview/landing.css) | Preview-only CSS used by the local landing shell |
+| Logo marks | [logo-marks.html](preview/logo-marks.html) | Mark comparisons and symbol direction |
+| Primary logo | [logo-primary.html](preview/logo-primary.html) | Full lockup review |
+| Patterns | [patterns.html](preview/patterns.html) | Background and grid treatments |
+| Status signals | [status-signals.html](preview/status-signals.html) | Resolved, warning, and operational states |
+| Motion | [motion.html](preview/motion.html) | Timing and transition direction |
+| Radii | [radii.html](preview/radii.html) | Corner system reference |
+| Shadows | [shadows.html](preview/shadows.html) | Elevation reference |
+| Spacing scale | [spacing-scale.html](preview/spacing-scale.html) | 4px spacing system |
+| Type families | [type-families.html](preview/type-families.html) | Font-family decisions |
+| Type headings | [type-headings.html](preview/type-headings.html) | Display, h1, h2, and heading rhythm |
+| Type body | [type-body.html](preview/type-body.html) | Body copy and supporting text |
+| Core colors | [colors-core.html](preview/colors-core.html) | Base palette |
+| Accent colors | [colors-accent.html](preview/colors-accent.html) | Accent and signal colors |
+| Semantic colors | [colors-semantic.html](preview/colors-semantic.html) | Foreground and background roles |
+| Color tints | [colors-tints.html](preview/colors-tints.html) | Supporting tints and transparency treatment |
+
+## Published SVG Asset Pack
+
+These assets still ship from the existing `docs/design_system/` folder and are used directly by the docs content.
+
+### Brand Core
 
 | Asset | File | Purpose |
 |---|---|---|
-| Constraint token set | [docs/design_system/components/constraint-tokens.svg](components/constraint-tokens.svg) | Constraint badges and spec-token styling |
-| Backend card | [docs/design_system/components/backend-card.svg](components/backend-card.svg) | Evaluated backend card example |
-| Status signals | [docs/design_system/components/status-signals.svg](components/status-signals.svg) | Resolved, deploying, degraded, and error states |
-| Plan graph example | [docs/design_system/components/plan-graph-example.svg](components/plan-graph-example.svg) | Signature planner component |
-| Pulumi output panel | [docs/design_system/components/pulumi-output.svg](components/pulumi-output.svg) | Generated artifact/code block treatment |
-| Terminal block | [docs/design_system/components/terminal-block.svg](components/terminal-block.svg) | CLI/observability surface styling |
-| Badge set | [docs/design_system/components/badges.svg](components/badges.svg) | Product, platform, and stack badges |
+| Primary logo lockup | [skaal-logo.svg](skaal-logo.svg) | Main brand signature for docs and supporting surfaces |
+| Logo mark | [logo_variants/it-dot.svg](logo_variants/it-dot.svg) | Canonical standalone symbol |
+| Wide mark | [logo_variants/it-dot-wide.svg](logo_variants/it-dot-wide.svg) | Spacious hero and signage placements |
+| Tight mark | [logo_variants/it-dot-tight.svg](logo_variants/it-dot-tight.svg) | Compact placements |
+| Comparison sheet | [logo_variants/overview.svg](logo_variants/overview.svg) | Logo review board |
+| Favicon | [favicon.svg](favicon.svg) | Browser tab usage |
+| App icon | [app-icon.svg](app-icon.svg) | Launcher and icon surfaces |
 
-## Patterns and Diagrams
-
-| Asset | File | Purpose |
-|---|---|---|
-| Grid light | [docs/design_system/patterns/grid-light.svg](patterns/grid-light.svg) | Quiet background surface for light UI |
-| Dot field | [docs/design_system/patterns/grid-dots.svg](patterns/grid-dots.svg) | Technical dotted field background |
-| Grid dark | [docs/design_system/patterns/grid-dark.svg](patterns/grid-dark.svg) | Terminal/dashboard dark surface |
-| Aurora gradient | [docs/design_system/patterns/aurora-gradient.svg](patterns/aurora-gradient.svg) | Accent background treatment |
-| Inline graph | [docs/design_system/diagrams/nodes-inline.svg](diagrams/nodes-inline.svg) | Simple route-and-node diagram |
-| Resolve flow | [docs/design_system/diagrams/flow-resolve.svg](diagrams/flow-resolve.svg) | Constraint to backend selection flow |
-| Network route | [docs/design_system/diagrams/network-route.svg](diagrams/network-route.svg) | Radial system graph with resolved endpoint |
-
-## Illustrations
+### Components
 
 | Asset | File | Purpose |
 |---|---|---|
-| Code console | [docs/design_system/illustrations/code-console.svg](illustrations/code-console.svg) | Developer tooling hero/support art |
-| Stack cubes | [docs/design_system/illustrations/stack-cubes.svg](illustrations/stack-cubes.svg) | Infrastructure stack illustration |
-| Cloud route | [docs/design_system/illustrations/cloud-route.svg](illustrations/cloud-route.svg) | Hybrid local/cloud flow illustration |
-| Analytics screen | [docs/design_system/illustrations/analytics-screen.svg](illustrations/analytics-screen.svg) | Dashboard/support illustration |
+| Constraint tokens | [components/constraint-tokens.svg](components/constraint-tokens.svg) | Constraint badge sheet |
+| Backend card | [components/backend-card.svg](components/backend-card.svg) | Backend evaluation illustration |
+| Plan graph example | [components/plan-graph-example.svg](components/plan-graph-example.svg) | Planner route visualization |
+| Pulumi output | [components/pulumi-output.svg](components/pulumi-output.svg) | Generated artifact panel |
+| Terminal block | [components/terminal-block.svg](components/terminal-block.svg) | Command-line visual |
+| Status signals | [components/status-signals.svg](components/status-signals.svg) | Operational-state illustrations |
 
-## Tokens
+### Patterns, Diagrams, and Illustrations
 
 | Asset | File | Purpose |
 |---|---|---|
-| CSS token file | [docs/design_system/tokens/skaal-tokens.css](tokens/skaal-tokens.css) | Colors, typography, radii, stroke widths, and motion timing |
-
-## Web-Sourced Foundations
-
-The type stack is backed by open web fonts available from Google Fonts:
-
-- Space Grotesk for headings
-- IBM Plex Sans for body copy
-- IBM Plex Mono for code and terminal surfaces
-
-These are wired into [docs/design_system/tokens/skaal-tokens.css](tokens/skaal-tokens.css) using a single `@import` statement for fast reuse in docs or demos.
+| Grid light | [patterns/grid-light.svg](patterns/grid-light.svg) | Primary light-surface background grid |
+| Grid dark | [patterns/grid-dark.svg](patterns/grid-dark.svg) | Dark-surface grid |
+| Dot field | [patterns/grid-dots.svg](patterns/grid-dots.svg) | Secondary technical pattern |
+| Resolve flow | [diagrams/flow-resolve.svg](diagrams/flow-resolve.svg) | Constraint-to-selection diagram |
+| Network route | [diagrams/network-route.svg](diagrams/network-route.svg) | Resolved endpoint diagram |
+| Code console | [illustrations/code-console.svg](illustrations/code-console.svg) | Support art for tooling surfaces |
+| Stack cubes | [illustrations/stack-cubes.svg](illustrations/stack-cubes.svg) | Infrastructure stack illustration |
+| Cloud route | [illustrations/cloud-route.svg](illustrations/cloud-route.svg) | Local-to-cloud motion illustration |
+| Analytics screen | [illustrations/analytics-screen.svg](illustrations/analytics-screen.svg) | Dashboard support art |

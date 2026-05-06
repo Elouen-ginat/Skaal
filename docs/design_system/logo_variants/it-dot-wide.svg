@@ -1,7 +1,0 @@
-<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Skaal it-dot wide logo</title>
-  <desc id="desc">A more open it-dot symbol with extra spacing to the selected endpoint.</desc>
-  <rect width="256" height="256" rx="48" fill="#F6FBF9"/>
-  <path d="M141.5 63.5C147.2 57.8 156.4 57.8 162.1 63.5C167.8 69.2 167.8 78.4 162.1 84.1L118.2 128L162.1 171.9C167.8 177.6 167.8 186.8 162.1 192.5C156.4 198.2 147.2 198.2 141.5 192.5L87.28 138.3C81.57 132.6 81.57 123.4 87.28 117.7L141.5 63.5Z" fill="#0E1726"/>
-  <circle cx="204" cy="128" r="18" fill="#9AE66E"/>
-</svg>

@@ -4,73 +4,59 @@ The repository includes example apps that cover the shapes Skaal is meant to sup
 
 <div class="skaal-example-grid">
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### Hello World
-
-The smallest end-to-end app model for learning how `App`, typed storage, and the local run loop fit together.
-
-[Browse example](https://github.com/Elouen-ginat/Skaal/tree/main/examples/01_hello_world)
-
+    <div>
+      <h3>Hello World</h3>
+      <p>The smallest end-to-end app model for learning how <code>App</code>, typed storage, and the local run loop fit together.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/01_hello_world">Browse example</a>
+      </div>
     </div>
   </section>
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### Todo API
-
-A practical CRUD API shape that shows Skaal alongside a mounted HTTP framework.
-
-[Browse example](https://github.com/Elouen-ginat/Skaal/tree/main/examples/02_todo_api)
-
+    <div>
+      <h3>Todo API</h3>
+      <p>A practical CRUD API shape that shows Skaal alongside a mounted HTTP framework.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/02_todo_api">Browse example</a>
+      </div>
     </div>
   </section>
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### Dash App and Task Dashboard
-
-UI-oriented examples that show Skaal as the application and data layer underneath a dashboard surface.
-
-[Dash app](https://github.com/Elouen-ginat/Skaal/tree/main/examples/03_dash_app)
-
-[Task dashboard](https://github.com/Elouen-ginat/Skaal/tree/main/examples/05_task_dashboard)
-
+    <div>
+      <h3>Dash App and Task Dashboard</h3>
+      <p>UI-oriented examples that show Skaal as the application and data layer underneath a dashboard surface.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/03_dash_app">Dash app</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/05_task_dashboard">Task dashboard</a>
+      </div>
     </div>
   </section>
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### FastAPI Streaming and Uploads
-
-Examples for streaming responses and multipart workflows using the mounted-ASGI model.
-
-[Streaming](https://github.com/Elouen-ginat/Skaal/tree/main/examples/06_fastapi_streaming)
-
-[File uploads](https://github.com/Elouen-ginat/Skaal/tree/main/examples/07_file_upload_api)
-
+    <div>
+      <h3>FastAPI Streaming and Uploads</h3>
+      <p>Examples for streaming responses and multipart workflows using the mounted-ASGI model.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/06_fastapi_streaming">Streaming</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/07_file_upload_api">File uploads</a>
+      </div>
     </div>
   </section>
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### Mesh Counter
-
-An example focused on the optional distributed mesh runtime surface and actor-style composition.
-
-[Browse example](https://github.com/Elouen-ginat/Skaal/tree/main/examples/04_mesh_counter)
-
+    <div>
+      <h3>Mesh Counter</h3>
+      <p>An example focused on the optional distributed mesh runtime surface and actor-style composition.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/04_mesh_counter">Browse example</a>
+      </div>
     </div>
   </section>
   <section class="skaal-example-card">
-    <div markdown="1">
-
-### Team Directory and top-level app examples
-
-The repository also includes simpler top-level examples like `team_directory.py`, `todo_api.py`, `fastapi_streaming.py`, and `file_upload_api.py` for direct entry-point inspection.
-
-[Browse examples directory](https://github.com/Elouen-ginat/Skaal/tree/main/examples)
-
+    <div>
+      <h3>Team Directory and top-level app examples</h3>
+      <p>The repository also includes simpler top-level examples like <code>team_directory.py</code>, <code>todo_api.py</code>, <code>fastapi_streaming.py</code>, and <code>file_upload_api.py</code> for direct entry-point inspection.</p>
+      <div class="skaal-example-links">
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples">Browse examples directory</a>
+      </div>
     </div>
   </section>
 </div>

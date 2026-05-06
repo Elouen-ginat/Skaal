@@ -1,0 +1,8 @@
+<svg width="320" height="260" viewBox="0 0 320 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal cloud route illustration</title>
+  <rect width="320" height="260" rx="24" fill="#F6FBF9"></rect>
+  <path d="M90 172C70 172 54 158 54 138C54 121 66 108 82 104C89 84 107 72 128 72C156 72 179 93 181 121C198 124 210 139 210 156C210 175 194 190 175 190H90Z" fill="#FFFFFF" stroke="#CBD9E4" stroke-width="2"></path>
+  <path d="M92 182L140 148L184 162L230 122" stroke="#13B5A8" stroke-width="3" stroke-dasharray="6 6" stroke-linecap="round"></path>
+  <circle cx="92" cy="182" r="10" fill="#D9E1E7"></circle><circle cx="140" cy="148" r="10" fill="#0E1726"></circle><circle cx="184" cy="162" r="10" fill="#13B5A8"></circle><circle cx="230" cy="122" r="10" fill="#9AE66E"></circle>
+  <path d="M216 182L252 160L266 190L232 206L216 182Z" fill="#13B5A8" fill-opacity="0.82" stroke="#0E1726" stroke-opacity="0.18"></path>
+</svg>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Buttons</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .btn { font-family: 'IBM Plex Sans'; font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 999px; border: 1px solid transparent; cursor: pointer; transition: all 180ms cubic-bezier(0.2,0.8,0.2,1); }
+  .btn-primary { background: linear-gradient(135deg, #0E1726, #1F3047); color: #fff; }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(14,23,38,0.18); }
+  .btn-secondary { background: rgba(255,255,255,0.9); color: #0E1726; border-color: rgba(167,180,194,0.4); }
+  .btn-secondary:hover { background: #fff; border-color: #13B5A8; }
+  .btn-accent { background: #13B5A8; color: #fff; }
+  .btn-ghost { background: transparent; color: #0E1726; }
+  .btn-ghost:hover { background: rgba(14,23,38,0.06); }
+  .btn-danger { background: #fff; color: #C96A3D; border-color: rgba(201,106,61,0.4); }
+</style>
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+  <button class="btn btn-primary">Get Started</button>
+  <button class="btn btn-accent">Resolve plan</button>
+  <button class="btn btn-secondary">Browse API</button>
+  <button class="btn btn-ghost">Cancel</button>
+  <button class="btn btn-danger">Rollback</button>
+</div>
+<div class="label" style="margin-top:14px;">primary · accent · secondary · ghost · danger / fallback</div>
+</div></body></html>

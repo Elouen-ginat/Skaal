@@ -1,7 +1,0 @@
-<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Skaal it-dot logo</title>
-  <desc id="desc">A less-than inspired dark rail mark with a green selected endpoint.</desc>
-  <rect width="256" height="256" rx="48" fill="#F6FBF9"/>
-  <path d="M135.5 63.5C141.2 57.8 150.4 57.8 156.1 63.5C161.8 69.2 161.8 78.4 156.1 84.1L112.2 128L156.1 171.9C161.8 177.6 161.8 186.8 156.1 192.5C150.4 198.2 141.2 198.2 135.5 192.5L81.28 138.3C75.57 132.6 75.57 123.4 81.28 117.7L135.5 63.5Z" fill="#0E1726"/>
-  <circle cx="188" cy="128" r="18" fill="#9AE66E"/>
-</svg>
