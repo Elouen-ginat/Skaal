@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block extrahead %}
+  {{ super() }}
+  <meta name="google-site-verification" content="V0t_YV5KqLmtj7UB9bcUL_Ji0fSZDrgO5ZcHzvftcbA" />
+{% endblock %}
+
 {% block header %}
   {{ super() }}
   {% if config.extra.header_links %}
