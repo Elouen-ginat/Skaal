@@ -5,6 +5,17 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump type
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -17,16 +28,20 @@ concurrency:
 jobs:
   bump-tag-and-release:
     if: >
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.actor.login != 'github-actions[bot]' &&
-      !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.actor.login != 'github-actions[bot]' &&
+        !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -39,9 +54,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump patch version
+      - name: Bump version
         id: bump
         shell: python
+        env:
+          BUMP_KIND: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
         run: |
           import os
           import re
@@ -54,9 +71,22 @@ jobs:
           if match is None:
               raise SystemExit("Could not find root package version in pyproject.toml")
 
+          bump_kind = os.environ["BUMP_KIND"]
           major, minor, patch = map(int, match.groups())
           old_version = f"{major}.{minor}.{patch}"
-          new_version = f"{major}.{minor}.{patch + 1}"
+          if bump_kind == "major":
+              major += 1
+              minor = 0
+              patch = 0
+          elif bump_kind == "minor":
+              minor += 1
+              patch = 0
+          elif bump_kind == "patch":
+              patch += 1
+          else:
+              raise SystemExit(f"Unsupported bump kind: {bump_kind}")
+
+          new_version = f"{major}.{minor}.{patch}"
 
           replacements = {
               "pyproject.toml": [
@@ -108,6 +138,7 @@ jobs:
 
           github_output = Path(os.environ["GITHUB_OUTPUT"])
           with github_output.open("a", encoding="utf-8") as handle:
+              handle.write(f"bump_kind={bump_kind}\n")
               handle.write(f"old_version={old_version}\n")
               handle.write(f"new_version={new_version}\n")
               handle.write(f"tag=v{new_version}\n")
