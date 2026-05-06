@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -19,12 +19,11 @@ app = typer.Typer(help="Run the constraint solver and generate a plan.")
 log = logging.getLogger("skaal.cli")
 
 
-def _print_plan_table(plan_file: "PlanFile") -> None:
+def _print_plan_table(plan_file: PlanFile) -> None:
     """Pretty-print a plan's storage assignments as a bordered table."""
     col_w = [30, 25, 60]
     header = (
-        f"| {'Storage variable':<{col_w[0]}} | {'Backend':<{col_w[1]}} | "
-        f"{'Reason':<{col_w[2]}} |"
+        f"| {'Storage variable':<{col_w[0]}} | {'Backend':<{col_w[1]}} | {'Reason':<{col_w[2]}} |"
     )
     sep = f"+-{'-' * col_w[0]}-+-{'-' * col_w[1]}-+-{'-' * col_w[2]}-+"
     log.info(sep)
@@ -61,7 +60,7 @@ def _print_plan_table(plan_file: "PlanFile") -> None:
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
-    target_app: Optional[str] = typer.Argument(
+    target_app: str | None = typer.Argument(
         None,
         help=(
             "App to plan as 'module:variable', e.g. 'examples.counter:app'. "
@@ -69,7 +68,7 @@ def plan(
         ),
         metavar="MODULE:APP",
     ),
-    target: Optional[str] = typer.Option(
+    target: str | None = typer.Option(
         None,
         "--target",
         "-t",
@@ -78,7 +77,7 @@ def plan(
             "Env: SKAAL_TARGET. pyproject: tool.skaal.target."
         ),
     ),
-    catalog: Optional[Path] = typer.Option(
+    catalog: Path | None = typer.Option(
         None,
         "--catalog",
         help="Path to catalog TOML. Env: SKAAL_CATALOG. pyproject: tool.skaal.catalog.",

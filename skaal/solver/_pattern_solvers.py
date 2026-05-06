@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, cast
+from typing import Any
 
 from skaal.plan import PatternSpec, PatternType, StorageSpec
 from skaal.types.patterns import EventLogPatternMetadata, PatternMetadata
@@ -57,7 +58,7 @@ def solve_pattern(ctx: PatternSolveContext) -> PatternSpec | None:
     """Resolve and run the solver for ``ctx.pattern_meta['pattern_type']``."""
 
     pattern_type = ctx.pattern_meta["pattern_type"]
-    solver = _REGISTRY.get(cast(PatternType, pattern_type))
+    solver = _REGISTRY.get(pattern_type)
     if solver is None:
         return None
     return solver(ctx)

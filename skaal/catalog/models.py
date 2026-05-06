@@ -87,7 +87,7 @@ class Catalog(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict, exclude=True)
 
     @classmethod
-    def from_raw(cls, data: dict[str, Any]) -> "Catalog":
+    def from_raw(cls, data: dict[str, Any]) -> Catalog:
         """
         Build a Catalog from a raw TOML dict, tolerating unknown keys.
 

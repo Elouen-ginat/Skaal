@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from contextlib import suppress
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -33,10 +34,8 @@ class BackgroundTaskEngine:
         self._stopping.set()
         if self._task is not None:
             self._task.cancel()
-            try:
+            with suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
             self._task = None
         self._running = False
 

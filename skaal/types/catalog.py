@@ -37,10 +37,10 @@ class CatalogSource:
 
     path: Path | None
     raw: CatalogRaw
-    parent: "CatalogSource | None" = None
+    parent: CatalogSource | None = None
     removes: tuple[str, ...] = field(default_factory=tuple)
 
-    def chain(self) -> tuple["CatalogSource", ...]:
+    def chain(self) -> tuple[CatalogSource, ...]:
         """Return the chain root-first (parent → ... → self)."""
         chain: list[CatalogSource] = []
         node: CatalogSource | None = self

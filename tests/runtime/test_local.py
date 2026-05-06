@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import jwt
@@ -51,7 +51,7 @@ async def test_local_map_list_scan():
     all_items = await m.list()
     assert len(all_items) == 3
     scanned = await m.scan("a:")
-    assert set(k for k, _ in scanned) == {"a:1", "a:2"}
+    assert {key for key, _ in scanned} == {"a:1", "a:2"}
 
 
 # ── Runtime + dispatch tests ───────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def _make_jwt_client(issuer: str) -> tuple[str, httpx.AsyncClient]:
             "sub": "user-123",
             "aud": "skaal-tests",
             "iss": issuer,
-            "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
         },
         private_key,
         algorithm="RS256",
@@ -307,7 +307,7 @@ async def test_runtime_bad_args():
 @pytest.mark.asyncio
 async def test_runtime_method_not_allowed():
     runtime = LocalRuntime(_make_counter_app())
-    data, status = await runtime._dispatch("DELETE", _invoke_path(runtime.app, "increment"), b"")
+    _data, status = await runtime._dispatch("DELETE", _invoke_path(runtime.app, "increment"), b"")
     assert status == 405
 
 

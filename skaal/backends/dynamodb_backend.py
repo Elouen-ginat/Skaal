@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import re
 import time
-from typing import Any, Callable, List
+from collections.abc import Callable
+from typing import Any
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
 from skaal.storage import (
@@ -45,7 +47,7 @@ class DynamoBackend:
                 import boto3
             except ImportError as exc:
                 raise ImportError(
-                    "boto3 is required for DynamoBackend. " "Install it with: pip install boto3"
+                    "boto3 is required for DynamoBackend. Install it with: pip install boto3"
                 ) from exc
             self._client = boto3.client("dynamodb", region_name=self.region)
         return self._client
@@ -154,7 +156,7 @@ class DynamoBackend:
     async def list_page(self, *, limit: int, cursor: str | None):
         return await self._scan_page_native(prefix=None, limit=limit, cursor=cursor, mode="list")
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         page = await self.scan_page(prefix=prefix, limit=10_000, cursor=None)
         items = list(page.items)
         while page.has_more:

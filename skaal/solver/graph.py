@@ -64,7 +64,7 @@ class ResourceGraph:
         """
         # in_degree[n] = number of unresolved dependencies n still has.
         # Each add_edge(src, dst) adds one dependency to src.
-        in_degree: dict[str, int] = {n: 0 for n in self._nodes}
+        in_degree: dict[str, int] = dict.fromkeys(self._nodes, 0)
         # successors[dst] = set of nodes that depend on dst (unblocked when dst done)
         successors: dict[str, set[str]] = {n: set() for n in self._nodes}
         for src, dsts in self._edges.items():
@@ -90,7 +90,7 @@ class ResourceGraph:
         return order
 
 
-def build_graph(app: "App") -> ResourceGraph:
+def build_graph(app: App) -> ResourceGraph:
     """
     Build a :class:`ResourceGraph` from an app's registered resources.
 

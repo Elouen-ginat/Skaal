@@ -51,7 +51,7 @@ def cli_error_boundary(func: Callable[P, R]) -> Callable[P, R]:
         except (FileNotFoundError, ValueError, ModuleNotFoundError, AttributeError) as exc:
             _log_error(exc)
             raise typer.Exit(1) from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log_error(exc)
             raise typer.Exit(1) from exc
 

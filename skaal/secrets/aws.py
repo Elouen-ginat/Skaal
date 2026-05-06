@@ -46,7 +46,7 @@ class AwsSecretsManagerResolver:
         async with self._session.client("secretsmanager", region_name=self._region) as client:
             try:
                 response = await client.get_secret_value(SecretId=secret_id)
-            except Exception as exc:  # noqa: BLE001 — wrap with Skaal context
+            except Exception as exc:
                 _LOG.warning("AWS Secrets Manager fetch failed for %s: %s", spec.name, exc)
                 if spec.required:
                     raise SecretMissingError(

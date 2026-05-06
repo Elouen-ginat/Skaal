@@ -82,7 +82,7 @@ class RDSPostgresDeployConfig(StorageDeployConfig):
     def _instance_class_format(cls, v: str) -> str:
         if not v.startswith("db."):
             raise ValueError(
-                f"RDS instance_class must start with 'db.', got {v!r}. " "Example: 'db.t4g.micro'."
+                f"RDS instance_class must start with 'db.', got {v!r}. Example: 'db.t4g.micro'."
             )
         return v
 
@@ -102,7 +102,7 @@ class RDSPostgresDeployConfig(StorageDeployConfig):
         allocated = info.data.get("allocated_storage_gb", 20)
         if v != 0 and v < allocated:
             raise ValueError(
-                "max_allocated_storage_gb must be 0 or >= allocated_storage_gb " f"({allocated})."
+                f"max_allocated_storage_gb must be 0 or >= allocated_storage_gb ({allocated})."
             )
         return v
 
@@ -154,8 +154,7 @@ class MemorystoreRedisDeployConfig(StorageDeployConfig):
         v = v.upper()
         if not re.match(r"^REDIS_\d+_\d+$", v):
             raise ValueError(
-                f"redis_version must match REDIS_<major>_<minor>, got {v!r}. "
-                "Example: 'REDIS_7_0'."
+                f"redis_version must match REDIS_<major>_<minor>, got {v!r}. Example: 'REDIS_7_0'."
             )
         return v
 
@@ -218,7 +217,7 @@ class LambdaDeployConfig(ComputeDeployConfig):
     def _valid_runtime(cls, v: str) -> str:
         if v not in _LAMBDA_RUNTIMES:
             raise ValueError(
-                f"Unknown Lambda runtime {v!r}. " f"Known values: {sorted(_LAMBDA_RUNTIMES)}."
+                f"Unknown Lambda runtime {v!r}. Known values: {sorted(_LAMBDA_RUNTIMES)}."
             )
         return v
 
@@ -254,7 +253,7 @@ class LambdaDeployConfig(ComputeDeployConfig):
         return cleaned
 
     @model_validator(mode="after")
-    def _subnets_require_vpc(self) -> "LambdaDeployConfig":
+    def _subnets_require_vpc(self) -> LambdaDeployConfig:
         if self.subnet_ids and not self.vpc_id:
             raise ValueError("subnet_ids requires vpc_id so Skaal knows which VPC to target.")
         return self

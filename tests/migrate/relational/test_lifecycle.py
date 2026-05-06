@@ -11,22 +11,52 @@ from skaal import App, api
 from skaal.runtime.local import LocalRuntime
 
 
+def _model_suffix(tmp_path: Path) -> str:
+    return tmp_path.name.replace("-", "_")
+
+
+def _build_sqlmodel(
+    *,
+    class_name: str,
+    table_name: str,
+    fields: dict[str, object],
+) -> type[SQLModel]:
+    return type(
+        class_name,
+        (SQLModel,),
+        {
+            "__module__": __name__,
+            "__tablename__": table_name,
+            **fields,
+        },
+        table=True,
+    )
+
+
 def _make_app(tmp_path: Path) -> tuple[App, type[SQLModel], type[SQLModel]]:
     app = App(name="rel-mig-app")
 
-    @app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
-    class User(SQLModel, table=True):
-        __tablename__ = f"users_{tmp_path.name}"
+    suffix = _model_suffix(tmp_path)
+    User = _build_sqlmodel(
+        class_name=f"User_{suffix}",
+        table_name=f"users_{tmp_path.name}",
+        fields={
+            "id": Field(default=None, primary_key=True),
+            "email": Field(unique=True),
+            "__annotations__": {"id": int | None, "email": str},
+        },
+    )
+    Tag = _build_sqlmodel(
+        class_name=f"Tag_{suffix}",
+        table_name=f"tags_{tmp_path.name}",
+        fields={
+            "id": Field(default=None, primary_key=True),
+            "__annotations__": {"id": int | None, "name": str},
+        },
+    )
 
-        id: int | None = Field(default=None, primary_key=True)
-        email: str = Field(unique=True)
-
-    @app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
-    class Tag(SQLModel, table=True):
-        __tablename__ = f"tags_{tmp_path.name}"
-
-        id: int | None = Field(default=None, primary_key=True)
-        name: str
+    app.storage(kind="relational", read_latency="< 20ms", durability="persistent")(User)
+    app.storage(kind="relational", read_latency="< 20ms", durability="persistent")(Tag)
 
     LocalRuntime.from_sqlite(app, db_path=tmp_path / "rel.db")
     return app, User, Tag

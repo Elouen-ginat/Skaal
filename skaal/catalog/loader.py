@@ -154,7 +154,7 @@ def _resolve_path(path: Path | str | None, target: str | None) -> Path | dict[st
 def _read_toml(p: Path) -> CatalogRaw:
     """Parse a catalog TOML, wrapping decode errors as :class:`CatalogError`."""
     try:
-        with open(p, "rb") as f:
+        with p.open("rb") as f:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError as err:
         raise CatalogError(f"catalog {p}: invalid TOML: {err}") from err

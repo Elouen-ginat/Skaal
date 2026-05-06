@@ -5,13 +5,13 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
 
-class _StrictStrEnum(str, Enum):
+class _StrictStrEnum(StrEnum):
     """str-Enum with a "did you mean…" hook on invalid lookups."""
 
     @classmethod

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from skaal.types.relational import (
     RelationalMigrationOp,
@@ -18,7 +18,7 @@ def _make_revision(rev_id: str, *, applied: bool = False, head: bool = False) ->
         revision_id=rev_id,
         down_revision=None,
         message="msg",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         is_head=head,
         is_applied=applied,
     )

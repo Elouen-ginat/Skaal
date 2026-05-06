@@ -14,7 +14,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -198,7 +198,7 @@ def build_scheduled_job(
     log_lifecycle: bool = False,
 ) -> Callable[[], Awaitable[None]]:
     async def _job() -> None:
-        ctx = ScheduleContext(fired_at=datetime.now(timezone.utc))
+        ctx = ScheduleContext(fired_at=datetime.now(UTC))
         if logger is not None and log_lifecycle:
             logger.info("[skaal/schedule] %s fired at %s", name, ctx.fired_at.isoformat())
         try:
@@ -210,7 +210,7 @@ def build_scheduled_job(
                 await _publish_schedule_result(emit_to, result)
             if logger is not None and log_lifecycle:
                 logger.info("[skaal/schedule] %s completed", name)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if logger is not None:
                 prefix = "[skaal/schedule]" if log_lifecycle else "[schedule/%s]"
                 if log_lifecycle:

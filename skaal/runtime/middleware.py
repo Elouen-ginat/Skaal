@@ -27,8 +27,8 @@ import contextvars
 import inspect
 import random
 import time
-from collections.abc import AsyncIterator, Awaitable
-from typing import Any, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 
 import pybreaker
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, stop_after_attempt
@@ -72,7 +72,7 @@ class _AsyncCircuitBreaker:
 
 
 class _Bulkhead:
-    __slots__ = ("policy", "_sem")
+    __slots__ = ("_sem", "policy")
 
     def __init__(self, policy: Bulkhead) -> None:
         self.policy = policy
@@ -87,7 +87,7 @@ class _Bulkhead:
             raise SkaalUnavailable("bulkhead saturated (fail-fast)")
         try:
             await asyncio.wait_for(self._sem.acquire(), timeout=self.policy.max_wait_ms / 1000.0)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise SkaalUnavailable(f"bulkhead wait exceeded {self.policy.max_wait_ms}ms") from exc
         try:
             return await call()
@@ -101,7 +101,7 @@ class _Bulkhead:
 class _TokenBucket:
     """Simple asyncio-safe token bucket; one bucket per scope key."""
 
-    __slots__ = ("rate", "capacity", "tokens", "updated", "_lock")
+    __slots__ = ("_lock", "capacity", "rate", "tokens", "updated")
 
     def __init__(self, rate: float, capacity: int) -> None:
         self.rate = rate
@@ -122,7 +122,7 @@ class _TokenBucket:
 
 
 class _RateLimiter:
-    __slots__ = ("policy", "_buckets")
+    __slots__ = ("_buckets", "policy")
 
     def __init__(self, policy: RateLimitPolicy) -> None:
         self.policy = policy
@@ -213,7 +213,7 @@ class ResilientInvoker:
     across invocations.
     """
 
-    __slots__ = ("fn", "compute", "_breaker", "_bulkhead", "_ratelimit", "_fallback")
+    __slots__ = ("_breaker", "_bulkhead", "_fallback", "_ratelimit", "compute", "fn")
 
     def __init__(
         self,

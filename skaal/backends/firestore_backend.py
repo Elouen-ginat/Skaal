@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, List
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from skaal.errors import SkaalBackendError, SkaalConflict, SkaalUnavailable
 from skaal.storage import (
@@ -81,10 +83,7 @@ class FirestoreBackend:
     @staticmethod
     def _resume_values(doc: Any, order_fields: list[str]) -> list[Any]:
         data = doc.to_dict() or {}
-        values: list[Any] = []
-        for field in order_fields:
-            values.append(doc.id if field == "pk" else data.get(field))
-        return values
+        return [doc.id if field == "pk" else data.get(field) for field in order_fields]
 
     def _bounded_live_query(
         self,
@@ -126,7 +125,7 @@ class FirestoreBackend:
     def _expiry_deadline(self, ttl: float | None) -> datetime | None:
         if ttl is None:
             return None
-        return datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        return datetime.now(UTC) + timedelta(seconds=ttl)
 
     def _is_expired_data(self, data: dict[str, Any] | None) -> bool:
         if not data:
@@ -134,7 +133,7 @@ class FirestoreBackend:
         expires_at = data.get("expires_at")
         if expires_at is None:
             return False
-        return expires_at <= datetime.now(timezone.utc)
+        return expires_at <= datetime.now(UTC)
 
     async def _run(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         loop = asyncio.get_event_loop()
@@ -210,7 +209,7 @@ class FirestoreBackend:
 
         return await self._run(_list_page)
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         page = await self.scan_page(prefix=prefix, limit=10_000, cursor=None)
         items = list(page.items)
         while page.has_more:
@@ -314,10 +313,12 @@ class FirestoreBackend:
                 raise ValueError(f"Secondary index {index_name!r} requires a sort field")
             try:
                 page_docs, has_more, next_start_after = self._bounded_live_query(
-                    lambda: self._col()
-                    .where(fields.partition_field, "==", key)
-                    .order_by(sort_field)
-                    .order_by("pk"),
+                    lambda: (
+                        self._col()
+                        .where(fields.partition_field, "==", key)
+                        .order_by(sort_field)
+                        .order_by("pk")
+                    ),
                     order_fields=[sort_field, "pk"],
                     limit=limit,
                     start_after=start_after,

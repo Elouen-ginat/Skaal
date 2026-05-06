@@ -15,7 +15,7 @@ def get_app_name() -> str:
     return _current_app_name()
 
 
-def load_app(module_app: str) -> "App":
+def load_app(module_app: str) -> App:
     """CLI-facing wrapper around :func:`skaal.api.load_app`."""
 
     from skaal import api
@@ -23,7 +23,7 @@ def load_app(module_app: str) -> "App":
     return api.load_app(module_app)
 
 
-def resolve_app_ref() -> "App":
+def resolve_app_ref() -> App:
     """Resolve and wire the configured app for runtime-aware CLI commands.
 
     Reads ``MODULE:APP`` from CLI settings (env / pyproject), loads it, and

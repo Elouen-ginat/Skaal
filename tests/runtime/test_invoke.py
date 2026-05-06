@@ -115,7 +115,7 @@ async def test_before_invoke_hook_can_short_circuit() -> None:
         raise RuntimeError(f"blocked {ctx.function_name}")
 
     runtime = LocalRuntime(app)
-    with pytest.raises(RuntimeError, match="blocked invoke-blocked.greet"):
+    with pytest.raises(RuntimeError, match=r"blocked invoke-blocked\.greet"):
         await app.invoke(greet, name="copilot")
     await runtime.shutdown()
 

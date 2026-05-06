@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from redis import Redis
@@ -43,7 +43,7 @@ class WindowsSimpleWorker(SimpleWorker):
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def normalize_scheduled_for(
@@ -55,8 +55,8 @@ def normalize_scheduled_for(
         raise ValueError("delay and run_at are mutually exclusive")
     if run_at is not None:
         if run_at.tzinfo is None:
-            return run_at.replace(tzinfo=timezone.utc)
-        return run_at.astimezone(timezone.utc)
+            return run_at.replace(tzinfo=UTC)
+        return run_at.astimezone(UTC)
     if delay is None:
         return utc_now()
     resolved = delay if isinstance(delay, Duration) else Duration.parse(delay)
@@ -123,7 +123,7 @@ def build_rq_retry(policy: RetryPolicy | None) -> Retry | None:
 
 
 def unique_job_id(job_name: str, idempotency_key: str) -> str:
-    digest = hashlib.sha256(f"{job_name}:{idempotency_key}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{job_name}:{idempotency_key}".encode()).hexdigest()
     return f"job-{digest}"
 
 

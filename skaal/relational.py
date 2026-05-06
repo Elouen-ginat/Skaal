@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncIterator, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -89,7 +90,7 @@ async def ensure_schema(model_cls: type) -> None:
 
 
 @asynccontextmanager
-async def open_session(model_cls: type) -> AsyncIterator["AsyncSession"]:
+async def open_session(model_cls: type) -> AsyncIterator[AsyncSession]:
     """Yield an ``AsyncSession`` bound to *model_cls*'s wired backend."""
     backend = get_backend(model_cls)
     await backend.ensure_relational_schema(model_cls)

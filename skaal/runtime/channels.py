@@ -18,7 +18,7 @@ class Channel:
     async def publish(self, topic: str, message: Any) -> None:
         raise NotImplementedError
 
-    def subscribe(self, topic: str) -> "AsyncIterator[Any]":
+    def subscribe(self, topic: str) -> AsyncIterator[Any]:
         raise NotImplementedError
 
 
@@ -37,7 +37,7 @@ class LocalChannel(Channel):
         for q in self._queues.get(topic, []):
             await q.put(message)
 
-    async def subscribe(self, topic: str) -> "AsyncIterator[Any]":
+    async def subscribe(self, topic: str) -> AsyncIterator[Any]:
         q: asyncio.Queue[Any] = asyncio.Queue()
         self._queues.setdefault(topic, []).append(q)
         try:

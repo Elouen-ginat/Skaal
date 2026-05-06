@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import datetime, timezone
+from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -59,10 +60,8 @@ class FsspecBlobBackend:
         return self._join_path(self._meta_root, *parts[:-1], f"{parts[-1]}.json")
 
     def _ensure_directory(self, path: str) -> None:
-        try:
+        with suppress(Exception):
             self._filesystem.makedirs(path, exist_ok=True)
-        except Exception:
-            pass
 
     def _ensure_parent(self, path: str) -> None:
         parent = str(PurePosixPath(path).parent)
@@ -71,9 +70,9 @@ class FsspecBlobBackend:
 
     def _coerce_updated(self, value: Any) -> datetime | None:
         if isinstance(value, datetime):
-            return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(value, tz=timezone.utc)
+            return datetime.fromtimestamp(value, tz=UTC)
         if isinstance(value, str):
             try:
                 return datetime.fromisoformat(value)
@@ -120,7 +119,7 @@ class FsspecBlobBackend:
         payload = {
             "content_type": content_type,
             "etag": etag,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "metadata": dict(metadata or {}),
         }
         meta_path = self._meta_path(key)

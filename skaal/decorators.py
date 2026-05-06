@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Literal, TypeVar, cast, overload
+from typing import Any, Literal, TypeVar, cast, overload
 
 from skaal.blob import validate_blob_model
 from skaal.types import (
@@ -123,7 +124,7 @@ def _storage_schema(
             from skaal.storage import _schema_hints
 
             return _schema_hints(cls)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return {}
 
     if kind == "relational":
@@ -134,21 +135,22 @@ def _storage_schema(
         return relational_schema_hints(cls)
 
     if kind == "vector":
+        from skaal.vector import VectorStore, validate_vector_model
         from skaal.vector import _schema_hints as vector_schema_hints
-        from skaal.vector import validate_vector_model
 
-        validate_vector_model(cls)
+        vector_cls = cast(type[VectorStore[Any]], cls)
+        validate_vector_model(vector_cls)
         if dim is None or dim <= 0:
             raise ValueError('@app.storage(kind="vector") requires dim > 0.')
-        setattr(cls, "__skaal_vector_dimensions__", dim)
-        setattr(cls, "__skaal_vector_metric__", metric.lower())
-        return vector_schema_hints(cls)
+        vector_cls.__skaal_vector_dimensions__ = dim
+        vector_cls.__skaal_vector_metric__ = metric.lower()
+        return vector_schema_hints(vector_cls)
 
     try:
         from skaal.storage import _schema_hints
 
         return _schema_hints(cls)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
 
 

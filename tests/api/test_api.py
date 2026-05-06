@@ -129,11 +129,7 @@ def test_plan_records_source_module_from_string_ref(
     """String refs should propagate into plan.source_module / app_var."""
     # Write a tiny app module in the temp project.
     (tmp_project / "my_app.py").write_text(
-        "from skaal import App\n"
-        "app = App(name='hello')\n"
-        "@app.storage\n"
-        "class Thing:\n"
-        "    pass\n"
+        "from skaal import App\napp = App(name='hello')\n@app.storage\nclass Thing:\n    pass\n"
     )
     monkeypatch.syspath_prepend(str(tmp_project))
 

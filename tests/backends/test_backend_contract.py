@@ -8,9 +8,10 @@ The tests are parametrized over every backend factory discovered through
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable
+from typing import Any
 
 import pytest
 
@@ -82,7 +83,7 @@ async def _redis_factory(tmp_path: Path) -> AsyncIterator[Any]:
         # Probe with a PING-equivalent operation.
         await b.set("__probe__", "1")
         await b.delete("__probe__")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if _is_server_unreachable(exc):
             pytest.skip("Redis server not available")
         raise
@@ -93,7 +94,7 @@ async def _redis_factory(tmp_path: Path) -> AsyncIterator[Any]:
             # Cleanup keys created during the test to keep Redis tidy.
             for k, _ in await b.list():
                 await b.delete(k)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         await b.close()
 

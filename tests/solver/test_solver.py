@@ -68,9 +68,9 @@ def test_select_backend_durable_lambda():
         target="aws-lambda",
     )
     # DynamoDB: durable, max 10ms, random-read, no VPC → best for Lambda
-    assert (
-        backend_name == "dynamodb"
-    ), f"Expected 'dynamodb' for Lambda target, got {backend_name!r}. Reason: {reason}"
+    assert backend_name == "dynamodb", (
+        f"Expected 'dynamodb' for Lambda target, got {backend_name!r}. Reason: {reason}"
+    )
     assert "serverless-compatible" in reason or "no VPC" in reason
 
 
@@ -113,7 +113,7 @@ def test_select_backend_append_only_durable():
     catalog = load_catalog()
     storage_backends = catalog["storage"]
 
-    backend_name, reason = select_backend(
+    backend_name, _reason = select_backend(
         "EventLog",
         {
             "durability": Durability.DURABLE,

@@ -7,8 +7,9 @@ import importlib.metadata
 import importlib.util
 import sys
 import tomllib
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def collect_user_packages(
@@ -64,9 +65,8 @@ def _ast_imports(tree: ast.AST) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 names.add(alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            if node.level == 0 and node.module:
-                names.add(node.module.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split(".")[0])
     return names
 
 
@@ -117,7 +117,7 @@ def _load_build_config(project_root: Path) -> tuple[dict[str, Any], dict[str, An
 
     for pyproject in _candidate_pyprojects(project_root):
         try:
-            with open(pyproject, "rb") as fh:
+            with pyproject.open("rb") as fh:
                 data = tomllib.load(fh)
         except (OSError, tomllib.TOMLDecodeError):
             continue

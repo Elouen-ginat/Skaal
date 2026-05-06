@@ -39,10 +39,10 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Generic,
     TypeVar,
@@ -184,7 +184,7 @@ def _field_value(value: Any, field_name: str) -> Any:
 
 
 def _configure_backend_indexes(backend: Any, indexes: list[SecondaryIndex]) -> None:
-    setattr(backend, "_skaal_secondary_indexes", {index.name: index for index in indexes})
+    backend._skaal_secondary_indexes = {index.name: index for index in indexes}
 
 
 def _get_backend_indexes(backend: Any) -> dict[str, SecondaryIndex]:

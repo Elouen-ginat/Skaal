@@ -35,8 +35,6 @@ scripts\setup-pre-commit.bat
 pre-commit install
 ```
 
-See [PRE_COMMIT_SETUP.md](PRE_COMMIT_SETUP.md) for detailed information.
-
 ### 3. Verify Setup
 
 ```bash
@@ -159,7 +157,8 @@ git commit --no-verify
 
 ## Documentation
 
-- Update [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md) if adding deployment features
+- Update the published docs at [https://elouen-ginat.github.io/Skaal/](https://elouen-ginat.github.io/Skaal/) when behavior or workflows change
+- Update the deployment walkthrough at [https://elouen-ginat.github.io/Skaal/tutorials/planning-and-deployment/](https://elouen-ginat.github.io/Skaal/tutorials/planning-and-deployment/) if adding deployment features
 - Update docstrings for public APIs
 - Add type hints to new functions
 
@@ -190,8 +189,11 @@ Use GitHub Issues with:
 ## Questions?
 
 Have questions about contributing? Open an issue or check existing documentation:
-- [PRE_COMMIT_SETUP.md](PRE_COMMIT_SETUP.md) - Pre-commit hook details
-- [LOCAL_DEPLOYMENT.md](LOCAL_DEPLOYMENT.md) - Deployment and testing
+- [Documentation home](https://elouen-ginat.github.io/Skaal/) - Published docs index
+- [Getting Started](https://elouen-ginat.github.io/Skaal/getting-started/) - Local setup and first run
+- [CLI](https://elouen-ginat.github.io/Skaal/cli/) - Command reference
+- [CLI Configuration](https://elouen-ginat.github.io/Skaal/cli-configuration/) - Project and environment settings
+- [Planning and Deployment](https://elouen-ginat.github.io/Skaal/tutorials/planning-and-deployment/) - Deployment workflow
 - [pyproject.toml](pyproject.toml) - Project configuration
 
 ---

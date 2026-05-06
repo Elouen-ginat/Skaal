@@ -1,34 +1,8 @@
-"""
-Skaal — Python API.
+"""Skaal Python API.
 
-In-process equivalents of every ``skaal`` CLI verb.  These functions are what
-the CLI dispatches to; you can call them directly from scripts, notebooks, and
-test code without spawning a subprocess.
-
-Every entry point accepts either a live :class:`~skaal.app.App` instance or a
-``"module:variable"`` reference, and returns a typed Python object
-(:class:`~skaal.plan.PlanFile`, list of paths, dict of outputs, …).  The API
-functions raise standard Python exceptions on failure — they never print or
-call :func:`sys.exit`.
-
-Example::
-
-    import asyncio
-    import skaal
-    from skaal import api
-
-    app = skaal.App("my-service")
-    # … register storage + functions …
-
-    plan = api.plan(app, target="aws", catalog="catalogs/aws.toml")
-    artifacts = api.build(plan, output_dir="artifacts", region="us-east-1")
-    outputs = api.deploy("artifacts", stack="dev", region="us-east-1")
-
-    # Or run the app locally (blocking):
-    api.run(app)
-
-    # …inside an existing event loop, use the async variant:
-    asyncio.run(api.serve_async(app))
+In-process equivalents of the ``skaal`` CLI commands. These functions accept
+either a live :class:`~skaal.app.App` instance or a ``"module:variable"``
+reference and return typed Python objects instead of printing to stdout.
 """
 
 from __future__ import annotations
@@ -37,9 +11,10 @@ import asyncio
 import importlib
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Literal, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
 
 from skaal.plan import PLAN_FILE_NAME, ComputeSpec, PlanFile, StorageSpec
 from skaal.settings import SkaalSettings
@@ -55,32 +30,39 @@ if TYPE_CHECKING:
         RelationalRevision,
     )
 
+AppRef = Union["App", str]
+
+
+@dataclass(frozen=True)
+class PlanDiffEntry:
+    """One changed resource in a plan diff."""
+
+    name: str
+    change: Literal["added", "removed", "modified"]
+    before: Any | None = None
+    after: Any | None = None
+
+
 __all__ = [
-    # Types
     "AppRef",
-    "PlanDiff",
-    "PlanDiffEntry",
     "InfraStatus",
     "MigrationInfo",
-    # App resolution
-    "load_app",
-    "resolve_app",
-    # Verbs
-    "plan",
+    "PlanDiff",
+    "PlanDiffEntry",
     "build",
-    "deploy",
-    "run",
-    "serve_async",
     "build_runtime",
     "catalog",
+    "deploy",
     "diff",
-    "infra_status",
     "infra_cleanup",
-    "migrate_start",
+    "infra_status",
+    "load_app",
     "migrate_advance",
-    "migrate_rollback",
-    "migrate_status",
     "migrate_list",
+    "migrate_rollback",
+    "migrate_start",
+    "migrate_status",
+    "plan",
     "relational_autogenerate",
     "relational_check",
     "relational_current",
@@ -90,23 +72,10 @@ __all__ = [
     "relational_plan_upgrade",
     "relational_stamp",
     "relational_upgrade",
+    "resolve_app",
+    "run",
+    "serve_async",
 ]
-
-# ── Types ──────────────────────────────────────────────────────────────────────
-
-#: A reference to a Skaal application — either a live ``App`` instance or a
-#: ``"module:variable"`` string pointing at one.
-AppRef = Union["App", str]
-
-
-@dataclass(frozen=True)
-class PlanDiffEntry:
-    """One line of a :class:`PlanDiff`."""
-
-    name: str
-    change: Literal["added", "removed", "modified"]
-    before: str | None
-    after: str | None
 
 
 @dataclass(frozen=True)
@@ -174,7 +143,7 @@ class InfraStatus:
 # ── App resolution ────────────────────────────────────────────────────────────
 
 
-def _import_from_ref(module_app: str) -> "App":
+def _import_from_ref(module_app: str) -> App:
     """Import ``module:variable`` and return the attribute."""
     if ":" not in module_app:
         raise ValueError(f"Expected 'module:variable', got {module_app!r}")
@@ -197,7 +166,7 @@ def _import_from_ref(module_app: str) -> "App":
     return obj
 
 
-def load_app(module_app: str) -> "App":
+def load_app(module_app: str) -> App:
     """Import and return the Skaal App object from a ``"module:variable"`` string.
 
     Adds the current directory to ``sys.path`` so bare module names resolve.
@@ -210,7 +179,7 @@ def load_app(module_app: str) -> "App":
     return _import_from_ref(module_app)
 
 
-def resolve_app(ref: AppRef) -> "App":
+def resolve_app(ref: AppRef) -> App:
     """Normalise an :data:`AppRef` to a live :class:`~skaal.app.App` instance.
 
     Accepts either a ``"module:variable"`` string or an already-constructed
@@ -248,7 +217,7 @@ def catalog(
     path: Path | str | None = None,
     *,
     target: str | None = None,
-) -> "Catalog":
+) -> Catalog:
     """Load a catalog TOML and return a typed
     :class:`~skaal.catalog.models.Catalog`.
 
@@ -277,7 +246,7 @@ def plan(
     app: AppRef,
     *,
     target: str | None = None,
-    catalog: Path | str | None = None,  # noqa: A002 — mirrors the CLI flag
+    catalog: Path | str | None = None,
     write: bool = True,
     output_path: Path | str | None = None,
 ) -> PlanFile:
@@ -346,7 +315,7 @@ def _coerce_plan(value: PlanFile | Path | str | None) -> PlanFile:
 
 
 def build(
-    plan: PlanFile | Path | str | None = None,  # noqa: A002 — mirrors the CLI
+    plan: PlanFile | Path | str | None = None,
     *,
     app: AppRef | None = None,
     output_dir: Path | str | None = None,
@@ -598,7 +567,7 @@ def _build_config_overrides(
         if plan_path.exists():
             try:
                 plan_file = PlanFile.read(plan_path)
-            except Exception:  # noqa: BLE001 — a broken plan shouldn't block deploy
+            except Exception:
                 plan_file = None
             if plan_file is not None:
                 flag = "true" if cfg.deletion_protection else "false"
@@ -726,24 +695,26 @@ def _diff_specs(
     old_keys = set(old)
     new_keys = set(new)
 
-    for name in sorted(new_keys - old_keys):
-        entries.append(
+    entries.extend(
+        [
             PlanDiffEntry(
                 name=name,
                 change="added",
                 before=None,
                 after=getattr(new[name], attr),
             )
+            for name in sorted(new_keys - old_keys)
+        ]
+    )
+    entries.extend(
+        PlanDiffEntry(
+            name=name,
+            change="removed",
+            before=getattr(old[name], attr),
+            after=None,
         )
-    for name in sorted(old_keys - new_keys):
-        entries.append(
-            PlanDiffEntry(
-                name=name,
-                change="removed",
-                before=getattr(old[name], attr),
-                after=None,
-            )
-        )
+        for name in sorted(old_keys - new_keys)
+    )
     for name in sorted(old_keys & new_keys):
         before = getattr(old[name], attr)
         after = getattr(new[name], attr)
@@ -764,7 +735,7 @@ def diff(
     *,
     old_plan: PlanFile | Path | str | None = None,
     app: AppRef | None = None,
-    catalog: Path | str | None = None,  # noqa: A002 — mirrors the CLI flag
+    catalog: Path | str | None = None,
 ) -> PlanDiff:
     """Diff two plans, or a stored plan against a freshly-solved one.
 
@@ -827,7 +798,7 @@ def _collect_migrations(plan_file: PlanFile) -> dict[str, MigrationInfo]:
         try:
             engine = MigrationEngine(plan_file.app_name, name)
             state = engine.load_state()
-        except Exception:  # noqa: BLE001 — filesystem errors are non-fatal
+        except Exception:
             continue
         if state is None:
             continue
@@ -842,7 +813,7 @@ def _collect_migrations(plan_file: PlanFile) -> dict[str, MigrationInfo]:
 
 
 def infra_status(
-    plan: PlanFile | Path | str = PLAN_FILE_NAME,  # noqa: A002
+    plan: PlanFile | Path | str = PLAN_FILE_NAME,
 ) -> InfraStatus:
     """Return the current infrastructure state from a plan file.
 
@@ -879,7 +850,7 @@ def _current_app_name() -> str:
     if plan_path.exists():
         try:
             return PlanFile.read(plan_path).app_name
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return Path.cwd().name
 
@@ -890,7 +861,7 @@ def migrate_start(
     to_backend: str,
     *,
     app_name: str | None = None,
-) -> "MigrationState":
+) -> MigrationState:
     """Start a new 6-stage migration for *variable*.
 
     Raises:
@@ -913,7 +884,7 @@ def migrate_advance(
     variable: str,
     *,
     app_name: str | None = None,
-) -> "MigrationState":
+) -> MigrationState:
     """Advance the migration for *variable* to the next stage."""
     from skaal.migrate.engine import MigrationEngine
 
@@ -931,7 +902,7 @@ def migrate_rollback(
     variable: str,
     *,
     app_name: str | None = None,
-) -> "MigrationState":
+) -> MigrationState:
     """Roll the migration for *variable* back one stage."""
     from skaal.migrate.engine import MigrationEngine
 
@@ -947,7 +918,7 @@ def migrate_status(
     variable: str,
     *,
     app_name: str | None = None,
-) -> "MigrationState | None":
+) -> MigrationState | None:
     """Return the current migration state for *variable*, or ``None`` if idle."""
     from skaal.migrate.engine import MigrationEngine
 
@@ -956,7 +927,7 @@ def migrate_status(
     return engine.load_state()
 
 
-def migrate_list(app_name: str | None = None) -> list["MigrationState"]:
+def migrate_list(app_name: str | None = None) -> list[MigrationState]:
     """Return every in-progress migration (optionally filtered to one app)."""
     from skaal.migrate.engine import (
         MigrationEngine,
@@ -981,7 +952,7 @@ def migrate_list(app_name: str | None = None) -> list["MigrationState"]:
             try:
                 data = json.loads(path.read_text())
                 states.append(MigrationState(**data))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
     return states
 
@@ -990,11 +961,11 @@ def migrate_list(app_name: str | None = None) -> list["MigrationState"]:
 
 
 async def relational_autogenerate(
-    app: "App",
+    app: App,
     *,
     message: str,
     backend_name: str | None = None,
-) -> dict[str, "RelationalRevision | None"]:
+) -> dict[str, RelationalRevision | None]:
     """Diff registered SQLModels against the live DB and write a new revision."""
     from skaal.migrate import relational
 
@@ -1002,11 +973,11 @@ async def relational_autogenerate(
 
 
 async def relational_upgrade(
-    app: "App",
+    app: App,
     *,
     target: str = "head",
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationStatus"]:
+) -> dict[str, RelationalMigrationStatus]:
     """Apply pending migrations up to *target* on each selected backend."""
     from skaal.migrate import relational
 
@@ -1014,11 +985,11 @@ async def relational_upgrade(
 
 
 async def relational_downgrade(
-    app: "App",
+    app: App,
     *,
     target: str,
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationStatus"]:
+) -> dict[str, RelationalMigrationStatus]:
     """Roll the selected backends back to *target*."""
     from skaal.migrate import relational
 
@@ -1026,11 +997,11 @@ async def relational_downgrade(
 
 
 async def relational_plan_upgrade(
-    app: "App",
+    app: App,
     *,
     target: str = "head",
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationPlan"]:
+) -> dict[str, RelationalMigrationPlan]:
     """Render the SQL of an upgrade without applying it."""
     from skaal.migrate import relational
 
@@ -1038,11 +1009,11 @@ async def relational_plan_upgrade(
 
 
 async def relational_plan_downgrade(
-    app: "App",
+    app: App,
     *,
     target: str,
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationPlan"]:
+) -> dict[str, RelationalMigrationPlan]:
     """Render the SQL of a downgrade without applying it."""
     from skaal.migrate import relational
 
@@ -1050,10 +1021,10 @@ async def relational_plan_downgrade(
 
 
 async def relational_current(
-    app: "App",
+    app: App,
     *,
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationStatus"]:
+) -> dict[str, RelationalMigrationStatus]:
     """Return live current/head/applied/pending state per backend."""
     from skaal.migrate import relational
 
@@ -1061,10 +1032,10 @@ async def relational_current(
 
 
 async def relational_history(
-    app: "App",
+    app: App,
     *,
     backend_name: str | None = None,
-) -> dict[str, list["RelationalRevision"]]:
+) -> dict[str, list[RelationalRevision]]:
     """Return every revision in versions/ per backend, newest first."""
     from skaal.migrate import relational
 
@@ -1072,11 +1043,11 @@ async def relational_history(
 
 
 async def relational_stamp(
-    app: "App",
+    app: App,
     *,
     target: str,
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationStatus"]:
+) -> dict[str, RelationalMigrationStatus]:
     """Mark the alembic_version table at *target* without running migrations."""
     from skaal.migrate import relational
 
@@ -1084,10 +1055,10 @@ async def relational_stamp(
 
 
 async def relational_check(
-    app: "App",
+    app: App,
     *,
     backend_name: str | None = None,
-) -> dict[str, "RelationalMigrationPlan"]:
+) -> dict[str, RelationalMigrationPlan]:
     """Detect drift between the live schema and the registered SQLModels."""
     from skaal.migrate import relational
 

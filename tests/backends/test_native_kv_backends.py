@@ -20,11 +20,11 @@ async def _immediate_run(fn: Any, *args: Any, **kwargs: Any) -> Any:
 
 
 class FakeRedisPipeline:
-    def __init__(self, client: "FakeRedis") -> None:
+    def __init__(self, client: FakeRedis) -> None:
         self.client = client
         self._ops: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
-    async def __aenter__(self) -> "FakeRedisPipeline":
+    async def __aenter__(self) -> FakeRedisPipeline:
         return self
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -335,7 +335,7 @@ class FakeFirestoreDoc:
 
 
 class FakeFirestoreDocRef:
-    def __init__(self, collection: "FakeFirestoreCollection", doc_id: str) -> None:
+    def __init__(self, collection: FakeFirestoreCollection, doc_id: str) -> None:
         self.collection = collection
         self.doc_id = doc_id
 
@@ -351,7 +351,7 @@ class FakeFirestoreDocRef:
 
 class FakeFirestoreQuery:
     def __init__(
-        self, collection: "FakeFirestoreCollection", docs: list[tuple[str, dict[str, Any]]]
+        self, collection: FakeFirestoreCollection, docs: list[tuple[str, dict[str, Any]]]
     ) -> None:
         self.collection = collection
         self.docs = docs
@@ -359,7 +359,7 @@ class FakeFirestoreQuery:
         self._limit: int | None = None
         self._start_after: list[Any] | None = None
 
-    def where(self, field: str, op: str, value: Any) -> "FakeFirestoreQuery":
+    def where(self, field: str, op: str, value: Any) -> FakeFirestoreQuery:
         def _match(doc: dict[str, Any]) -> bool:
             current = doc.get(field)
             if op == "==":
@@ -377,14 +377,14 @@ class FakeFirestoreQuery:
             [(doc_id, data) for doc_id, data in self.docs if _match(data)],
         )._clone(order_fields=self._order_fields, limit=self._limit, start_after=self._start_after)
 
-    def order_by(self, field: str) -> "FakeFirestoreQuery":
+    def order_by(self, field: str) -> FakeFirestoreQuery:
         return self._clone(
             order_fields=[*self._order_fields, field],
             limit=self._limit,
             start_after=self._start_after,
         )
 
-    def limit(self, count: int) -> "FakeFirestoreQuery":
+    def limit(self, count: int) -> FakeFirestoreQuery:
         self.collection.query_limits.append(count)
         return self._clone(
             order_fields=self._order_fields,
@@ -392,7 +392,7 @@ class FakeFirestoreQuery:
             start_after=self._start_after,
         )
 
-    def start_after(self, values: list[Any]) -> "FakeFirestoreQuery":
+    def start_after(self, values: list[Any]) -> FakeFirestoreQuery:
         return self._clone(
             order_fields=self._order_fields,
             limit=self._limit,
@@ -405,7 +405,7 @@ class FakeFirestoreQuery:
         order_fields: list[str],
         limit: int | None,
         start_after: list[Any] | None,
-    ) -> "FakeFirestoreQuery":
+    ) -> FakeFirestoreQuery:
         clone = FakeFirestoreQuery(self.collection, list(self.docs))
         clone._order_fields = list(order_fields)
         clone._limit = limit

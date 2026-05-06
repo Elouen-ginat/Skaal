@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from importlib.resources import files
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -35,7 +34,7 @@ _LAYOUT: dict[str, str] = {
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def init(
-    name: Optional[str] = typer.Argument(
+    name: str | None = typer.Argument(
         None,
         help=(
             "Project name. Must be a valid Python identifier. "

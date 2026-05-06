@@ -12,8 +12,10 @@ Patterns are registered with a module via ``module.pattern(p)`` and attach
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
 from skaal.types import Consistency, Durability, Throughput
 from skaal.types.patterns import (
@@ -125,7 +127,7 @@ class EventLog(Generic[T]):
     async def replay(self, from_offset: int = 0) -> AsyncIterator[tuple[int, T]]:
         """Replay events starting from *from_offset*. Yields (offset, event) tuples."""
         entries = await self._backend.scan("event:")
-        for key, value in sorted((e for e in entries if e[0] >= f"event:{from_offset:020d}")):
+        for key, value in sorted(e for e in entries if e[0] >= f"event:{from_offset:020d}"):
             offset = int(key.split(":")[-1])
             yield offset, value
 
@@ -149,7 +151,7 @@ class EventLog(Generic[T]):
         while True:
             # Scan all events with full prefix (not offset-prefixed), then filter by range
             entries = await self._backend.scan("event:")
-            sorted_entries = sorted((e for e in entries if e[0] >= f"event:{offset:020d}"))
+            sorted_entries = sorted(e for e in entries if e[0] >= f"event:{offset:020d}")
             for key, value in sorted_entries:
                 current_offset = int(key.split(":")[-1])
                 await self._backend.set(f"consumer:{consumer_group}:offset", current_offset + 1)
@@ -158,10 +160,8 @@ class EventLog(Generic[T]):
             if not sorted_entries:
                 # Wake on the next append; fall back to polling after poll_interval
                 # so replay still works against backends without the notify path.
-                try:
+                with suppress(TimeoutError):
                     await asyncio.wait_for(self._notify.wait(), timeout=poll_interval)
-                except asyncio.TimeoutError:
-                    pass
 
     def __repr__(self) -> str:
         return (
@@ -302,8 +302,7 @@ class Saga:
 
     def __repr__(self) -> str:
         return (
-            f"Saga(name={self.name!r}, steps={len(self.steps)}, "
-            f"coordination={self.coordination!r})"
+            f"Saga(name={self.name!r}, steps={len(self.steps)}, coordination={self.coordination!r})"
         )
 
 

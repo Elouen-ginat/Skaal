@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import BaseModel
@@ -474,9 +474,7 @@ def _make_feature_complete_todo_app() -> App:
         done: bool = False
         tags: list[str] = PydanticField(default_factory=list)
         attachments: list[Attachment] = PydanticField(default_factory=list)
-        created_at: str = PydanticField(
-            default_factory=lambda: datetime.now(timezone.utc).isoformat()
-        )
+        created_at: str = PydanticField(default_factory=lambda: datetime.now(UTC).isoformat())
         completed_at: str | None = None
 
     class TodoSearchDocument(BaseModel):
@@ -503,7 +501,7 @@ def _make_feature_complete_todo_app() -> App:
         todo_id: str = Field(index=True)
         author: str
         body: str
-        created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+        created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @app.storage(
         kind="vector",
@@ -573,7 +571,7 @@ def _make_feature_complete_todo_app() -> App:
         if todo is None:
             return {"error": f"Todo {id!r} not found"}
         todo.done = True
-        todo.completed_at = datetime.now(timezone.utc).isoformat()
+        todo.completed_at = datetime.now(UTC).isoformat()
         await Todos.set(id, todo)
         await _sync_todo_search(todo)
         return todo.model_dump()

@@ -55,8 +55,7 @@ def solve_projection(ctx: PatternSolveContext) -> PatternSpec:
         pattern_type="projection",
         backend=None,
         reason=(
-            f"projection {ctx.qname!r}: {source_qname!r} → {target_qname!r} "
-            f"via handler={handler!r}"
+            f"projection {ctx.qname!r}: {source_qname!r} → {target_qname!r} via handler={handler!r}"
         ),
         config=config,
     )

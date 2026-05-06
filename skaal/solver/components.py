@@ -148,21 +148,19 @@ def _base_external_config(comp_meta: dict[str, Any]) -> ExternalComponentConfig:
 
 
 def _normalize_routes(raw_routes: list[dict[str, Any]]) -> list[RouteSpec]:
-    routes: list[RouteSpec] = []
-    for route in raw_routes:
-        routes.append(
-            RouteSpec(
-                path=cast(str, route["path"]),
-                target=cast(str, route["target"]),
-                methods=list(cast(list[str], route["methods"])),
-                strip_prefix=cast(bool, route["strip_prefix"])
-                if "strip_prefix" in route
-                else False,
-                timeout_ms=cast(int | None, route["timeout_ms"]) if "timeout_ms" in route else None,
-                rewrite=cast(str | None, route["rewrite"]) if "rewrite" in route else None,
-            )
+    return [
+        RouteSpec(
+            path=str(route["path"]),
+            target=str(route["target"]),
+            methods=[str(method) for method in route["methods"]],
+            strip_prefix=bool(route.get("strip_prefix", False)),
+            timeout_ms=int(timeout_ms)
+            if isinstance(timeout_ms := route.get("timeout_ms"), int)
+            else None,
+            rewrite=str(rewrite) if isinstance(rewrite := route.get("rewrite"), str) else None,
         )
-    return routes
+        for route in raw_routes
+    ]
 
 
 def _normalize_auth_config(raw_auth: dict[str, Any] | None) -> AuthConfig | None:
@@ -277,10 +275,10 @@ def _encode_component_config(kind: str, comp_meta: dict[str, Any]) -> ComponentC
 
 def encode_component(
     name: str,
-    component: "ComponentBase",
+    component: ComponentBase,
     catalog: dict[str, Any],
     target: str = "generic",
-) -> "ComponentSpec":
+) -> ComponentSpec:
     """Resolve a component to a concrete :class:`~skaal.plan.ComponentSpec`.
 
     - **ProvisionedComponent** (Proxy, APIGateway, ScheduleTrigger): selects

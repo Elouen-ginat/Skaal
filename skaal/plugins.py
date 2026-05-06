@@ -10,10 +10,11 @@ uses standard Python entry points for third-party extensions:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib import import_module
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from skaal.errors import SkaalPluginError
 
@@ -63,7 +64,7 @@ def _load_group(group: str) -> dict[str, Any]:
     for ep in eps:
         try:
             discovered[ep.name] = ep.load()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise SkaalPluginError(
                 f"Failed to load entry point {ep.name!r} in group {group!r}: {exc}"
             ) from exc
@@ -138,7 +139,7 @@ def iter_catalogs() -> dict[str, Path]:
         if callable(v):
             try:
                 v = v()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
         merged[n] = Path(v)
     return merged

@@ -108,9 +108,8 @@ def encode_compute(
             compatible = False
 
         # Memory filter
-        if memory_gb is not None:
-            if spec.get("memory_gb", 0) < memory_gb:
-                compatible = False
+        if memory_gb is not None and spec.get("memory_gb", 0) < memory_gb:
+            compatible = False
 
         # Latency filter: use vCPU-count heuristic (faster = more cores)
         # Reject instances where the rough headroom is an order of magnitude

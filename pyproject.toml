@@ -118,6 +118,7 @@ docs = [
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
     "pytest-httpx>=0.30",
     "rq>=2.8",
     "fakeredis>=2.23",
@@ -127,12 +128,16 @@ test = [
     "chromadb>=1.5",
 ]
 lint = [
-    "ruff>=0.4",
+    "ruff>=0.8.6",
     "pre-commit>=3.6",
+    "bandit[toml]>=1.8.0",
 ]
 typecheck = [
-    "mypy>=1.8",
+    "mypy>=1.13",
     "types-redis>=4.6",
+]
+audit = [
+    "pip-audit>=2.7",
 ]
 build = [
     "hatchling",
@@ -147,6 +152,7 @@ dev = [
     { include-group = "typecheck" },
     { include-group = "build" },
     { include-group = "release" },
+    { include-group = "audit" },
 ]
 
 [project.scripts]
@@ -193,10 +199,33 @@ artifacts = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["skaal/deploy/templates", "artifacts", "site"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]
+# E/F = pycodestyle/pyflakes, I = isort, B = bugbear, UP = pyupgrade,
+# SIM = simplify, C4 = comprehensions, RUF = ruff-specific, ASYNC = async
+# pitfalls (especially relevant for Skaal's async-first runtime), PTH =
+# pathlib over os.path, PIE = misc useful, PERF = perf anti-patterns,
+# TID = tidy imports.
+select = [
+    "E", "F", "I", "B", "UP", "SIM", "C4", "RUF",
+    "ASYNC", "PTH", "PIE", "PERF", "TID",
+]
+ignore = [
+    "E501",    # line length handled by formatter
+    "B008",    # function call in argument default — typer/FastAPI use this idiomatically
+    "SIM108",  # ternary not always clearer
+    "PERF203", # try/except in loop is fine for our control flow
+    "RUF012",  # mutable class attrs without ClassVar — pydantic models trip this
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B", "SIM", "PERF", "PTH"]
+"examples/**" = ["B", "SIM", "PERF", "PTH", "UP"]
+"skaal/cli/templates/**" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["skaal", "mesh"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -204,11 +233,73 @@ strict = false
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_return_any = false
+warn_redundant_casts = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = true
 plugins = ["pydantic.mypy"]
+exclude = "(^tests/|^examples/|^skaal/deploy/templates/|^artifacts/|^site/)"
+
+# Stricter type checking for the constraint/solver core where types are load-bearing.
+[[tool.mypy.overrides]]
+module = ["skaal.types.*", "skaal.solver.*"]
+disallow_untyped_defs = true
+warn_return_any = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+xfail_strict = true
+markers = [
+    "slow: tests that take more than a few seconds",
+    "integration: tests that hit external services or real backends",
+    "aws: tests that require AWS credentials",
+    "gcp: tests that require GCP credentials",
+]
+filterwarnings = [
+    "error",
+    # Third-party deprecations we don't control — re-evaluate on dep bumps.
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::DeprecationWarning:google.*",
+    "ignore::PendingDeprecationWarning",
+    "ignore::ResourceWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["skaal"]
+omit = [
+    "skaal/deploy/templates/*",
+    "skaal/cli/templates/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+fail_under = 60
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+    "pass",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.bandit]
+exclude_dirs = ["tests", "skaal/deploy/templates", "examples"]
+skips = ["B101"]  # assert_used — fine in non-test code with our usage patterns
 
 # ── Skaal project defaults ────────────────────────────────────────────────────
 # All fields are optional. CLI flags and SKAAL_* env vars take precedence.

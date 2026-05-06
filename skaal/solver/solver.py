@@ -75,7 +75,7 @@ def _policy_to_dict(policy: Any) -> dict[str, Any] | None:
     return dict(policy) if isinstance(policy, Mapping) else None
 
 
-def _collect_all_components(app: "App") -> dict[str, Any]:
+def _collect_all_components(app: App) -> dict[str, Any]:
     """
     Recursively collect all components from *app* and every mounted submodule.
 
@@ -97,7 +97,7 @@ def _collect_all_components(app: "App") -> dict[str, Any]:
     return result
 
 
-def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "PlanFile":
+def solve(app: App, catalog: dict[str, Any], target: str = "generic") -> PlanFile:
     """
     Run the Z3 constraint solver over all registered storage and compute
     declarations, producing a concrete infrastructure plan.
@@ -201,7 +201,7 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
         if not (callable(obj) and hasattr(obj, "__skaal_compute__")):
             continue
 
-        compute_constraint = getattr(obj, "__skaal_compute__")
+        compute_constraint = obj.__skaal_compute__
         try:
             instance_type, reason = encode_compute(
                 qname, compute_constraint, compute_backends, target=target
@@ -271,7 +271,7 @@ def solve(app: "App", catalog: dict[str, Any], target: str = "generic") -> "Plan
             try:
                 spec = encode_component(comp_name, comp_obj, catalog, target=target)
                 component_specs[comp_name] = spec
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning(
                     f"Component {comp_name!r} encoding failed: {exc}. "
                     "It will be omitted from the plan."

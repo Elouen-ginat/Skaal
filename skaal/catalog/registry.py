@@ -62,21 +62,17 @@ class BackendRegistry:
                 if spec.write_latency.max > write_latency_max:
                     continue
 
-            if durability is not None:
-                if durability not in spec.durability:
-                    continue
+            if durability is not None and durability not in spec.durability:
+                continue
 
-            if access_pattern is not None:
-                if access_pattern not in spec.access_patterns:
-                    continue
+            if access_pattern is not None and access_pattern not in spec.access_patterns:
+                continue
 
-            if size_gb is not None and spec.max_size_gb > 0:
-                if spec.max_size_gb < size_gb:
-                    continue
+            if size_gb is not None and spec.max_size_gb > 0 and spec.max_size_gb < size_gb:
+                continue
 
-            if region is not None:
-                if "all" not in spec.regions and region not in spec.regions:
-                    continue
+            if region is not None and "all" not in spec.regions and region not in spec.regions:
+                continue
 
             results.append((name, spec))
 
@@ -106,21 +102,21 @@ class BackendRegistry:
         results: list[tuple[str, ComputeBackendSpec]] = []
 
         for name, spec in self._catalog.compute.items():
-            if compute_type is not None:
-                if compute_type != "any" and compute_type not in spec.compute_types:
-                    continue
+            if (
+                compute_type is not None
+                and compute_type != "any"
+                and compute_type not in spec.compute_types
+            ):
+                continue
 
-            if memory_min is not None:
-                if spec.memory_gb < memory_min:
-                    continue
+            if memory_min is not None and spec.memory_gb < memory_min:
+                continue
 
-            if vcpus_min is not None:
-                if spec.vcpus < vcpus_min:
-                    continue
+            if vcpus_min is not None and spec.vcpus < vcpus_min:
+                continue
 
-            if region is not None:
-                if "all" not in spec.regions and region not in spec.regions:
-                    continue
+            if region is not None and "all" not in spec.regions and region not in spec.regions:
+                continue
 
             results.append((name, spec))
 

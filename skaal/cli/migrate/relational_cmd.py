@@ -13,20 +13,14 @@ from skaal.cli._utils import resolve_app_ref
 app = typer.Typer(help="Alembic-driven SQLModel schema migrations.")
 log = logging.getLogger("skaal.cli")
 
-
-def _backend_opt() -> typer.Option:
-    return typer.Option(
-        None,
-        "--backend",
-        help="Restrict to one resolved relational backend (e.g. sqlite, postgres).",
-    )
+_BACKEND_OPTION_HELP = "Restrict to one resolved relational backend (e.g. sqlite, postgres)."
 
 
 @app.command("autogenerate")
 @cli_error_boundary
 def autogenerate(
     message: str = typer.Option(..., "--message", "-m", help="Revision message."),
-    backend: str | None = _backend_opt(),
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
 ) -> None:
     """Generate a new revision by diffing models against the live database."""
     from skaal import api
@@ -51,7 +45,7 @@ def autogenerate(
 @cli_error_boundary
 def upgrade(
     target: str = typer.Argument("head", help="Target revision (default: head)."),
-    backend: str | None = _backend_opt(),
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the SQL without applying."),
 ) -> None:
     """Apply pending migrations up to *target*."""
@@ -72,7 +66,7 @@ def upgrade(
 @cli_error_boundary
 def downgrade(
     target: str = typer.Argument(..., help="Target revision (e.g. -1, base, <revision_id>)."),
-    backend: str | None = _backend_opt(),
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the SQL without applying."),
 ) -> None:
     """Roll back to *target*."""
@@ -91,7 +85,9 @@ def downgrade(
 
 @app.command("current")
 @cli_error_boundary
-def current(backend: str | None = _backend_opt()) -> None:
+def current(
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
+) -> None:
     """Show the currently applied revision per backend."""
     from skaal import api
 
@@ -102,7 +98,9 @@ def current(backend: str | None = _backend_opt()) -> None:
 
 @app.command("history")
 @cli_error_boundary
-def history(backend: str | None = _backend_opt()) -> None:
+def history(
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
+) -> None:
     """List every revision present in versions/, newest first."""
     from skaal import api
 
@@ -121,7 +119,9 @@ def history(backend: str | None = _backend_opt()) -> None:
 
 @app.command("check")
 @cli_error_boundary
-def check(backend: str | None = _backend_opt()) -> None:
+def check(
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
+) -> None:
     """Exit non-zero if the live schema has drifted from the registered models."""
     from skaal import api
 
@@ -144,7 +144,7 @@ def check(backend: str | None = _backend_opt()) -> None:
 @cli_error_boundary
 def stamp(
     target: str = typer.Argument(..., help="Revision id to stamp the database at."),
-    backend: str | None = _backend_opt(),
+    backend: str | None = typer.Option(None, "--backend", help=_BACKEND_OPTION_HELP),
 ) -> None:
     """Mark the database as being at *target* without running any migrations."""
     from skaal import api

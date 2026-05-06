@@ -7,7 +7,8 @@ import hashlib
 import json
 import math
 import re
-from typing import Any, ClassVar, Generic, Sequence, TypeVar, cast, get_args, get_origin
+from collections.abc import Sequence
+from typing import Any, ClassVar, Generic, TypeVar, cast, get_args, get_origin
 
 from skaal.storage import _is_pydantic, _primary_key_field
 
@@ -207,7 +208,7 @@ class VectorStore(Generic[T]):
 
         value_type = cls.__skaal_value_type__
         if value_type is None or not hasattr(value_type, "model_fields"):
-            return tuple()
+            return ()
         model_type = cast(Any, value_type)
 
         field_names = [

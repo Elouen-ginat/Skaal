@@ -25,7 +25,7 @@ class BackendHandler(BaseModel):
     local_env_value: str | None = None
     extra_deps: list[str] = Field(default_factory=list)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def import_stmt(self) -> str:
         return f"from skaal.backends.{self.module} import {self.class_name}"
@@ -61,7 +61,7 @@ FALLBACK_WIRE: dict[str, BackendHandler] = {
 }
 
 
-def get_handler(spec: "StorageSpec", *, local: bool = False) -> BackendHandler:
+def get_handler(spec: StorageSpec, *, local: bool = False) -> BackendHandler:
     if local:
         fallback_key = LOCAL_FALLBACK.get((spec.backend, spec.kind))
         if fallback_key:

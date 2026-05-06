@@ -58,7 +58,7 @@ def load_skaal_section() -> dict[str, Any]:
     if path is None:
         return {}
     try:
-        with open(path, "rb") as fh:
+        with path.open("rb") as fh:
             data = tomllib.load(fh)
     except (OSError, tomllib.TOMLDecodeError):
         return {}
@@ -236,7 +236,7 @@ class SkaalSettings(BaseSettings):
     )
 
     # ── Stack resolution ──────────────────────────────────────────────────────
-    def for_stack(self, name: str | None = None) -> "SkaalSettings":
+    def for_stack(self, name: str | None = None) -> SkaalSettings:
         """Return a new :class:`SkaalSettings` with the *name* profile applied.
 
         Passing ``None`` or a stack name that has no profile returns a copy of
@@ -249,8 +249,7 @@ class SkaalSettings(BaseSettings):
 
         updates: dict[str, Any] = {"stack": resolved_name}
         if profile is not None:
-            for field_name, value in profile.model_dump(exclude_none=True).items():
-                updates[field_name] = value
+            updates |= profile.model_dump(exclude_none=True)
 
         return self.model_copy(update=updates)
 

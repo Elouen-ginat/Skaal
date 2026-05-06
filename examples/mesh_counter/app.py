@@ -101,7 +101,7 @@ def _get_mesh() -> Any:
         )
         _mesh_instance.update_agent_status("mesh-counter-0", "running")
 
-    except (RuntimeError, ImportError, Exception):  # noqa: BLE001
+    except (RuntimeError, ImportError, Exception):
         # Extension not compiled or any initialisation error → degrade gracefully.
         _mesh_instance = None
 
@@ -121,7 +121,7 @@ def _ensure_counter_agent(mesh: Any, name: str) -> None:
                 agent_id,
                 metadata={"counter_name": name},
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -132,7 +132,7 @@ def _publish_changed(mesh: Any, name: str, value: int, action: str) -> None:
             "counter.changed",
             {"action": action, "name": name, "value": value},
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -159,13 +159,13 @@ async def increment(name: str, by: int = 1) -> dict:
         _ensure_counter_agent(mesh, name)
         try:
             mesh.update_agent_status(agent_id, "running")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         mesh.state_set(f"cache:{name}", new_value)
         _publish_changed(mesh, name, new_value, "increment")
         try:
             mesh.update_agent_status(agent_id, "idle")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     return {"name": name, "value": new_value, "mesh": mesh is not None}
@@ -203,7 +203,7 @@ async def reset(name: str) -> dict:
         agent_id = f"counter-{name}"
         try:
             mesh.update_agent_status(agent_id, "idle")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     return {"name": name, "value": 0, "mesh": mesh is not None}

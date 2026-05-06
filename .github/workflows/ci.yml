@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs on the same branch/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
     name: Pre-commit
@@ -15,6 +20,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,22 +40,37 @@ jobs:
           args: --release --out dist --interpreter python
 
       - name: Install dev dependencies
-        run: uv sync --group dev --extra runtime --extra deploy --extra mesh --no-sources --find-links mesh/dist
+        run: >-
+          uv sync --group dev --extra runtime --extra deploy --extra mesh
+          --no-sources --find-links mesh/dist
 
       - uses: pre-commit/action@v3.0.1
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          # Smoke-test on Windows + macOS to catch platform-specific regressions
+          # without paying the matrix multiplication cost on every Python version.
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -61,7 +86,18 @@ jobs:
           args: --release --out dist --interpreter python
 
       - name: Install dev dependencies
-        run: uv sync --group dev --extra runtime --extra deploy --extra mesh --no-sources --find-links mesh/dist
+        run: >-
+          uv sync --group dev --extra runtime --extra deploy --extra mesh
+          --no-sources --find-links mesh/dist
 
-      - name: Run tests
-        run: uv run pytest --tb=short -q
+      - name: Run tests with coverage
+        run: >-
+          uv run pytest --cov=skaal --cov-report=xml --cov-report=term
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore

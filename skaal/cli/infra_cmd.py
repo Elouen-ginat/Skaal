@@ -57,7 +57,7 @@ def status(
     if plan_file.compute:
         log.info("Compute (%s functions):", len(plan_file.compute))
         for name, cspec in sorted(plan_file.compute.items()):
-            log.info(f"  {name:<36} {cspec.instance_type}  ×{cspec.instances}")
+            log.info(f"  {name:<36} {cspec.instance_type}  x{cspec.instances}")
     else:
         log.info("Compute: (none)")
 

@@ -74,7 +74,7 @@ class GcpSecretManagerResolver:
         try:
             response = await self._client.access_secret_version(name=path)
             value = response.payload.data.decode("utf-8")
-        except Exception as exc:  # noqa: BLE001 — wrap with Skaal context
+        except Exception as exc:
             _LOG.warning("GCP Secret Manager fetch failed for %s: %s", spec.name, exc)
             if spec.required:
                 raise SecretMissingError(

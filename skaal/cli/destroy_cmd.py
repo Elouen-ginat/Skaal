@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -23,7 +22,7 @@ def destroy(
         "-a",
         help="Path to the artifacts directory produced by `skaal build`.",
     ),
-    stack: Optional[str] = typer.Option(
+    stack: str | None = typer.Option(
         None,
         "--stack",
         "-s",

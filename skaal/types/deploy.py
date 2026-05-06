@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal, NamedTuple, Protocol, TypeAlias
+from typing import Any, Literal, NamedTuple, Protocol, Required, TypeAlias
 
 from pydantic import BaseModel
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 TargetName: TypeAlias = Literal[
     "aws",

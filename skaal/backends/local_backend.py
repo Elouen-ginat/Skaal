@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
 import time
-from typing import Any, List
+from typing import Any
 
 # Re-export for backward compatibility — canonical location is now skaal.storage.
 from skaal.storage import (  # noqa: F401
@@ -82,7 +83,7 @@ class LocalMap:
     async def list_page(self, *, limit: int, cursor: str | None):
         return _list_page_from_entries(await self.list(), limit=limit, cursor=cursor)
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         async with self._lock:
             self._purge_expired_locked()
             return [(k, v) for k, v in self._data.items() if k.startswith(prefix)]

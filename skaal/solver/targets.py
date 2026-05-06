@@ -16,11 +16,11 @@ Usage::
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Final
 
 
-class TargetFamily(str, Enum):
+class TargetFamily(StrEnum):
     """Canonical compute families understood by the solver.
 
     Every accepted target string (canonical name *or* legacy alias) maps to

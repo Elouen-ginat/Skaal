@@ -104,7 +104,7 @@ async def test_runtime_dispatch_increment(counter_app):
 async def test_runtime_dispatch_missing_function(counter_app):
     """POST to unknown function returns 404."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("POST", "/_skaal/invoke/runtime-extras.nonexistent", b"{}")
+    _result, status = await rt._dispatch("POST", "/_skaal/invoke/runtime-extras.nonexistent", b"{}")
     assert status == 404
 
 
@@ -121,7 +121,7 @@ async def test_runtime_dispatch_health(counter_app):
 async def test_runtime_dispatch_bad_method(counter_app):
     """DELETE returns 405."""
     rt = LocalRuntime(counter_app)
-    result, status = await rt._dispatch("DELETE", _invoke_path(counter_app, "increment"), b"")
+    _result, status = await rt._dispatch("DELETE", _invoke_path(counter_app, "increment"), b"")
     assert status == 405
 
 

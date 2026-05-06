@@ -108,7 +108,7 @@ def _bundle_local_mesh_wheel(project_root: Path, output_dir: Path) -> str | None
 
 def generate_artifacts(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     output_dir: Path,
     source_module: str,
     app_var: str = "app",
