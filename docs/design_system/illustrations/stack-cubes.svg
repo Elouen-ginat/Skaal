@@ -1,0 +1,13 @@
+<svg width="320" height="260" viewBox="0 0 320 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal stack cubes illustration</title>
+  <rect width="320" height="260" rx="24" fill="#F6FBF9"/>
+  <g opacity="0.92">
+    <path d="M106 64L160 38L214 64L160 90L106 64Z" fill="#E7F0F5" stroke="#C8D7E3"/>
+    <path d="M106 64V110L160 136V90L106 64Z" fill="#DCE8F0" stroke="#C8D7E3"/>
+    <path d="M214 64V110L160 136V90L214 64Z" fill="#F7FBFE" stroke="#C8D7E3"/>
+    <path d="M106 122L160 96L214 122L160 148L106 122Z" fill="#DFF6F2" stroke="#B7DDD8"/>
+    <path d="M106 122V168L160 194V148L106 122Z" fill="#D0F1EB" stroke="#B7DDD8"/>
+    <path d="M214 122V168L160 194V148L214 122Z" fill="#ECFBF9" stroke="#B7DDD8"/>
+  </g>
+  <circle cx="160" cy="80" r="8" fill="#13B5A8"/><circle cx="188" cy="102" r="8" fill="#9AE66E"/>
+</svg>

@@ -1,0 +1,61 @@
+@import url("colors_and_type.css");
+
+:root {
+  --skaal-font-heading: var(--font-heading);
+  --skaal-font-body: var(--font-body);
+  --skaal-font-mono: var(--font-mono);
+
+  --skaal-radius-card: var(--radius-card);
+  --skaal-radius-chip: var(--radius-chip);
+  --skaal-radius-icon: var(--radius-icon);
+  --skaal-stroke-fine: var(--stroke-fine);
+  --skaal-stroke-base: var(--stroke-base);
+
+  --skaal-shadow-soft: var(--shadow-soft);
+  --skaal-shadow-panel: var(--shadow-panel);
+  --skaal-shadow-hover: var(--shadow-hover);
+
+  --skaal-motion-fast: var(--motion-fast);
+  --skaal-motion-base: var(--motion-base);
+  --skaal-motion-slow: var(--motion-slow);
+  --skaal-ease-standard: var(--ease-standard);
+}
+
+[data-skaal-surface="light"] {
+  background: linear-gradient(180deg, #ffffff 0%, var(--skaal-color-mist) 100%);
+  color: var(--fg-1);
+}
+
+[data-skaal-surface="dark"] {
+  background: linear-gradient(180deg, #101b2b 0%, var(--bg-dark) 100%);
+  color: var(--fg-on-dark-1);
+}
+
+.skaal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--skaal-color-grid) 40%, white);
+  border-radius: var(--skaal-radius-chip);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--skaal-shadow-soft);
+  font: 500 14px/1 var(--skaal-font-body);
+  color: var(--fg-1);
+}
+
+.skaal-code-surface {
+  border-radius: var(--skaal-radius-card);
+  background: var(--bg-code);
+  color: #e5f3f7;
+  box-shadow: var(--skaal-shadow-panel);
+  font: 500 14px/1.6 var(--skaal-font-mono);
+}
+
+.skaal-route-accent {
+  color: var(--skaal-color-signal-teal);
+}
+
+.skaal-route-resolved {
+  color: var(--skaal-color-solver-green);
+}

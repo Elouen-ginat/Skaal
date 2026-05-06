@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Code surface</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card" style="background:#F6FBF9;">
+<style>
+  .codeblk { border-radius: 16px; background: linear-gradient(180deg,#10192B,#0F1828); box-shadow: 0 12px 28px rgba(14,23,38,0.18); padding: 16px 18px; font: 500 13px/1.7 'IBM Plex Mono'; color: #E5F3F7; }
+  .kw { color: #5FA8FF; }
+  .deco { color: #13B5A8; }
+  .str { color: #9AE66E; }
+  .cls { color: #f0c674; }
+  .cmt { color: rgba(245,251,255,0.45); }
+</style>
+<div class="codeblk"><span class="cmt"># declare a constrained surface</span>
+<span class="kw">from</span> skaal <span class="kw">import</span> App, storage
+<span class="kw">from</span> skaal.storage <span class="kw">import</span> Map
+
+app = <span class="cls">App</span>(<span class="str">"todo"</span>)
+
+<span class="deco">@storage</span>(read_latency=<span class="str">"&lt; 10ms"</span>, durability=<span class="str">"strong"</span>)
+<span class="kw">class</span> <span class="cls">Todos</span>(Map[<span class="cls">str</span>, <span class="cls">dict</span>]):
+    <span class="kw">pass</span>
+</div>
+</div></body></html>

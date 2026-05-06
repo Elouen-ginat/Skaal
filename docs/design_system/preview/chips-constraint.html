@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Constraint chips</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid rgba(167,180,194,0.4); border-radius: 14px; background: rgba(255,255,255,0.92); box-shadow: 0 6px 14px rgba(14,23,38,0.05); font: 500 13px/1 'IBM Plex Mono', monospace; color: #0E1726; }
+  .chip .k { color: rgba(14,23,38,0.55); font-weight: 500; }
+  .chip .v { color: #0E1726; font-weight: 600; }
+  .chip-teal { border-color: rgba(19,181,168,0.45); }
+  .chip-teal .v { color: #0F8E84; }
+  .chip-green { border-color: rgba(154,230,110,0.6); }
+  .chip-green .v { color: #4f9924; }
+  .chip-blue { border-color: rgba(95,168,255,0.45); }
+  .chip-blue .v { color: #2c7fd6; }
+  .chip-copper { border-color: rgba(201,106,61,0.45); background: rgba(201,106,61,0.06); }
+  .chip-copper .v { color: #B05227; }
+</style>
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+  <span class="chip chip-teal"><span class="k">read_latency</span><span class="v">&lt; 10ms</span></span>
+  <span class="chip chip-green"><span class="k">durability</span><span class="v">strong</span></span>
+  <span class="chip chip-blue"><span class="k">throughput</span><span class="v">&gt; 100 rps</span></span>
+  <span class="chip"><span class="k">target</span><span class="v">local</span></span>
+  <span class="chip chip-copper"><span class="k">fallback</span><span class="v">sqlite</span></span>
+</div>
+<div class="label" style="margin-top:14px;">Spec tokens — render constraint name + value as a single mono chip.</div>
+</div></body></html>

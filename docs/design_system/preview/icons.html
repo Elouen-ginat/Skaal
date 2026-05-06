@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Iconography</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .ic { width:48px; height:48px; border-radius:18px; background:#fff; border:1px solid var(--border-2); display:flex; align-items:center; justify-content:center; }
+  .icrow { display:flex; gap:10px; flex-wrap:wrap; }
+  .iccell { text-align:center; width: 64px; }
+  .iccell .label { margin-top:6px; font-size: 10px; }
+</style>
+
+<div class="icrow">
+  <!-- constraints -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><rect x="7" y="8" width="10" height="10" rx="2" stroke="#0E1726" stroke-width="2.4"/><path d="M24 13H40" stroke="#0E1726" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="19" width="10" height="10" rx="2" stroke="#13B5A8" stroke-width="2.4"/><path d="M24 24H34" stroke="#0E1726" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="30" width="10" height="10" rx="2" stroke="#9AE66E" stroke-width="2.4"/></svg></div><div class="label">constraints</div></div>
+
+  <!-- solver -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="14" stroke="#0E1726" stroke-width="2.4"/><circle cx="24" cy="24" r="4" fill="#9AE66E"/><path d="M24 10v4M24 34v4M10 24h4M34 24h4" stroke="#13B5A8" stroke-width="2.4" stroke-linecap="round"/></svg></div><div class="label">solver</div></div>
+
+  <!-- plan-graph -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><circle cx="12" cy="14" r="4" stroke="#0E1726" stroke-width="2.4"/><circle cx="36" cy="14" r="4" stroke="#0E1726" stroke-width="2.4"/><circle cx="24" cy="34" r="4" fill="#9AE66E"/><path d="M14 16l8 16M34 16l-8 16" stroke="#13B5A8" stroke-width="2.4"/></svg></div><div class="label">plan-graph</div></div>
+
+  <!-- route (REWORKED): branching paths converging to a single chosen endpoint -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <circle cx="10" cy="12" r="3" stroke="#0E1726" stroke-width="2.4"/>
+    <circle cx="10" cy="36" r="3" stroke="#0E1726" stroke-width="2.4"/>
+    <path d="M13 12 C 22 12, 22 24, 30 24" stroke="#A7B4C2" stroke-width="2.2" stroke-dasharray="2 3" fill="none"/>
+    <path d="M13 36 C 22 36, 22 24, 30 24" stroke="#13B5A8" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <circle cx="34" cy="24" r="5" fill="#9AE66E"/>
+  </svg></div><div class="label">route</div></div>
+
+  <!-- storage -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><rect x="8" y="10" width="32" height="28" rx="3" stroke="#0E1726" stroke-width="2.4"/><path d="M14 18h20M14 24h20M14 30h12" stroke="#0E1726" stroke-width="2.4" stroke-linecap="round"/></svg></div><div class="label">storage</div></div>
+
+  <!-- database (REWORKED): three stacked cylinder tiers -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <ellipse cx="24" cy="12" rx="13" ry="4" stroke="#0E1726" stroke-width="2.2" fill="#fff"/>
+    <path d="M11 12 v6 c0 2.2 5.8 4 13 4 s13-1.8 13-4 v-6" stroke="#0E1726" stroke-width="2.2" fill="#fff"/>
+    <path d="M11 22 v6 c0 2.2 5.8 4 13 4 s13-1.8 13-4 v-6" stroke="#0E1726" stroke-width="2.2" fill="#fff"/>
+    <path d="M11 32 v4 c0 2.2 5.8 4 13 4 s13-1.8 13-4 v-4" stroke="#13B5A8" stroke-width="2.2" fill="none"/>
+    <circle cx="34" cy="36" r="2" fill="#9AE66E"/>
+  </svg></div><div class="label">database</div></div>
+
+  <!-- schedule -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="14" stroke="#0E1726" stroke-width="2.4"/><path d="M24 16v8l5 5" stroke="#13B5A8" stroke-width="2.4" stroke-linecap="round"/></svg></div><div class="label">schedule</div></div>
+
+  <!-- deploy -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none"><path d="M12 32l12-20 12 20" stroke="#0E1726" stroke-width="2.4" stroke-linejoin="round"/><circle cx="24" cy="36" r="3" fill="#9AE66E"/></svg></div><div class="label">deploy</div></div>
+
+  <!-- NEW: catalog (book/registry of allowed backends) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <path d="M10 12 h22 a4 4 0 0 1 4 4 v22 h-22 a4 4 0 0 1 -4 -4 z" stroke="#0E1726" stroke-width="2.4" fill="#fff"/>
+    <path d="M10 34 h22 a4 4 0 0 1 4 4" stroke="#0E1726" stroke-width="2.4" fill="none"/>
+    <path d="M16 20 h12 M16 26 h8" stroke="#13B5A8" stroke-width="2.2" stroke-linecap="round"/>
+  </svg></div><div class="label">catalog</div></div>
+
+  <!-- NEW: function (compute primitive — λ-style) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <rect x="8" y="8" width="32" height="32" rx="8" stroke="#0E1726" stroke-width="2.4"/>
+    <path d="M19 34 c0 -10 4 -20 11 -20 a3 3 0 0 1 3 3" stroke="#13B5A8" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+    <path d="M16 24 h12" stroke="#13B5A8" stroke-width="2.4" stroke-linecap="round"/>
+  </svg></div><div class="label">function</div></div>
+
+  <!-- NEW: retry (resilience policy) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <path d="M36 18 a14 14 0 1 0 2 12" stroke="#0E1726" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M36 10 v9 h-9" stroke="#13B5A8" stroke-width="2.4" stroke-linejoin="round" fill="none" stroke-linecap="round"/>
+  </svg></div><div class="label">retry</div></div>
+
+  <!-- NEW: stream (token stream / SSE) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <path d="M10 16 h12 M10 24 h22 M10 32 h16" stroke="#0E1726" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="38" cy="24" r="3" fill="#9AE66E"/>
+  </svg></div><div class="label">stream</div></div>
+
+  <!-- NEW: target (cloud destination) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <path d="M14 30 a8 8 0 0 1 0 -16 a10 10 0 0 1 19 2 a7 7 0 0 1 1 14 z" stroke="#0E1726" stroke-width="2.4" fill="#fff"/>
+    <circle cx="24" cy="22" r="2.6" fill="#13B5A8"/>
+  </svg></div><div class="label">target</div></div>
+
+  <!-- NEW: artifact (Dockerfile / generated output) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <path d="M14 8 h16 l8 8 v22 a2 2 0 0 1 -2 2 H14 a2 2 0 0 1 -2 -2 V10 a2 2 0 0 1 2 -2 z" stroke="#0E1726" stroke-width="2.4" fill="#fff"/>
+    <path d="M30 8 v8 h8" stroke="#0E1726" stroke-width="2.4" fill="none"/>
+    <path d="M18 26 h12 M18 32 h8" stroke="#13B5A8" stroke-width="2.2" stroke-linecap="round"/>
+  </svg></div><div class="label">artifact</div></div>
+
+  <!-- NEW: audit (auditable decision / checkmark trail) -->
+  <div class="iccell"><div class="ic"><svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+    <rect x="9" y="9" width="30" height="30" rx="6" stroke="#0E1726" stroke-width="2.4"/>
+    <path d="M16 24 l5 5 l11 -12" stroke="#9AE66E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </svg></div><div class="label">audit</div></div>
+</div>
+<div class="label" style="margin-top:14px;">Custom set · 2.4 stroke · 18 radius · ink + teal + green accents</div>
+</div></body></html>

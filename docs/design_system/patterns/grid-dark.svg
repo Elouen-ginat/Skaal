@@ -1,0 +1,8 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal dark grid pattern</title>
+  <rect width="320" height="240" rx="28" fill="#0E1726"/>
+  <path d="M40 0V240M80 0V240M120 0V240M160 0V240M200 0V240M240 0V240M280 0V240" stroke="#223248"/>
+  <path d="M0 40H320M0 80H320M0 120H320M0 160H320M0 200H320" stroke="#223248"/>
+  <path d="M36 174L124 126L194 138L260 76" stroke="#13B5A8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="36" cy="174" r="7" fill="#D2DAE1"/><circle cx="124" cy="126" r="7" fill="#13B5A8"/><circle cx="194" cy="138" r="7" fill="#9AE66E"/><circle cx="260" cy="76" r="7" fill="#D2DAE1"/>
+</svg>

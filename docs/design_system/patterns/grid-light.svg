@@ -1,0 +1,6 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal light grid pattern</title>
+  <rect width="320" height="240" rx="28" fill="#FBFDFC"/>
+  <path d="M40 0V240M80 0V240M120 0V240M160 0V240M200 0V240M240 0V240M280 0V240" stroke="#E3EBF0"/>
+  <path d="M0 40H320M0 80H320M0 120H320M0 160H320M0 200H320" stroke="#E3EBF0"/>
+</svg>

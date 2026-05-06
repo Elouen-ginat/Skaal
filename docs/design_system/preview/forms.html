@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Form inputs</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .fld { display:flex; flex-direction:column; gap:6px; }
+  .fld label { font: 600 11px/1 'IBM Plex Sans'; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(14,23,38,0.6); }
+  .fld input, .fld select { padding: 10px 12px; border: 1px solid rgba(167,180,194,0.5); border-radius: 12px; background: #fff; font: 500 14px 'IBM Plex Sans'; color: #0E1726; outline: none; transition: border-color 140ms; }
+  .fld input:focus, .fld select:focus { border-color: #13B5A8; box-shadow: 0 0 0 3px rgba(19,181,168,0.18); }
+</style>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+  <div class="fld"><label>App name</label><input value="todo-api" /></div>
+  <div class="fld"><label>Target</label><select><option>local</option><option>aws</option><option>gcp</option></select></div>
+  <div class="fld"><label>Catalog</label><input value="catalogs/local.toml" style="font-family:'IBM Plex Mono';font-size:13px;" /></div>
+  <div class="fld"><label>Region</label><input placeholder="eu-west-1" /></div>
+</div>
+</div></body></html>

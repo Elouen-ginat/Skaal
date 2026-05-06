@@ -1,0 +1,8 @@
+<svg width="340" height="220" viewBox="0 0 340 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal network route diagram</title>
+  <rect width="340" height="220" rx="24" fill="#F6FBF9"/>
+  <path d="M170 110L88 58M170 110L102 160M170 110L242 60M170 110L252 158M170 110L170 44" stroke="#CDD7E0" stroke-width="3" stroke-linecap="round"/>
+  <path d="M170 110L252 158" stroke="#13B5A8" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="170" cy="110" r="12" fill="#0E1726"/>
+  <circle cx="88" cy="58" r="10" fill="#D9E1E7"/><circle cx="102" cy="160" r="10" fill="#D9E1E7"/><circle cx="242" cy="60" r="10" fill="#D9E1E7"/><circle cx="252" cy="158" r="10" fill="#9AE66E"/><circle cx="170" cy="44" r="10" fill="#13B5A8"/>
+</svg>

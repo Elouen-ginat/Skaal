@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Status signals</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .sig { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; font: 600 12px/1 'IBM Plex Sans'; letter-spacing: 0.02em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .sig-resolved { background: rgba(154,230,110,0.18); color: #3f7d1c; }
+  .sig-resolved .dot { background: #9AE66E; box-shadow: 0 0 0 3px rgba(154,230,110,0.25); }
+  .sig-deploying { background: rgba(95,168,255,0.16); color: #1d6cc7; }
+  .sig-deploying .dot { background: #5FA8FF; }
+  .sig-pending { background: rgba(167,180,194,0.22); color: #4a5566; }
+  .sig-pending .dot { background: #A7B4C2; }
+  .sig-degraded { background: rgba(201,106,61,0.16); color: #A75529; }
+  .sig-degraded .dot { background: #C96A3D; }
+  .sig-error { background: rgba(231,76,60,0.14); color: #B92E1F; }
+  .sig-error .dot { background: #E04F3C; }
+</style>
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+  <span class="sig sig-resolved"><span class="dot"></span>Resolved</span>
+  <span class="sig sig-deploying"><span class="dot"></span>Deploying</span>
+  <span class="sig sig-pending"><span class="dot"></span>Pending</span>
+  <span class="sig sig-degraded"><span class="dot"></span>Degraded</span>
+  <span class="sig sig-error"><span class="dot"></span>Error</span>
+</div>
+<div class="label" style="margin-top:14px;">Resolved · Deploying · Pending · Degraded · Error</div>
+</div></body></html>

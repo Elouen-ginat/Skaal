@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skaal — Declare the contract. Skaal picks the stack.</title>
+  <link rel="icon" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="landing.css" />
+</head>
+<body>
+
+<!-- ============================ TOP BAR ============================ -->
+<header class="sk-top" data-screen-label="Top bar">
+  <div class="sk-top__inner">
+    <a class="sk-brand" href="#top">
+      <img class="sk-brand__mark" src="assets/logo-mark.svg" alt="" />
+      <span class="sk-brand__word">Skaal</span>
+      <span class="sk-brand__ver">v0.2.0 · alpha</span>
+    </a>
+    <nav class="sk-top__nav">
+      <a class="sk-top__link is-active" href="#top">Docs</a>
+      <a class="sk-top__link" href="#how">How it works</a>
+      <a class="sk-top__link" href="#tiers">Surfaces</a>
+      <a class="sk-top__link" href="#cli">CLI</a>
+      <a class="sk-top__link" href="#use-cases">Examples</a>
+    </nav>
+    <div class="sk-top__right">
+      <div class="sk-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input placeholder="Search docs" />
+        <span class="sk-kbd">⌘K</span>
+      </div>
+      <a class="sk-iconbtn" href="https://github.com/Elouen-ginat/Skaal" target="_blank" rel="noreferrer" title="GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.55 9.55 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<div class="lp-shell" id="top">
+
+  <!-- ============================ HERO ============================ -->
+  <section class="lp-hero" data-screen-label="Hero">
+    <div class="lp-hero__copy">
+      <span class="lp-kicker"><span class="lp-kicker__pulse"></span>Infrastructure as Constraints · for Python</span>
+      <h1 class="lp-hero__h1">Declare the contract.<br/><em>Skaal picks the stack.</em></h1>
+      <p class="lp-hero__lead">
+        Write latency, durability, throughput, and residency constraints directly in Python.
+        A Z3-backed planner scores your catalog, selects the cheapest backend path that
+        satisfies them, and generates the runtime, Dockerfiles, and Pulumi programs for
+        whatever target you point it at.
+      </p>
+      <div class="lp-hero__actions">
+        <a class="sk-btn sk-btn--primary" href="#how">Get started <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <a class="sk-btn sk-btn--ghost" href="#cli">Browse the CLI</a>
+        <button class="sk-btn sk-btn--ghost sk-btn--copy" type="button" title="Copy">
+          <code>$ pip install "skaal[serve]"</code>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 16V5a2 2 0 0 1 2-2h9" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+      </div>
+      <div class="lp-hero__meta">
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>One app model, many targets</span>
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Auditable plan.skaal.lock</span>
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Local · AWS · GCP</span>
+      </div>
+    </div>
+
+    <!-- Visual: code → plan -->
+    <div class="lp-hero__visual">
+      <div class="lp-codecard">
+        <div class="lp-codecard__head">
+          <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
+          <span class="lp-codecard__file">app.py</span>
+          <span class="lp-codecard__lang">Python</span>
+        </div>
+<pre class="lp-codecard__body"><span class="kw">from</span> skaal <span class="kw">import</span> App, storage
+<span class="kw">from</span> skaal.storage <span class="kw">import</span> Map
+
+app = <span class="cls">App</span>(<span class="str">"todo"</span>)
+
+
+<span class="deco">@storage</span>(
+    read_latency=<span class="str">"&lt; 10ms"</span>,
+    durability=<span class="str">"strong"</span>,
+    throughput=<span class="str">"&gt; 100 rps"</span>,
+    retention=<span class="str">"30d"</span>,
+)
+<span class="kw">class</span> <span class="cls">Todos</span>(<span class="cls">Map</span>[<span class="cls">str</span>, <span class="cls">dict</span>]):
+    <span class="kw">pass</span></pre>
+      </div>
+
+      <div class="lp-flowarrow" aria-hidden="true">
+        <span class="lp-flowarrow__line"></span>
+        <span class="lp-flowarrow__dot"></span>
+        Solve
+        <span class="lp-flowarrow__dot"></span>
+        <span class="lp-flowarrow__line"></span>
+      </div>
+
+      <div class="lp-plancard">
+        <div class="lp-plancard__head">
+          <h4>plan.skaal.lock · target=local</h4>
+          <span class="sk-sig sk-sig--resolved"><span class="sk-sig__dot"></span>Resolved</span>
+        </div>
+        <div class="lp-plancard__body">
+          <div class="lp-plancard__title-row">
+            <h4>Storage.Todos</h4>
+            <span>3 candidates evaluated</span>
+          </div>
+          <div class="lp-bcand is-selected">
+            <span class="lp-bcand__name">dynamodb</span>
+            <span class="lp-bcand__cost">$0.018 / wu · 7ms p50</span>
+            <span class="lp-bcand__tag">selected</span>
+          </div>
+          <div class="lp-bcand is-rejected">
+            <span class="lp-bcand__name">postgres</span>
+            <span class="lp-bcand__cost">$0.024 / wu · 12ms p50</span>
+            <span class="lp-bcand__tag">cost</span>
+          </div>
+          <div class="lp-bcand is-rejected">
+            <span class="lp-bcand__name">sqlite</span>
+            <span class="lp-bcand__cost">$0 · 5ms p50</span>
+            <span class="lp-bcand__tag">throughput</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install / Python versions strip -->
+  <div class="lp-installstrip" data-screen-label="Install strip">
+    <span class="lp-installstrip__lbl">Runs on</span>
+    <div class="lp-installstrip__items">
+      <span><code>Python 3.11+</code></span>
+      <span>Z3 solver</span>
+      <span>SQLite · Postgres · Redis</span>
+      <span>DynamoDB · Firestore</span>
+      <span>S3 · GCS · Local FS</span>
+      <span>Pulumi · Docker · Lambda · Cloud Run</span>
+    </div>
+  </div>
+
+  <!-- ============================ HOW IT WORKS ============================ -->
+  <section class="lp-section" id="how" data-screen-label="How it works">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">How Skaal works</span>
+      <h2>Stop hard-coding the stack into your business logic.</h2>
+      <p class="lp-section__sub">
+        Most frameworks bake an infrastructure choice into your code on day one. Skaal flips
+        that — describe the behavior your code needs, and let the planner resolve a target-
+        specific implementation. Move from local SQLite to DynamoDB by changing a TOML file,
+        not your application.
+      </p>
+    </div>
+
+    <div class="lp-steps">
+      <div class="lp-step lp-step--declare">
+        <div class="lp-step__icon">
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+            <path d="M5 9h12M22 9h5M5 16h5M15 16h12M5 23h17M27 23h0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle class="lp-icon-fill-accent" cx="19" cy="9" r="3"/>
+            <circle class="lp-icon-fill-highlight" cx="12" cy="16" r="3"/>
+            <circle class="lp-icon-fill-accent" cx="24" cy="23" r="3"/>
+          </svg>
+        </div>
+        <span class="lp-step__num">01 / Declare</span>
+        <h3>Constraints, not connection strings</h3>
+        <p>Express latency, durability, throughput, residency, and access patterns on typed surfaces — <code>Map</code>, <code>Collection</code>, <code>BlobStore</code>, <code>VectorStore</code>.</p>
+        <span class="lp-step__tag">@storage · @function · @schedule</span>
+      </div>
+      <div class="lp-step lp-step--catalog">
+        <div class="lp-step__icon">
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="6" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/>
+            <rect x="18" y="6" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/>
+            <rect x="4" y="20" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/>
+            <rect x="18" y="20" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/>
+            <path class="lp-icon-stroke-accent" d="M9 12v8M23 12v8" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="lp-step__num">02 / Catalog</span>
+        <h3>Describe what each environment can do</h3>
+        <p>Per-environment TOML catalogs list available backends with cost, latency, durability, and capability flags. Overlay <code>extends</code> for dev → staging → prod.</p>
+        <span class="lp-step__tag">catalogs/local.toml · aws.toml</span>
+      </div>
+      <div class="lp-step lp-step--solve">
+        <div class="lp-step__icon">
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+            <circle cx="8" cy="9" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="24" cy="9" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle class="lp-icon-fill-highlight" cx="16" cy="23" r="3"/>
+            <path class="lp-icon-stroke-accent" d="M10 11l5 9M22 11l-5 9" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="lp-step__num">03 / Solve</span>
+        <h3>The Z3 planner picks the cheapest valid path</h3>
+        <p>Each constraint becomes a satisfiability clause. UNSAT comes with closest-match diagnostics: which constraint failed, and how far off each candidate was.</p>
+        <span class="lp-step__tag">plan.skaal.lock · skaal plan --explain</span>
+      </div>
+      <div class="lp-step lp-step--generate">
+        <div class="lp-step__icon">
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+            <path d="M9 4h10l5 5v17a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="2"/>
+            <path d="M19 4v5h5" stroke="currentColor" stroke-width="2"/>
+            <path class="lp-icon-stroke-accent" d="M12 16h8M12 21h6" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="lp-step__num">04 / Generate</span>
+        <h3>Runtime + deploy artifacts, ready to ship</h3>
+        <p>Skaal emits the runtime entry point, Dockerfile, Pulumi program, and stack metadata under <code>artifacts/</code>. <code>skaal deploy</code> hands the rest to Pulumi.</p>
+        <span class="lp-step__tag">artifacts/ · Lambda · Cloud Run · Docker</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ STORAGE TIERS ============================ -->
+  <section class="lp-section" id="tiers" data-screen-label="Surfaces">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">Storage surfaces</span>
+      <h2>Six tiers. One declarative API.</h2>
+      <p class="lp-section__sub">
+        Skaal ships first-class surfaces for every storage shape a real application reaches
+        for. Backend choice happens at solve time — your code keeps the same generic API
+        from local dev to production.
+      </p>
+    </div>
+
+    <div class="lp-tiers">
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Key-value</h3>
+          <span class="lp-tier__deco">Map · Collection</span>
+        </div>
+        <p>Generic <code>Store[T]</code> with cursor pagination, secondary indexes, and per-row TTL.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">SQLite</span>
+          <span class="lp-tier__be">Postgres</span>
+          <span class="lp-tier__be">Redis</span>
+          <span class="lp-tier__be">DynamoDB</span>
+          <span class="lp-tier__be">Firestore</span>
+        </div>
+      </div>
+
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Relational</h3>
+          <span class="lp-tier__deco">@app.relational</span>
+        </div>
+        <p>SQLModel-backed entities with Alembic migrations — autogenerate, upgrade, downgrade, drift check, dry-run SQL.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">SQLite</span>
+          <span class="lp-tier__be">Postgres</span>
+          <span class="lp-tier__be is-new">Alembic 1.13</span>
+        </div>
+      </div>
+
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Vector</h3>
+          <span class="lp-tier__deco">VectorStore</span>
+        </div>
+        <p>Similarity search with metadata filters. Embeddings declared via <code>__skaal_embeddings__</code>, namespaces per surface.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">Chroma</span>
+          <span class="lp-tier__be">Postgres / pgvector</span>
+          <span class="lp-tier__be">Pinecone</span>
+        </div>
+      </div>
+
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Blob</h3>
+          <span class="lp-tier__deco">BlobStore · @app.storage(kind="blob")</span>
+        </div>
+        <p>Object storage with the same constraint vocabulary. Stream uploads, presigned URLs, content-type metadata.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">Local FS</span>
+          <span class="lp-tier__be is-new">S3</span>
+          <span class="lp-tier__be is-new">GCS</span>
+        </div>
+      </div>
+
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Channels</h3>
+          <span class="lp-tier__deco">EventLog · Outbox</span>
+        </div>
+        <p>Durable event streams with consumer groups, replay-by-offset, and an Outbox engine for at-least-once relay.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">Local KV</span>
+          <span class="lp-tier__be">Redis Streams</span>
+          <span class="lp-tier__be">SNS · SQS</span>
+        </div>
+      </div>
+
+      <div class="lp-tier">
+        <div class="lp-tier__head">
+          <h3>Compute</h3>
+          <span class="lp-tier__deco">@app.function · @app.job · @app.schedule</span>
+        </div>
+        <p>Functions, background jobs, and cron — with per-function retry, circuit breaker, rate-limit, and bulkhead policies.</p>
+        <div class="lp-tier__backends">
+          <span class="lp-tier__be">Local async</span>
+          <span class="lp-tier__be">Lambda</span>
+          <span class="lp-tier__be">Cloud Run</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CATALOG OVERLAY ============================ -->
+  <section class="lp-section" id="catalogs" data-screen-label="Catalog overlays">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">Catalog overlays</span>
+      <h2>One app. Many environments. Zero forks.</h2>
+      <p class="lp-section__sub">
+        Catalogs inherit and override. Stage a higher-durability prod stack on top of your
+        dev catalog with an <code>extends</code> table — Skaal validates the merged result
+        and surfaces the source of every backend in <code>skaal catalog sources</code>.
+      </p>
+    </div>
+
+    <div class="lp-split">
+      <div class="lp-split__col">
+        <h3>catalogs/local.toml</h3>
+        <p>Dev defaults — fast feedback, ephemeral storage, no cloud bills.</p>
+<pre class="lp-toml"><span class="cmt"># base catalog</span>
+<span class="sec">[storage.sqlite]</span>
+<span class="key">read_latency</span>     = <span class="str">"&lt; 5ms"</span>
+<span class="key">durability</span>       = <span class="str">"local"</span>
+<span class="key">throughput</span>       = <span class="str">"&gt; 5000 rps"</span>
+<span class="key">cost_per_unit</span>    = <span class="num">0.0</span>
+<span class="key">supports_ttl</span>     = true
+
+<span class="sec">[storage.redis]</span>
+<span class="key">read_latency</span>     = <span class="str">"&lt; 2ms"</span>
+<span class="key">durability</span>       = <span class="str">"ephemeral"</span></pre>
+      </div>
+      <div class="lp-split__col">
+        <h3>catalogs/prod.toml</h3>
+        <p>Inherits local, swaps the storage tier for managed services.</p>
+<pre class="lp-toml"><span class="sec">[skaal]</span>
+<span class="key">extends</span> = <span class="str">"./local.toml"</span>
+<span class="key">remove</span>  = [<span class="str">"storage.sqlite"</span>]
+
+<span class="sec">[storage.dynamodb]</span><span class="added"></span>
+<span class="key">read_latency</span>     = <span class="str">"&lt; 8ms"</span>
+<span class="key">durability</span>       = <span class="str">"strong"</span>
+<span class="key">throughput</span>       = <span class="str">"&gt; 10000 rps"</span>
+<span class="key">residency</span>        = <span class="str">"eu-west-1"</span>
+<span class="key">cost_per_unit</span>    = <span class="num">0.018</span>
+
+<span class="sec">[storage.dynamodb.deploy]</span>
+<span class="key">table_class</span>      = <span class="str">"STANDARD_IA"</span>
+<span class="key">billing_mode</span>     = <span class="str">"PAY_PER_REQUEST"</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ PATTERNS + MIGRATIONS ============================ -->
+  <section class="lp-section" data-screen-label="Patterns and migrations">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">Built-in machinery</span>
+      <h2>The runtime concerns you'd otherwise duct-tape together.</h2>
+      <p class="lp-section__sub">
+        Skaal includes the operational primitives most frameworks leave to the user. Pattern
+        engines and a six-stage migration controller are wired into the runtime — no
+        hand-rolled outbox table, no afternoon spent on Alembic boilerplate.
+      </p>
+    </div>
+
+    <div class="lp-prow">
+      <div class="lp-pcard">
+        <h3>Pattern engines, batteries-included</h3>
+        <p>EventLog, Projection, Saga, and Outbox are real engines started by the runtime — not metadata stubs. Hook them up with decorators; the dispatch loop does the rest.</p>
+        <ul>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>EventLog</b> — durable streams with consumer groups and replay-by-offset</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Projection</b> — tail an event log into derived state, with checkpoints</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Saga</b> — coordinate multi-step workflows with compensations</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Outbox</b> — at-least-once channel relay, atomic with your write</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Per-function resilience</b> — retry, circuit breaker, rate limit, bulkhead</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="lp-pcard">
+        <h3>Six-stage zero-downtime migrations</h3>
+        <p>Move a tier from one backend to another without dropping traffic. Skaal walks plan, dual-write, backfill, dual-read, cutover, and decommission — each stage explicit, each rollback supported.</p>
+
+        <div class="lp-stages" role="list">
+          <div class="lp-stage is-done" role="listitem">Plan</div>
+          <div class="lp-stage is-done" role="listitem">Dual-write</div>
+          <div class="lp-stage is-current" role="listitem">Backfill</div>
+          <div class="lp-stage" role="listitem">Dual-read</div>
+          <div class="lp-stage" role="listitem">Cutover</div>
+          <div class="lp-stage" role="listitem">Decom</div>
+        </div>
+
+        <ul class="lp-pcard__list">
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Relational migrations</b> — Alembic-driven autogenerate, upgrade, downgrade, drift check</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b><code>--dry-run</code> SQL renderer</b> — review the exact statements before they run</span>
+          </li>
+          <li>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b>Schema versioning</b> — multi-backend Alembic projects per app</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CLI ============================ -->
+  <section class="lp-section" id="cli" data-screen-label="CLI">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">Command line</span>
+      <h2>From <code>pip install</code> to deployed in five commands.</h2>
+      <p class="lp-section__sub">
+        The CLI is shaped around the planner. Every command operates on the same <code>plan.skaal.lock</code> — there are no hidden side effects, and every artifact is regenerable.
+      </p>
+    </div>
+
+    <div class="lp-cli">
+      <div class="lp-cli__terminal">
+        <div class="lp-cli__head">
+          <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
+          <span class="lp-cli__file">~/projects/todo</span>
+        </div>
+<pre class="lp-cli__body"><span class="prompt">$</span> <span class="cmd">pip install</span> <span class="arg">"skaal[serve,runtime]"</span>
+<span class="prompt">$</span> <span class="cmd">skaal init</span> <span class="arg">todo</span> <span class="cmt"># scaffolds ./todo/</span>
+<span class="prompt">$</span> <span class="cmd">cd</span> <span class="arg">todo</span>
+
+<span class="prompt">$</span> <span class="cmd">skaal run</span> <span class="flag">--reload</span>
+<span class="info">› watching ./ for changes</span>
+<span class="info">› using catalog: catalogs/local.toml</span>
+<span class="info">› solve: 3 candidates → sqlite (selected)</span>
+<span class="ok">✓ http://127.0.0.1:8000  · ready in 412ms</span>
+
+<span class="prompt">$</span> <span class="cmd">skaal plan</span> <span class="flag">--catalog</span> <span class="arg">catalogs/prod.toml</span>
+<span class="info">  Storage.Todos      </span><span class="arrow">→</span><span class="info"> dynamodb    7ms p50  $0.018/wu</span>
+<span class="info">  Storage.Sessions   </span><span class="arrow">→</span><span class="info"> redis       1ms p50  $0.004/wu</span>
+<span class="info">  Compute.create_todo</span><span class="arrow">→</span><span class="info"> lambda      cold 280ms</span>
+<span class="ok">✓ resolved · plan.skaal.lock written</span>
+
+<span class="prompt">$</span> <span class="cmd">skaal deploy</span> <span class="flag">--target</span> <span class="arg">aws</span> <span class="flag">--stack</span> <span class="arg">prod</span>
+<span class="info">› artifacts/ written  · Pulumi up · 14 resources</span>
+<span class="ok">✓ deployed → https://api.example.com</span></pre>
+      </div>
+
+      <div class="lp-cli__commands">
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal init</span>
+          <span class="lp-cmd__desc"><b>Scaffold</b> a starter project with <code>pyproject.toml</code>, a base catalog, and a hello-world app.</span>
+        </div>
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal run</span>
+          <span class="lp-cmd__desc"><b>Local dev loop</b> with auto-reload. Mounts ASGI/WSGI apps and starts the pattern engines.</span>
+        </div>
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal plan</span>
+          <span class="lp-cmd__desc"><b>Solve</b> the catalog against your constraints. Writes <code>plan.skaal.lock</code> with reasons and rejected candidates.</span>
+        </div>
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal build</span>
+          <span class="lp-cmd__desc"><b>Generate</b> the runtime entry point, Dockerfile, and Pulumi program for the resolved plan.</span>
+        </div>
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal migrate</span>
+          <span class="lp-cmd__desc"><b>Walk</b> the six migration stages or run Alembic-driven relational schema changes with <code>--dry-run</code>.</span>
+        </div>
+        <div class="lp-cmd">
+          <span class="lp-cmd__name">skaal catalog</span>
+          <span class="lp-cmd__desc"><b>Inspect</b> the merged catalog, validate <code>extends</code> overlays, list backend sources.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ USE CASES ============================ -->
+  <section class="lp-section" id="use-cases" data-screen-label="Use cases">
+    <div class="lp-section__intro">
+      <span class="lp-eyebrow">Built for</span>
+      <h2>The shapes Skaal is meant to support.</h2>
+      <p class="lp-section__sub">
+        Real applications, not toy CRUD. Mount any ASGI or WSGI framework — FastAPI,
+        Starlette, Litestar, Flask, Dash — and let Skaal handle the storage, scheduling,
+        and deployment scaffolding around it.
+      </p>
+    </div>
+
+    <div class="lp-uses">
+      <div class="lp-use">
+        <p class="lp-use__lead">Backends</p>
+        <h3>API + Postgres + queue</h3>
+        <ul>
+          <li>FastAPI mounted via <code>mount_asgi</code></li>
+          <li>SQLModel entities with Alembic migrations</li>
+          <li>Outbox-relayed background jobs</li>
+          <li>Per-route retry &amp; rate-limit policies</li>
+        </ul>
+      </div>
+      <div class="lp-use">
+        <p class="lp-use__lead">RAG &amp; AI</p>
+        <h3>Vector retrieval at scale</h3>
+        <ul>
+          <li><code>VectorStore</code> with metadata filters</li>
+          <li>Embeddings declared on the surface</li>
+          <li>BlobStore for source documents</li>
+          <li>Streamed responses via mounted ASGI</li>
+        </ul>
+      </div>
+      <div class="lp-use">
+        <p class="lp-use__lead">Internal tools</p>
+        <h3>Dash app + scheduled ETL</h3>
+        <ul>
+          <li>Dash mounted via <code>mount_wsgi</code></li>
+          <li><code>@app.schedule</code> cron jobs</li>
+          <li>Relational tier as the data layer</li>
+          <li>Local dev → Cloud Run with one catalog swap</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CTA ============================ -->
+  <section class="lp-cta" data-screen-label="CTA">
+    <div class="lp-cta__inner">
+      <div>
+        <h2>Stop writing the same plumbing for every new app.</h2>
+        <p class="lp-cta__lead">
+          Declare the contract once. Let Skaal pick the stack, generate the artifacts, and
+          keep your code portable from your laptop to whatever cloud you ship to next.
+        </p>
+        <div class="lp-cta__actions">
+          <a class="sk-btn sk-btn--primary" href="#how">Read the quickstart <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <a class="sk-btn sk-btn--ghost" href="https://github.com/Elouen-ginat/Skaal" target="_blank" rel="noreferrer">Star on GitHub</a>
+        </div>
+      </div>
+      <div class="lp-cta__pyversions">
+        <h4>Install</h4>
+        <ul>
+          <li><span>pip install "skaal[serve]"</span><span>HTTP runtime</span></li>
+          <li><span>pip install "skaal[runtime]"</span><span>+ pattern engines</span></li>
+          <li><span>pip install "skaal[vector]"</span><span>+ vector tier</span></li>
+          <li><span>pip install "skaal[deploy]"</span><span>+ Pulumi templates</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FOOTER ============================ -->
+  <footer class="lp-footer" data-screen-label="Footer">
+    <div class="lp-footer__brand">
+      <a class="sk-brand" href="#top">
+        <img class="sk-brand__mark" src="assets/logo-mark.svg" alt="" />
+        <span class="sk-brand__word">Skaal</span>
+      </a>
+      <p>Infrastructure as constraints for Python. A Z3-backed planner that turns latency, durability, and throughput requirements into a deployable stack.</p>
+    </div>
+    <div>
+      <h5>Docs</h5>
+      <ul>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#tiers">Storage surfaces</a></li>
+        <li><a href="#catalogs">Catalogs</a></li>
+        <li><a href="#cli">CLI reference</a></li>
+        <li><a href="#use-cases">Examples</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Reference</h5>
+      <ul>
+        <li><a href="#">Python API</a></li>
+        <li><a href="#">Constraint grammar</a></li>
+        <li><a href="#">Catalog schema</a></li>
+        <li><a href="#">Deploy targets</a></li>
+        <li><a href="#">ADRs</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Project</h5>
+      <ul>
+        <li><a href="https://github.com/Elouen-ginat/Skaal" target="_blank" rel="noreferrer">GitHub</a></li>
+        <li><a href="#">Changelog</a></li>
+        <li><a href="#">Roadmap</a></li>
+        <li><a href="#">License (GPL-3.0)</a></li>
+        <li><a href="#">Contribute</a></li>
+      </ul>
+    </div>
+    <div class="lp-footer__legal">
+      <span>© 2026 Skaal contributors. Released under GPL-3.0.</span>
+      <div class="lp-footer__legal__pills">
+        <span>v0.2.0</span>
+        <span>Python 3.11+</span>
+        <span>alpha</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // Tiny sugar: copy the install command on click.
+  document.querySelectorAll('.sk-btn--copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.querySelector('code');
+      if (!code) return;
+      var text = code.textContent.replace(/^\$\s*/, '');
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      }
+      var orig = code.textContent;
+      code.textContent = '✓ copied';
+      setTimeout(function () { code.textContent = orig; }, 1200);
+    });
+  });
+</script>
+
+</body>
+</html>

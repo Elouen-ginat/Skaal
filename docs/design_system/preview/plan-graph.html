@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Plan graph</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .pg { background:#fff; border:1px solid var(--border-1); border-radius:18px; padding:20px 22px; }
+  .pg-head { display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; }
+  .pg-title { font: 600 13px var(--font-heading); letter-spacing: -0.01em; }
+  .pg-meta { font: 500 11px var(--font-mono); color: var(--fg-3); }
+  .pg-svg { width: 100%; height: auto; display: block; }
+  .pg-legend { display:flex; gap: 16px; margin-top: 12px; font: 500 11px var(--font-mono); color: var(--fg-3); }
+  .pg-legend i { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-right:6px; }
+</style>
+<div class="pg">
+  <div class="pg-head">
+    <div class="pg-title">Plan · todo:app · target=local</div>
+    <div class="pg-meta">resolved · 142ms</div>
+  </div>
+  <svg class="pg-svg" viewBox="0 0 656 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- column headers -->
+    <text x="60"  y="22" font-family="IBM Plex Mono" font-size="10" fill="#A7B4C2" letter-spacing="0.6">CONSTRAINT</text>
+    <text x="278" y="22" font-family="IBM Plex Mono" font-size="10" fill="#A7B4C2" letter-spacing="0.6">CANDIDATES</text>
+    <text x="540" y="22" font-family="IBM Plex Mono" font-size="10" fill="#A7B4C2" letter-spacing="0.6">SELECTED</text>
+
+    <!-- constraint nodes -->
+    <g font-family="IBM Plex Sans" font-size="11" fill="#0E1726">
+      <rect x="20"  y="40"  width="140" height="32" rx="9" fill="#F6FBF9" stroke="#A7B4C2"/>
+      <text x="32"  y="60">read_latency &lt; 10ms</text>
+      <rect x="20"  y="84"  width="140" height="32" rx="9" fill="#F6FBF9" stroke="#A7B4C2"/>
+      <text x="32"  y="104">durability strong</text>
+      <rect x="20"  y="128" width="140" height="32" rx="9" fill="#F6FBF9" stroke="#A7B4C2"/>
+      <text x="32"  y="148">throughput &gt; 100 rps</text>
+    </g>
+
+    <!-- candidate nodes -->
+    <g font-family="IBM Plex Sans" font-size="11" fill="#0E1726">
+      <rect x="248" y="40"  width="140" height="32" rx="9" fill="#fff" stroke="#13B5A8" stroke-width="1.5"/>
+      <text x="260" y="60">DynamoDB</text>
+      <text x="356" y="60" font-family="IBM Plex Mono" font-size="10" fill="#0F8E84" text-anchor="end">7ms</text>
+
+      <rect x="248" y="84"  width="140" height="32" rx="9" fill="#fff" stroke="#A7B4C2"/>
+      <text x="260" y="104">Postgres</text>
+      <text x="356" y="104" font-family="IBM Plex Mono" font-size="10" fill="#A7B4C2" text-anchor="end">12ms</text>
+
+      <rect x="248" y="128" width="140" height="32" rx="9" fill="#fff" stroke="#A7B4C2"/>
+      <text x="260" y="148">SQLite</text>
+      <text x="356" y="148" font-family="IBM Plex Mono" font-size="10" fill="#C96A3D" text-anchor="end">×</text>
+    </g>
+
+    <!-- edges constraint → candidate -->
+    <g stroke-width="1.5" fill="none">
+      <path d="M160 56 C 200 56, 210 56, 248 56" stroke="#13B5A8"/>
+      <path d="M160 100 C 200 100, 210 100, 248 100" stroke="#A7B4C2" stroke-dasharray="3 4"/>
+      <path d="M160 144 C 200 144, 210 144, 248 144" stroke="#A7B4C2" stroke-dasharray="3 4"/>
+      <path d="M160 56 C 200 56, 210 100, 248 100" stroke="#A7B4C2" stroke-dasharray="3 4"/>
+      <path d="M160 100 C 200 100, 210 56, 248 56" stroke="#13B5A8"/>
+      <path d="M160 144 C 200 144, 210 56, 248 56" stroke="#13B5A8"/>
+    </g>
+
+    <!-- selected route → endpoint -->
+    <path d="M388 56 C 460 56, 470 100, 540 100" stroke="#9AE66E" stroke-width="2.5" fill="none"/>
+    <circle cx="540" cy="100" r="20" fill="#9AE66E"/>
+    <circle cx="540" cy="100" r="20" fill="none" stroke="#9AE66E" stroke-opacity="0.25" stroke-width="6"/>
+    <text x="540" y="104" font-family="Space Grotesk" font-weight="700" font-size="12" fill="#0E1726" text-anchor="middle">PLAN</text>
+    <text x="540" y="146" font-family="IBM Plex Mono" font-size="10" fill="#0E1726" text-anchor="middle">DynamoDB</text>
+    <text x="540" y="160" font-family="IBM Plex Mono" font-size="10" fill="#A7B4C2" text-anchor="middle">$0.018/wu</text>
+  </svg>
+  <div class="pg-legend">
+    <span><i style="background:#13B5A8;"></i>satisfied</span>
+    <span><i style="background:#A7B4C2;"></i>considered</span>
+    <span><i style="background:#9AE66E;"></i>selected</span>
+  </div>
+</div>
+</div></body></html>

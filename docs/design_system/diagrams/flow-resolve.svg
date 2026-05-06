@@ -1,0 +1,12 @@
+<svg width="340" height="220" viewBox="0 0 340 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal flow resolve diagram</title>
+  <rect width="340" height="220" rx="24" fill="#F6FBF9"/>
+  <rect x="22" y="70" width="74" height="74" rx="18" fill="#FFFFFF" stroke="#D9E3EA"/>
+  <rect x="132" y="36" width="78" height="40" rx="12" fill="#FFFFFF" stroke="#D9E3EA"/>
+  <rect x="132" y="90" width="78" height="40" rx="12" fill="#FFFFFF" stroke="#D9E3EA"/>
+  <rect x="132" y="144" width="78" height="40" rx="12" fill="#FFFFFF" stroke="#D9E3EA"/>
+  <rect x="242" y="90" width="76" height="40" rx="12" fill="#F0FBE9" stroke="#9AE66E" stroke-width="2"/>
+  <path d="M96 107H122M210 56H232C240 56 246 62 246 70V104M210 110H242M210 164H232C240 164 246 158 246 150V116" stroke="#0E1726" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M210 110H242" stroke="#13B5A8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="56" cy="92" r="5" fill="#13B5A8"/><circle cx="56" cy="108" r="5" fill="#9AE66E"/><circle cx="56" cy="124" r="5" fill="#D0D9E0"/>
+</svg>

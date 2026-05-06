@@ -1,0 +1,13 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal aurora gradient pattern</title>
+  <rect width="320" height="240" rx="28" fill="url(#bg)"/>
+  <path d="M10 210C66 148 112 122 158 86C202 52 238 26 308 12" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+  <defs>
+    <linearGradient id="bg" x1="42" y1="226" x2="284" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6FBF9"/>
+      <stop offset="0.42" stop-color="#B8F1E7"/>
+      <stop offset="0.76" stop-color="#7EE2D1"/>
+      <stop offset="1" stop-color="#13B5A8"/>
+    </linearGradient>
+  </defs>
+</svg>

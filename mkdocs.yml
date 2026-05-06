@@ -1,0 +1,146 @@
+site_name: Skaal
+site_description: Infrastructure as Constraints for Python.
+site_url: https://elouen-ginat.github.io/Skaal/
+repo_url: https://github.com/Elouen-ginat/Skaal
+repo_name: Elouen-ginat/Skaal
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: design_system/app-icon.svg
+  favicon: design_system/favicon.svg
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - .
+          options:
+            docstring_style: sphinx
+            inherited_members: true
+            merge_init_into_class: true
+            members_order: source
+            parameter_headings: true
+            separate_signature: true
+            show_root_heading: true
+            show_root_toc_entry: false
+            show_signature_annotations: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - design_system/tokens/skaal-tokens.css
+  - design_system/styles/landing.css
+  - assets/stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Get Started: getting-started.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - 1. Build a Counter App: tutorials/first-app.md
+      - 2. Add a FastAPI Surface: tutorials/http-api.md
+      - 3. Plan, Build, and Deploy: tutorials/planning-and-deployment.md
+      - 4. Relational Data and Migrations: tutorials/relational-and-migrations.md
+      - 5. Files and Streaming: tutorials/files-and-streaming.md
+  - Guides:
+      - How It Works: how-it-works.md
+      - Platform Features: platform-features.md
+      - Examples: examples.md
+      - CLI: cli.md
+      - CLI Configuration: cli-configuration.md
+      - Catalogs: catalogs.md
+      - HTTP Integration: http.md
+  - Reference:
+      - Python API:
+          - Overview: reference/python-api.md
+          - Core and Decorators: reference/python-api-core.md
+          - Data Surfaces: reference/python-api-data.md
+          - Patterns and Agents: reference/python-api-patterns.md
+          - Components and Scheduling: reference/python-api-components.md
+          - CLI-Parity API: reference/python-api-cli-parity.md
+          - Types and Policies: reference/python-api-types.md
+      - Design System: design_system/index.md
+      - Design Assets: design_system/ASSETS.md
+  - Architecture:
+      - Constraint Model: design/001-infrastructure-as-constraints.md
+
+extra:
+  homepage: https://github.com/Elouen-ginat/Skaal
+  header_links:
+    - label: Tutorials
+      link: tutorials/
+    - label: CLI
+      link: cli/
+    - label: CLI Config
+      link: cli-configuration/
+    - label: Python API
+      link: reference/python-api/
+    - label: Examples
+      link: examples/
+  footer_links:
+    - label: Pulumi
+      link: https://www.pulumi.com/docs/
+      external: true
+    - label: AWS
+      link: https://docs.aws.amazon.com/
+      external: true
+    - label: GCP
+      link: https://cloud.google.com/docs
+      external: true
+    - label: Docker
+      link: https://docs.docker.com/
+      external: true
+    - label: FastAPI
+      link: https://fastapi.tiangolo.com/
+      external: true
+    - label: Z3
+      link: https://z3prover.github.io/api/html/
+      external: true
+    - label: GitHub
+      link: https://github.com/Elouen-ginat/Skaal
+      external: true
+
+copyright: Copyright &copy; 2026 Skaal contributors

@@ -23,6 +23,7 @@ Cargo.lock
 plan.skaal.lock
 *.plan.lock
 artifacts/
+site/
 
 # Tools
 .ruff_cache/

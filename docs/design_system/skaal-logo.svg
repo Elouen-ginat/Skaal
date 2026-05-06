@@ -1,0 +1,8 @@
+<svg width="720" height="240" viewBox="0 0 720 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Skaal primary logo</title>
+  <desc id="desc">The Skaal wordmark paired with the chosen it-dot symbol.</desc>
+  <rect width="720" height="240" rx="32" fill="#F6FBF9"/>
+  <path d="M108.5 45.5C114.2 39.8 123.4 39.8 129.1 45.5C134.8 51.2 134.8 60.4 129.1 66.1L85.2 110L129.1 153.9C134.8 159.6 134.8 168.8 129.1 174.5C123.4 180.2 114.2 180.2 108.5 174.5L54.28 120.3C48.57 114.6 48.57 105.4 54.28 99.7L108.5 45.5Z" fill="#0E1726"/>
+  <circle cx="161" cy="110" r="14" fill="#9AE66E"/>
+  <text x="204" y="132" fill="#0E1726" font-family="'Space Grotesk', 'Segoe UI', sans-serif" font-size="86" font-weight="700" letter-spacing="-2">Skaal</text>
+</svg>

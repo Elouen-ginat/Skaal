@@ -1,0 +1,8 @@
+<svg width="320" height="260" viewBox="0 0 320 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal code console illustration</title>
+  <rect width="320" height="260" rx="24" fill="#F6FBF9"/>
+  <path d="M72 74H248L266 192H54L72 74Z" fill="#18263A" stroke="#0E1726" stroke-width="2"/>
+  <rect x="78" y="84" width="164" height="92" rx="8" fill="#0E1726"/>
+  <path d="M92 102H152M92 122H170M92 142H164M92 162H146" stroke="#9AE66E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M72 74L94 58H226L248 74" fill="#24354B"/>
+</svg>
