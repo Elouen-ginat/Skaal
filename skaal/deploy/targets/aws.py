@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def generate_artifacts(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     output_dir: Path,
     source_module: str,
     app_var: str = "app",

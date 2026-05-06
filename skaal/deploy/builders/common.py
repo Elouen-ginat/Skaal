@@ -35,7 +35,7 @@ def app_has_jobs(app: Any) -> bool:
     if callable(collect_jobs):
         try:
             resolved = collect_jobs()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
         return isinstance(resolved, dict) and bool(resolved)
 

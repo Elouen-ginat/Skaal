@@ -42,7 +42,7 @@ class DeployTarget(Protocol):
     def generate_artifacts(
         self,
         app: AppLike,
-        plan: "PlanFile",
+        plan: PlanFile,
         output_dir: Path,
         source_module: str,
         app_var: str = "app",

@@ -6,6 +6,7 @@ import json
 import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import UTC
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -25,9 +26,9 @@ class BaseRuntime(ABC):
         host: str = "127.0.0.1",
         port: int = 8000,
         backend_overrides: dict[str, Any] | None = None,
-        telemetry: "TelemetryConfig | None" = None,
-        telemetry_runtime: "RuntimeTelemetry | None" = None,
-        auth_http_client: "httpx.AsyncClient | None" = None,
+        telemetry: TelemetryConfig | None = None,
+        telemetry_runtime: RuntimeTelemetry | None = None,
+        auth_http_client: httpx.AsyncClient | None = None,
     ) -> None:
         from skaal.runtime.auth import JwtVerifier, resolve_gateway_auth
         from skaal.runtime.middleware import wrap_handler
@@ -406,12 +407,10 @@ class BaseRuntime(ABC):
                 if is_schedule_invocation:
                     sig = inspect.signature(fn)
                     if "ctx" in sig.parameters:
-                        from datetime import timezone
-
                         from skaal.schedule import ScheduleContext
 
                         kwargs["ctx"] = ScheduleContext(
-                            fired_at=__import__("datetime").datetime.now(timezone.utc)
+                            fired_at=__import__("datetime").datetime.now(UTC)
                         )
 
                 invoker = self._invokers.get(fn_name)
@@ -435,7 +434,7 @@ class BaseRuntime(ABC):
                 except TypeError as exc:
                     status = 422
                     return {"error": f"Bad arguments for {fn_name!r}: {exc}"}, status
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     telemetry_error = exc
                     status = 500
                     return {"error": str(exc), "traceback": traceback.format_exc()}, status

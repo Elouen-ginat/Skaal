@@ -21,7 +21,7 @@ import io
 import re
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -364,16 +364,31 @@ def _autogenerate_one(
     from alembic.script import ScriptDirectory
 
     cfg = _build_config(group, app_name)
-    script = command.revision(cfg, message=message, autogenerate=True)
+    generated = command.revision(cfg, message=message, autogenerate=True)
+    if generated is None:
+        return None
+
+    script = (
+        generated
+        if not isinstance(generated, list)
+        else next(
+            (item for item in generated if item is not None),
+            None,
+        )
+    )
     if script is None:
         return None
 
     rev = ScriptDirectory.from_config(cfg).get_revision(script.revision)
+    if rev is None:
+        raise RuntimeError(
+            f"alembic revision {script.revision!r} was created but could not be loaded"
+        )
     return RelationalRevision(
         revision_id=rev.revision,
         down_revision=rev.down_revision if isinstance(rev.down_revision, str) else None,
         message=rev.doc or "",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         is_head=True,
         is_applied=False,
     )
@@ -713,19 +728,17 @@ def _list_revisions(group: _BackendGroup, app_name: str) -> list[RelationalRevis
     head_ids = set(script.get_heads())
     current_rev = _read_current(group)
 
-    revisions: list[RelationalRevision] = []
-    for rev in script.walk_revisions():
-        revisions.append(
-            RelationalRevision(
-                revision_id=rev.revision,
-                down_revision=rev.down_revision if isinstance(rev.down_revision, str) else None,
-                message=rev.doc or "",
-                created_at=_revision_created_at(script, rev.revision),
-                is_head=rev.revision in head_ids,
-                is_applied=_is_applied(rev.revision, current_rev, script),
-            )
+    return [
+        RelationalRevision(
+            revision_id=rev.revision,
+            down_revision=rev.down_revision if isinstance(rev.down_revision, str) else None,
+            message=rev.doc or "",
+            created_at=_revision_created_at(script, rev.revision),
+            is_head=rev.revision in head_ids,
+            is_applied=_is_applied(rev.revision, current_rev, script),
         )
-    return revisions
+        for rev in script.walk_revisions()
+    ]
 
 
 def _revision_created_at(script: Any, revision_id: str) -> datetime:
@@ -733,8 +746,8 @@ def _revision_created_at(script: Any, revision_id: str) -> datetime:
     rev = script.get_revision(revision_id)
     path = Path(rev.path) if rev.path else None
     if path is not None and path.exists():
-        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-    return datetime.now(timezone.utc)
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+    return datetime.now(UTC)
 
 
 def _is_applied(revision_id: str, current_rev: str | None, script: Any) -> bool:

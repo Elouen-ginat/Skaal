@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from skaal.types.constraints import Latency, Throughput
 
 
-class ComputeType(str, Enum):
+class ComputeType(StrEnum):
     """Hardware type required by a function."""
 
     CPU = "cpu"
@@ -18,7 +18,7 @@ class ComputeType(str, Enum):
     ANY = "any"
 
 
-class ScaleStrategy(str, Enum):
+class ScaleStrategy(StrEnum):
     """How requests are distributed across instances."""
 
     ROUND_ROBIN = "round-robin"

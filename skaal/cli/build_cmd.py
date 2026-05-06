@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -29,13 +28,13 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def build(
-    region: Optional[str] = typer.Option(
+    region: str | None = typer.Option(
         None,
         "--region",
         "-r",
         help="Cloud region override (e.g. us-east-1, us-central1). Env: SKAAL_REGION.",
     ),
-    stack: Optional[str] = typer.Option(
+    stack: str | None = typer.Option(
         None,
         "--stack",
         "-s",
@@ -44,7 +43,7 @@ def build(
             "([tool.skaal.stacks.<name>]). Env: SKAAL_STACK."
         ),
     ),
-    out: Optional[Path] = typer.Option(
+    out: Path | None = typer.Option(
         None,
         "--out",
         "-o",
@@ -85,7 +84,7 @@ def build(
     plan_path = Path(PLAN_FILE_NAME)
     if not plan_path.exists():
         raise FileNotFoundError(
-            f"{PLAN_FILE_NAME} not found.\n" "  Run `skaal plan MODULE:APP --target TARGET` first."
+            f"{PLAN_FILE_NAME} not found.\n  Run `skaal plan MODULE:APP --target TARGET` first."
         )
 
     log.info("Building from %s ...", plan_path)
@@ -106,7 +105,7 @@ def build(
                 "  Re-run `skaal plan MODULE:APP --target TARGET` to regenerate it."
             ) from exc
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ValueError(f"could not build from {PLAN_FILE_NAME}: {exc}") from exc
 
     plan_file = PlanFile.read(plan_path)

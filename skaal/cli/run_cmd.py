@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -22,7 +21,7 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def run(
-    target: Optional[str] = typer.Argument(
+    target: str | None = typer.Argument(
         None,
         help=(
             "App to run as 'module:variable', e.g. 'examples.counter:app'. "
@@ -47,7 +46,7 @@ def run(
         help="Use the Rust mesh runtime for distributed execution (requires skaal[mesh]).",
     ),
     node_id: str = typer.Option("node-0", "--node-id", help="Mesh node ID (with --distributed)."),
-    reload: Optional[bool] = typer.Option(
+    reload: bool | None = typer.Option(
         None,
         "--reload/--no-reload",
         help="Hot-reload on source change. Defaults to on for interactive dev.",

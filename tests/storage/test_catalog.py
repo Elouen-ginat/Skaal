@@ -189,7 +189,7 @@ def test_find_storage_sorted_cheapest(registry):
 def test_best_storage_returns_cheapest(registry):
     result = registry.best_storage(durability="persistent")
     assert result is not None
-    name, spec = result
+    name, _spec = result
     assert name == "slow-postgres"  # cheaper at 0.12/GB
 
 
@@ -215,7 +215,7 @@ def test_find_compute_by_memory(registry):
 def test_best_compute_cheapest_first(registry):
     result = registry.best_compute(compute_type="cpu")
     assert result is not None
-    name, spec = result
+    name, _spec = result
     assert name == "small-cpu"  # cheaper
 
 

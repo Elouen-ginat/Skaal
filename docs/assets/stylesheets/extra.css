@@ -21,6 +21,52 @@ button {
   color: var(--fg-1);
 }
 
+/* Make prose links unmistakably clickable: brand-teal color + soft underline,
+   strengthened on hover. Restricted to text contexts so button-styled <a>
+   elements (.sk-btn, .lp-quicknav__link, .skaal-site-links__link, headerlinks)
+   keep their bespoke chrome. */
+.md-typeset p a,
+.md-typeset li a,
+.md-typeset td a,
+.md-typeset th a,
+.md-typeset dd a,
+.md-typeset blockquote a {
+  color: var(--skaal-color-signal-teal);
+  text-decoration: underline;
+  text-decoration-color: rgba(19, 181, 168, 0.42);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    text-decoration-color var(--motion-fast) var(--ease-standard);
+}
+
+.md-typeset p a:hover,
+.md-typeset li a:hover,
+.md-typeset td a:hover,
+.md-typeset th a:hover,
+.md-typeset dd a:hover,
+.md-typeset blockquote a:hover,
+.md-typeset p a:focus,
+.md-typeset li a:focus,
+.md-typeset td a:focus,
+.md-typeset th a:focus,
+.md-typeset dd a:focus,
+.md-typeset blockquote a:focus {
+  color: #0e938a;
+  text-decoration-color: #0e938a;
+  text-decoration-thickness: 2px;
+}
+
+/* External-link hint: a small ↗ glyph on the right of obviously external prose
+   links, but skip if the link already wraps an image, code, or icon. */
+.md-typeset p a[href^="http"]:not(:has(img)):not(:has(code))::after,
+.md-typeset li a[href^="http"]:not(:has(img)):not(:has(code))::after {
+  content: " \2197";
+  font-size: 0.85em;
+  opacity: 0.65;
+}
+
 .md-typeset h1,
 .md-typeset h2,
 .md-typeset h3,
@@ -133,12 +179,6 @@ button {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), rgba(246, 251, 249, 0.92));
 }
 
-.skaal-site-links--footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 0;
-  background: linear-gradient(90deg, rgba(11, 18, 32, 0.97), rgba(31, 48, 71, 0.98));
-}
-
 .skaal-site-links__inner {
   display: flex;
   flex-wrap: wrap;
@@ -153,10 +193,6 @@ button {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--fg-3);
-}
-
-.skaal-site-links--footer .skaal-site-links__label {
-  color: rgba(245, 251, 255, 0.68);
 }
 
 .skaal-site-links__link {
@@ -185,16 +221,42 @@ button {
   background: #fff;
 }
 
-.skaal-site-links--footer .skaal-site-links__link {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(245, 251, 255, 0.94);
+/* Inline navigation links rendered inside the dark .md-footer-meta bar,
+   alongside the copyright text. */
+.md-footer-meta__inner {
+  flex-wrap: wrap;
+  row-gap: 0.4rem;
 }
 
-.skaal-site-links--footer .skaal-site-links__link:hover {
-  border-color: rgba(19, 181, 168, 0.42);
-  background: rgba(255, 255, 255, 0.14);
+.md-footer-meta__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  margin: 0.35rem 0;
+  padding: 0;
+  font: 500 12.5px var(--font-body);
+}
+
+.md-footer-meta__links a,
+.md-footer-meta__links a:visited {
+  color: rgba(245, 251, 255, 0.78);
+  text-decoration: none;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+
+.md-footer-meta__links a:hover,
+.md-footer-meta__links a:focus {
   color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .md-footer-meta__links {
+    gap: 0.3rem 0.7rem;
+    font-size: 12px;
+  }
 }
 
 .md-main {

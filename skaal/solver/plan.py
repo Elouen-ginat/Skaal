@@ -25,7 +25,7 @@ log = logging.getLogger("skaal.plan")
 
 
 def plan(
-    app: "App",
+    app: App,
     *,
     catalog_path: Path | str | None = None,
     target: str = "generic",
@@ -69,7 +69,7 @@ def plan(
 
 
 def plan_diff(
-    app: "App",
+    app: App,
     previous: PlanFile,
     *,
     catalog_path: Path | str | None = None,

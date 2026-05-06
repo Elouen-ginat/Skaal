@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 def build_pulumi_stack(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     region: str,
     stack_profile: StackProfile | None = None,
 ) -> PulumiStack:
@@ -178,7 +178,7 @@ def build_pulumi_stack(
                 "secretId": secret_id,
                 "role": statement["role"],
                 "member": (
-                    "serviceAccount:${cloud-run-service.template[0].spec[0]" ".serviceAccountName}"
+                    "serviceAccount:${cloud-run-service.template[0].spec[0].serviceAccountName}"
                 ),
             },
             "options": {"dependsOn": ["${cloud-run-service}"]},
@@ -282,17 +282,15 @@ def build_pulumi_stack(
                 "timeZone": timezone,
                 "region": "${gcp:region}",
                 "httpTarget": {
-                    "uri": (
-                        "${" "cloud-run-service.statuses[0].url" "}" + f"/_skaal/invoke/{target_fn}"
-                    ),
+                    "uri": ("${cloud-run-service.statuses[0].url}" + f"/_skaal/invoke/{target_fn}"),
                     "httpMethod": "POST",
                     "headers": {"Content-Type": "application/json"},
                     "body": base64.b64encode(body_bytes).decode(),
                     "oidcToken": {
                         "serviceAccountEmail": (
-                            "${cloud-run-service.template[0].spec[0]" ".serviceAccountName}"
+                            "${cloud-run-service.template[0].spec[0].serviceAccountName}"
                         ),
-                        "audience": ("${" "cloud-run-service.statuses[0].url" "}"),
+                        "audience": ("${cloud-run-service.statuses[0].url}"),
                     },
                 },
             },

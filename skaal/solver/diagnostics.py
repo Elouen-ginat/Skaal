@@ -156,10 +156,9 @@ def evaluate_compute_candidates(
         violations: list[Violation] = []
 
         ct = constraints.get("compute_type")
-        if ct is not None and ct != "any":
-            if ct not in spec.get("compute_types", ["cpu"]):
-                offered, _ = _compute_offered("compute_type", ct, spec)
-                violations.append(Violation("compute_type", str(ct), offered, None))
+        if ct is not None and ct != "any" and ct not in spec.get("compute_types", ["cpu"]):
+            offered, _ = _compute_offered("compute_type", ct, spec)
+            violations.append(Violation("compute_type", str(ct), offered, None))
 
         mem = constraints.get("memory")
         if mem is not None and float(spec.get("memory_gb", 0)) < float(mem):

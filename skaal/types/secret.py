@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import AsyncContextManager, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypedDict
@@ -153,7 +154,7 @@ class AwsSecretsManagerSession(Protocol):
         service_name: Literal["secretsmanager"],
         *,
         region_name: str | None = None,
-    ) -> AsyncContextManager[AwsSecretsManagerClient]: ...
+    ) -> AbstractAsyncContextManager[AwsSecretsManagerClient]: ...
 
 
 class GcpSecretPayload(Protocol):

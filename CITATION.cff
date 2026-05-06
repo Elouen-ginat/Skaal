@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Ginat"
+  given-names: "Elouen"
+title: "Skaal"
+date-released: 2026-05-01
+url: "https://github.com/Elouen-ginat/Skaal"
+license: GPL-3.0-or-later

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -20,7 +20,7 @@ log = logging.getLogger("skaal.cli")
 _PLAN_DEFAULT = "plan.skaal.lock"
 
 
-def _print_plan_summary(plan: "PlanFile") -> None:
+def _print_plan_summary(plan: PlanFile) -> None:
     """Pretty-print a plan file without a second plan to diff against."""
     log.info("Plan: %s  (version %s, target=%s)", plan.app_name, plan.version, plan.deploy_target)
     log.info("")
@@ -46,7 +46,7 @@ def _print_plan_summary(plan: "PlanFile") -> None:
         log.info("Compute: (none)")
 
 
-def _print_diff(plan_diff: "PlanDiff") -> None:
+def _print_diff(plan_diff: PlanDiff) -> None:
     """Print a structured diff between two plans."""
     old, new = plan_diff.old, plan_diff.new
     log.info("Diff: %s v%s → %s v%s", old.app_name, old.version, new.app_name, new.version)
@@ -73,7 +73,7 @@ def _print_diff(plan_diff: "PlanDiff") -> None:
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def diff(
-    module_app: Optional[str] = typer.Argument(
+    module_app: str | None = typer.Argument(
         None,
         help="Optional 'module:app' to re-solve and diff against current plan.",
         metavar="MODULE:APP",

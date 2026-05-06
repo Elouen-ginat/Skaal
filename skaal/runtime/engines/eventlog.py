@@ -27,12 +27,11 @@ class EventLogEngine:
         if hasattr(probe, "connect") and getattr(probe, "_client", "?") is None:
             try:
                 await probe.connect()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Connection errors surface lazily on first append/subscribe;
                 # the engine stays startable so tests with unavailable servers
                 # still proceed.
                 self._failures += 1
-                pass
         self._started = True
 
     async def stop(self) -> None:

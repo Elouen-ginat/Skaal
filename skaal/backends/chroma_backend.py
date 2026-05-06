@@ -35,7 +35,7 @@ class ChromaVectorBackend:
         *,
         dimensions: int,
         metric: str,
-        model_type: type | None = None,  # noqa: ARG002 - reserved for future use
+        model_type: type | None = None,
         embeddings: Any | None = None,
     ) -> None:
         self._dimensions = dimensions

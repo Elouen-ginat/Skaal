@@ -63,9 +63,9 @@ class MeshRuntime(BaseRuntime):
         plan_json: str = "",
         node_id: str | None = None,
         backend_overrides: dict[str, Any] | None = None,
-        telemetry: "TelemetryConfig | None" = None,
-        telemetry_runtime: "RuntimeTelemetry | None" = None,
-        auth_http_client: "httpx.AsyncClient | None" = None,
+        telemetry: TelemetryConfig | None = None,
+        telemetry_runtime: RuntimeTelemetry | None = None,
+        auth_http_client: httpx.AsyncClient | None = None,
     ) -> None:
         try:
             import skaal_mesh
@@ -164,8 +164,7 @@ class MeshRuntime(BaseRuntime):
 
         public_fns = sorted(self._public_functions())
         banner_lines = [f"  http://{self.host}:{self.port}", ""]
-        for name in public_fns:
-            banner_lines.append(f"    POST {_SKAAL_INVOKE_PREFIX}{name}")
+        banner_lines.extend(f"    POST {_SKAAL_INVOKE_PREFIX}{name}" for name in public_fns)
         log.info(_format_banner(f"  Skaal mesh runtime — {self.app.name}", banner_lines))
 
         async def _handle(request: StarletteRequest) -> JSONResponse:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -92,7 +92,7 @@ class MigrationEngine:
 
     def start(self, source: str, target: str) -> MigrationState:
         """Begin a new migration from source to target backend. Sets stage=SHADOW_WRITE."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         state = MigrationState(
             variable_name=self.variable_name,
             source_backend=source,
@@ -124,7 +124,7 @@ class MigrationEngine:
         if state.stage == MigrationStage.DONE:
             raise ValueError(f"{self.variable_name} migration is already complete (DONE).")
         state.stage = MigrationStage(state.stage + 1)
-        state.advanced_at = datetime.now(timezone.utc).isoformat()
+        state.advanced_at = datetime.now(UTC).isoformat()
         state.discrepancy_count += discrepancy_count
         state.keys_migrated += keys_migrated
         self.save_state(state)
@@ -137,14 +137,14 @@ class MigrationEngine:
         if state.stage == MigrationStage.DONE:
             raise ValueError("Cannot roll back a completed migration.")
         state.stage = MigrationStage(state.stage - 1)
-        state.advanced_at = datetime.now(timezone.utc).isoformat()
+        state.advanced_at = datetime.now(UTC).isoformat()
         self.save_state(state)
         return state
 
     def complete(self, state: MigrationState) -> None:
         """Mark migration as done (DONE). Moves state file to .skaal/migrations/history/."""
         state.stage = MigrationStage.DONE
-        state.advanced_at = datetime.now(timezone.utc).isoformat()
+        state.advanced_at = datetime.now(UTC).isoformat()
         self.save_state(state)
 
     def list_all(self) -> list[MigrationState]:
@@ -157,7 +157,7 @@ class MigrationEngine:
             try:
                 data = json.loads(path.read_text())
                 states.append(MigrationState(**data))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         return states
 

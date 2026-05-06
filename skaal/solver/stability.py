@@ -11,14 +11,14 @@ and reports:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from skaal.plan import PlanFile
 
 
-class StabilityVerdict(str, Enum):
+class StabilityVerdict(StrEnum):
     STABLE = "stable"  # no changes
     DRIFT = "drift"  # non-breaking changes (new resources, cost tweaks)
     BREAKING = "breaking"  # backend / instance type changed → migration needed
@@ -61,7 +61,7 @@ class PlanDiff:
         return "\n".join(lines)
 
 
-def diff_plans(old: "PlanFile", new: "PlanFile") -> PlanDiff:
+def diff_plans(old: PlanFile, new: PlanFile) -> PlanDiff:
     """
     Compare *old* and *new* plan files and return a :class:`PlanDiff`.
 

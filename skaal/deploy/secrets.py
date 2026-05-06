@@ -26,14 +26,14 @@ if TYPE_CHECKING:
 class SecretInjector(Protocol):
     """Strategy that wires :class:`SecretSpec` declarations into a deploy artifact."""
 
-    def env_vars(self, plan: "PlanFile") -> dict[str, str]: ...
+    def env_vars(self, plan: PlanFile) -> dict[str, str]: ...
 
-    def iam_statements(self, plan: "PlanFile") -> list[dict[str, Any]]: ...
+    def iam_statements(self, plan: PlanFile) -> list[dict[str, Any]]: ...
 
-    def grants(self, plan: "PlanFile") -> list[SecretGrant]: ...
+    def grants(self, plan: PlanFile) -> list[SecretGrant]: ...
 
 
-def _iter_secrets(plan: "PlanFile") -> list[SecretSpec]:
+def _iter_secrets(plan: PlanFile) -> list[SecretSpec]:
     return list(plan.secrets.values())
 
 
@@ -48,13 +48,13 @@ class LocalSecretInjector:
     docker-compose forwards it from the host shell.
     """
 
-    def env_vars(self, plan: "PlanFile") -> dict[str, str]:
+    def env_vars(self, plan: PlanFile) -> dict[str, str]:
         return {spec.env: f"${{env:{spec.env}}}" for spec in _iter_secrets(plan)}
 
-    def iam_statements(self, plan: "PlanFile") -> list[dict[str, Any]]:
+    def iam_statements(self, plan: PlanFile) -> list[dict[str, Any]]:
         return []
 
-    def grants(self, plan: "PlanFile") -> list[SecretGrant]:
+    def grants(self, plan: PlanFile) -> list[SecretGrant]:
         return [
             SecretGrant(provider=spec.provider, resource_id=spec.env)
             for spec in _iter_secrets(plan)
@@ -79,7 +79,7 @@ class AwsSecretInjector:
       directly via ``${env:NAME}`` or Pulumi config substitution; no IAM.
     """
 
-    def env_vars(self, plan: "PlanFile") -> dict[str, str]:
+    def env_vars(self, plan: PlanFile) -> dict[str, str]:
         out: dict[str, str] = {}
         for spec in _iter_secrets(plan):
             if spec.provider == "aws-secrets-manager":
@@ -88,7 +88,7 @@ class AwsSecretInjector:
                 out[spec.env] = f"${{env:{spec.env}}}"
         return out
 
-    def iam_statements(self, plan: "PlanFile") -> list[dict[str, Any]]:
+    def iam_statements(self, plan: PlanFile) -> list[dict[str, Any]]:
         arns = [
             spec.source for spec in _iter_secrets(plan) if spec.provider == "aws-secrets-manager"
         ]
@@ -102,7 +102,7 @@ class AwsSecretInjector:
             }
         ]
 
-    def grants(self, plan: "PlanFile") -> list[SecretGrant]:
+    def grants(self, plan: PlanFile) -> list[SecretGrant]:
         return [
             SecretGrant(
                 provider=spec.provider,
@@ -133,7 +133,7 @@ class GcpSecretInjector:
 
     SECRET_SENTINEL = "SECRET:"
 
-    def env_vars(self, plan: "PlanFile") -> dict[str, str]:
+    def env_vars(self, plan: PlanFile) -> dict[str, str]:
         out: dict[str, str] = {}
         for spec in _iter_secrets(plan):
             if spec.provider == "gcp-secret-manager":
@@ -142,7 +142,7 @@ class GcpSecretInjector:
                 out[spec.env] = f"${{env:{spec.env}}}"
         return out
 
-    def iam_statements(self, plan: "PlanFile") -> list[dict[str, Any]]:
+    def iam_statements(self, plan: PlanFile) -> list[dict[str, Any]]:
         return [
             {
                 "kind": "gcp-secret-iam-member",
@@ -153,7 +153,7 @@ class GcpSecretInjector:
             if spec.provider == "gcp-secret-manager"
         ]
 
-    def grants(self, plan: "PlanFile") -> list[SecretGrant]:
+    def grants(self, plan: PlanFile) -> list[SecretGrant]:
         return [
             SecretGrant(
                 provider=spec.provider,

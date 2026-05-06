@@ -17,7 +17,7 @@ import pytest
 # ── Skip guard ────────────────────────────────────────────────────────────────
 
 try:
-    import skaal_mesh as _ext  # noqa: F401
+    import skaal_mesh as _ext
 
     _EXT_AVAILABLE = True
 except ImportError:

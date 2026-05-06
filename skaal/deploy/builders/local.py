@@ -51,7 +51,7 @@ def _service_host(app_slug: str, service_name: str) -> str:
     return service_name
 
 
-def _gateway_component(plan: "PlanFile") -> Any | None:
+def _gateway_component(plan: PlanFile) -> Any | None:
     return next(
         (
             component
@@ -84,7 +84,8 @@ def _gateway_routes(app: AppLike | None, gateway_component: Any) -> list[RouteSp
 def _traefik_labels(routes: list[RouteSpec], app_name: str) -> list[DockerLabel]:
     labels: list[DockerLabel] = [{"label": "traefik.enable", "value": "true"}]
     if not routes:
-        return labels + [
+        return [
+            *labels,
             {"label": f"traefik.http.routers.{app_name}.rule", "value": "PathPrefix(`/`)"},
             {
                 "label": f"traefik.http.services.{app_name}.loadbalancer.server.port",
@@ -108,7 +109,7 @@ def _traefik_labels(routes: list[RouteSpec], app_name: str) -> list[DockerLabel]
 
 def build_kong_config(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     *,
     app_service_name: str = "app",
 ) -> str | None:
@@ -144,8 +145,7 @@ def build_kong_config(
         lines.append("        paths:")
         lines.append(f"          - {path}")
         lines.append("        methods:")
-        for method in methods:
-            lines.append(f"          - {method.upper()}")
+        lines.extend(f"          - {method.upper()}" for method in methods)
 
     auth = config.auth
     rate_limit = config.rate_limit
@@ -220,7 +220,7 @@ def _app_command(is_wsgi: bool) -> list[str]:
 
 
 def _app_envs(
-    plan: "PlanFile",
+    plan: PlanFile,
     *,
     app_slug: str,
     has_jobs: bool = False,
@@ -245,8 +245,7 @@ def _app_envs(
         if handler.local_service and handler.local_service not in service_dependencies:
             service_dependencies.append(handler.local_service)
 
-    for env_name, value in LocalSecretInjector().env_vars(plan).items():
-        envs[env_name] = value
+    envs |= LocalSecretInjector().env_vars(plan)
 
     if has_jobs:
         envs["SKAAL_JOBS_REDIS_URL"] = f"redis://{_service_host(app_slug, 'redis')}:6379"
@@ -322,7 +321,7 @@ def _service_container_resource(
 
 def build_pulumi_stack(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     *,
     output_dir: Path,
     source_module: str,

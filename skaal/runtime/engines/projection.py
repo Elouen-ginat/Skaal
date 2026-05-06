@@ -57,7 +57,7 @@ class ProjectionEngine(BackgroundTaskEngine):
                         await handler(target, event)
                     else:
                         handler(target, event)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     self._failures += 1
                     if _is_projection_dead_letter_sink(dead_letter):
                         await _publish_dead_letter(

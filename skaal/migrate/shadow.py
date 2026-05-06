@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from skaal.backends.base import StorageBackend
@@ -70,7 +70,7 @@ class ShadowBackend:
                         key=key,
                         source_value=source_val,
                         target_value=target_val,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                     )
                 )
             return source_val
@@ -142,8 +142,8 @@ class ShadowBackend:
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         """Atomically increment a counter, routing to the active backend(s).
 
-        Stages SHADOW_WRITE–DUAL_READ: increment source (authoritative) and mirror to target.
-        Stages NEW_PRIMARY–CLEANUP: increment target only.
+        Stages SHADOW_WRITE-DUAL_READ: increment source (authoritative) and mirror to target.
+        Stages NEW_PRIMARY-CLEANUP: increment target only.
         """
         if self.stage in (
             MigrationStage.SHADOW_WRITE,
@@ -168,8 +168,8 @@ class ShadowBackend:
     ) -> Any:
         """Atomically read-modify-write, routing to the active backend(s).
 
-        Stages SHADOW_WRITE–DUAL_READ: update source (authoritative) and mirror the result to target.
-        Stages NEW_PRIMARY–CLEANUP: update target only.
+        Stages SHADOW_WRITE-DUAL_READ: update source (authoritative) and mirror the result to target.
+        Stages NEW_PRIMARY-CLEANUP: update target only.
         """
         if self.stage in (
             MigrationStage.SHADOW_WRITE,

@@ -34,7 +34,7 @@ _S3_ACTIONS = [
 _LAMBDA_INVOKE_ACTIONS = ["lambda:InvokeFunction"]
 
 
-def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1") -> PulumiStack:
+def build_pulumi_stack(app: AppLike, plan: PlanFile, region: str = "us-east-1") -> PulumiStack:
     has_jobs = app_has_jobs(app)
     deploy = LambdaDeployConfig.model_validate(plan.deploy_config)
     config: dict[str, Any] = {
@@ -471,7 +471,7 @@ def build_pulumi_stack(app: AppLike, plan: "PlanFile", region: str = "us-east-1"
         resources["jobs-worker-fn"] = {
             "type": "aws:lambda:Function",
             "properties": worker_props,
-            "options": {"dependsOn": lambda_depends_on + ["${jobs-redis}"]},
+            "options": {"dependsOn": [*lambda_depends_on, "${jobs-redis}"]},
         }
         resources["jobs-worker-rule"] = {
             "type": "aws:events:Rule",

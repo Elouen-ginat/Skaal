@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import re
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, List, cast
+from typing import Any, cast
 
 from skaal.storage import (
     _cursor_identity,
@@ -126,7 +128,7 @@ class SqliteBackend:
             columns.append("key")
             await self._db.execute(
                 f'CREATE INDEX IF NOT EXISTS "{self._secondary_index_name(index.name)}" '
-                f'ON kv ({", ".join(columns)})'
+                f"ON kv ({', '.join(columns)})"
             )
         await self._db.commit()
 
@@ -214,7 +216,7 @@ class SqliteBackend:
             next_cursor = _encode_cursor({"mode": "list", "last_key": page_rows[-1][0]})
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         await self._ensure_connected()
         # Escape LIKE wildcards to prevent injection: % and _ are special in LIKE
         escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

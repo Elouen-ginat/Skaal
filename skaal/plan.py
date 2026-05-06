@@ -128,7 +128,7 @@ class PlanFile(BaseModel):
         return target
 
     @classmethod
-    def read(cls, path: Path | None = None) -> "PlanFile":
+    def read(cls, path: Path | None = None) -> PlanFile:
         """Read and parse a ``plan.skaal.lock`` file."""
         source = path or Path(PLAN_FILE_NAME)
         return cls.model_validate_json(source.read_text())

@@ -653,13 +653,6 @@
   margin-top: var(--lp-section-gap);
 }
 
-.lp-ecosystem {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: var(--lp-section-gap);
-}
-
 .lp-steps {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1223,6 +1216,24 @@
   .lp-installstrip,
   .lp-installstrip__items {
     gap: 14px;
+  }
+
+  .lp-quicknav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .lp-quicknav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lp-quicknav__link,
+  .md-typeset .lp-quicknav__link {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .lp-steps,

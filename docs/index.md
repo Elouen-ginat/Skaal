@@ -3,15 +3,15 @@ hide:
   - navigation
   - toc
 ---
-
 <section class="lp-hero" id="top">
   <div class="lp-hero__copy">
     <span class="lp-kicker"><span class="lp-kicker__pulse"></span>Infrastructure as Constraints for Python</span>
-    <h1 class="lp-hero__h1">Declare the contract.<br /><em>Skaal picks the stack.</em></h1>
+    <h1 class="lp-hero__h1">Stop hard-coding the backend.<br /><em>Declare the contract instead.</em></h1>
     <p class="lp-hero__lead">
-      Write latency, durability, throughput, and residency constraints directly in Python.
-      Skaal scores your catalog, selects the cheapest backend path that satisfies them, and
-      generates the runtime, Dockerfiles, and Pulumi programs for the target you point it at.
+      You picked SQLite to start, then rewrote the data layer for Postgres, then again for DynamoDB.
+      Each migration leaked infra into business code. Skaal lets you declare the <em>behavior</em>
+      a resource needs &mdash; latency, durability, throughput, residency &mdash; and a Z3 solver picks
+      the cheapest backend in your catalog that satisfies it. Local, AWS, and GCP, from one app file.
     </p>
     <div class="lp-hero__actions">
       <a class="sk-btn sk-btn--primary" href="tutorials/">Start tutorials</a>
@@ -108,84 +108,14 @@ app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
 </div>
 
 <nav class="lp-quicknav" aria-label="Jump to homepage sections">
-  <a class="lp-quicknav__link" href="#tutorials">Tutorials</a>
-  <a class="lp-quicknav__link" href="#ecosystem">Ecosystem</a>
   <a class="lp-quicknav__link" href="#how">How it works</a>
+  <a class="lp-quicknav__link" href="#use-cases">Use cases</a>
   <a class="lp-quicknav__link" href="#tiers">Storage tiers</a>
   <a class="lp-quicknav__link" href="#catalogs">Catalogs</a>
   <a class="lp-quicknav__link" href="#cli">CLI loop</a>
-  <a class="lp-quicknav__link" href="#use-cases">Use cases</a>
+  <a class="lp-quicknav__link" href="#compare">Compare &amp; FAQ</a>
+  <a class="lp-quicknav__link" href="#tutorials">Tutorials</a>
 </nav>
-
-<section class="lp-section lp-section--compact" id="ecosystem">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Works With</span>
-    <div class="lp-section__heading">
-      <h2>Main platforms and tooling behind Skaal.</h2>
-      <a class="lp-section__anchor" href="#ecosystem" aria-label="Link to ecosystem section">#ecosystem</a>
-    </div>
-    <p class="lp-section__sub">
-      Jump straight to the upstream documentation for the cloud targets and tools Skaal composes
-      into its planner, runtime, and deployment loop.
-    </p>
-  </div>
-
-  <div class="lp-ecosystem">
-    <a class="sk-btn sk-btn--ghost" href="https://www.pulumi.com/docs/" target="_blank" rel="noreferrer">Pulumi Docs</a>
-    <a class="sk-btn sk-btn--ghost" href="https://docs.aws.amazon.com/" target="_blank" rel="noreferrer">AWS Docs</a>
-    <a class="sk-btn sk-btn--ghost" href="https://cloud.google.com/docs" target="_blank" rel="noreferrer">GCP Docs</a>
-    <a class="sk-btn sk-btn--ghost" href="https://docs.docker.com/" target="_blank" rel="noreferrer">Docker Docs</a>
-    <a class="sk-btn sk-btn--ghost" href="https://fastapi.tiangolo.com/" target="_blank" rel="noreferrer">FastAPI Docs</a>
-    <a class="sk-btn sk-btn--ghost" href="https://z3prover.github.io/api/html/" target="_blank" rel="noreferrer">Z3 API</a>
-  </div>
-</section>
-
-<section class="lp-section" id="tutorials">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Tutorial path</span>
-    <div class="lp-section__heading">
-      <h2>Learn Skaal in five progressive passes.</h2>
-      <a class="lp-section__anchor" href="#tutorials" aria-label="Link to tutorials section">#tutorials</a>
-    </div>
-    <p class="lp-section__sub">
-      The tutorials are written against real code in this repository and add one concept at a time:
-      local storage first, mounted HTTP next, then planning, deployment, migrations, uploads, and streams.
-    </p>
-  </div>
-
-  <div class="lp-uses">
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 1</p>
-      <h3>Build a counter app</h3>
-      <p>Start with <code>App</code>, <code>Store</code>, <code>@app.storage</code>, and <code>@app.function</code>, then run the generated HTTP surface locally.</p>
-      <p><a href="tutorials/first-app/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 2</p>
-      <h3>Mount FastAPI</h3>
-      <p>Keep your public routes in FastAPI and route application work through Skaal compute with <code>app.invoke(...)</code>.</p>
-      <p><a href="tutorials/http-api/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 3</p>
-      <h3>Solve, build, deploy</h3>
-      <p>Inspect catalogs, write <code>plan.skaal.lock</code>, generate artifacts, and move the same app model to a new target.</p>
-      <p><a href="tutorials/planning-and-deployment/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 4</p>
-      <h3>Add relational data</h3>
-      <p>Introduce SQLModel-backed storage and use the relational migration commands instead of hand-maintaining schema changes.</p>
-      <p><a href="tutorials/relational-and-migrations/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 5</p>
-      <h3>Handle files and streams</h3>
-      <p>Finish with blob uploads, pagination-friendly file listing, and streaming responses from Skaal functions.</p>
-      <p><a href="tutorials/files-and-streaming/">Start tutorial</a></p>
-    </div>
-  </div>
-</section>
 
 <section class="lp-section" id="how">
   <div class="lp-section__intro">
@@ -237,6 +167,53 @@ app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
       <h3>Artifacts and runtime surfaces, ready to ship</h3>
       <p>Skaal emits the runtime entry point, Dockerfile, Pulumi program, and stack metadata under <code>artifacts/</code>, then deploy hands off to Pulumi.</p>
       <span class="lp-step__tag">artifacts/, Lambda, Cloud Run, Docker</span>
+    </div>
+  </div>
+</section>
+
+<section class="lp-section" id="use-cases">
+  <div class="lp-section__intro">
+    <span class="lp-eyebrow">Built for</span>
+    <div class="lp-section__heading">
+      <h2>The application shapes Skaal is meant to support.</h2>
+      <a class="lp-section__anchor" href="#use-cases" aria-label="Link to use-cases section">#use-cases</a>
+    </div>
+    <p class="lp-section__sub">
+      Real services, not toy CRUD. Mount FastAPI, Starlette, Dash, or another ASGI or WSGI
+      framework and let Skaal handle the storage, scheduling, and deployment scaffolding.
+    </p>
+  </div>
+
+  <div class="lp-uses">
+    <div class="lp-use">
+      <p class="lp-use__lead">Backends</p>
+      <h3>API + Postgres + queue</h3>
+      <ul>
+        <li>FastAPI mounted via <code>mount_asgi</code></li>
+        <li>SQLModel entities with Alembic migrations</li>
+        <li>Outbox-backed background jobs</li>
+        <li>Per-route retry and rate-limit policies</li>
+      </ul>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">RAG and AI</p>
+      <h3>Vector retrieval at scale</h3>
+      <ul>
+        <li><code>VectorStore</code> with metadata filters</li>
+        <li>Embeddings declared on the surface</li>
+        <li><code>BlobStore</code> for source documents</li>
+        <li>Streamed responses via mounted ASGI</li>
+      </ul>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">Internal tools</p>
+      <h3>Dash app + scheduled ETL</h3>
+      <ul>
+        <li>Dash mounted via <code>mount_wsgi</code></li>
+        <li><code>@app.schedule</code> cron jobs</li>
+        <li>Relational tier as the data layer</li>
+        <li>Local dev to Cloud Run with one catalog swap</li>
+      </ul>
     </div>
   </div>
 </section>
@@ -443,49 +420,89 @@ app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
   </div>
 </section>
 
-<section class="lp-section" id="use-cases">
+<section class="lp-section lp-section--compact" id="compare">
   <div class="lp-section__intro">
-    <span class="lp-eyebrow">Built for</span>
+    <span class="lp-eyebrow">Compare &amp; FAQ</span>
     <div class="lp-section__heading">
-      <h2>The application shapes Skaal is meant to support.</h2>
-      <a class="lp-section__anchor" href="#use-cases" aria-label="Link to use-cases section">#use-cases</a>
+      <h2>Where Skaal sits, and the questions you'd ask before adopting it.</h2>
+      <a class="lp-section__anchor" href="#compare" aria-label="Link to compare and FAQ section">#compare</a>
     </div>
     <p class="lp-section__sub">
-      Real services, not toy CRUD. Mount FastAPI, Starlette, Dash, or another ASGI or WSGI
-      framework and let Skaal handle the storage, scheduling, and deployment scaffolding.
+      Skaal isn't trying to be Encore, SST, Wing, Modal, or plain Pulumi &mdash; it overlaps
+      with each in a different way. The comparison page maps the differences honestly,
+      and the FAQ covers lock-in, license, and the eject path.
     </p>
   </div>
 
   <div class="lp-uses">
     <div class="lp-use">
-      <p class="lp-use__lead">Backends</p>
-      <h3>API + Postgres + queue</h3>
-      <ul>
-        <li>FastAPI mounted via <code>mount_asgi</code></li>
-        <li>SQLModel entities with Alembic migrations</li>
-        <li>Outbox-backed background jobs</li>
-        <li>Per-route retry and rate-limit policies</li>
-      </ul>
+      <p class="lp-use__lead">Compare</p>
+      <h3>Skaal vs. the alternatives</h3>
+      <p>Side-by-side with Encore, SST, Wing, Modal, and Pulumi. Includes &ldquo;when another tool wins&rdquo; for each.</p>
+      <p><a href="comparison/">Read the comparison</a></p>
     </div>
     <div class="lp-use">
-      <p class="lp-use__lead">RAG and AI</p>
-      <h3>Vector retrieval at scale</h3>
-      <ul>
-        <li><code>VectorStore</code> with metadata filters</li>
-        <li>Embeddings declared on the surface</li>
-        <li><code>BlobStore</code> for source documents</li>
-        <li>Streamed responses via mounted ASGI</li>
-      </ul>
+      <p class="lp-use__lead">FAQ</p>
+      <h3>Lock-in, license, and ejection</h3>
+      <p>Can you keep the generated Pulumi if you stop using Skaal? Is GPL-3.0 compatible with a closed SaaS? What does the solver do when constraints are unsatisfiable?</p>
+      <p><a href="faq/">Read the FAQ</a></p>
     </div>
     <div class="lp-use">
-      <p class="lp-use__lead">Internal tools</p>
-      <h3>Dash app + scheduled ETL</h3>
+      <p class="lp-use__lead">Not for you if</p>
+      <h3>Honest disqualifiers</h3>
       <ul>
-        <li>Dash mounted via <code>mount_wsgi</code></li>
-        <li><code>@app.schedule</code> cron jobs</li>
-        <li>Relational tier as the data layer</li>
-        <li>Local dev to Cloud Run with one catalog swap</li>
+        <li>You already maintain a mature Terraform / CDK monorepo.</li>
+        <li>Your stack relies on backends Skaal doesn't model (Kafka, Spanner, Cosmos DB).</li>
+        <li>You can't take a GPL-3.0-or-later runtime dependency.</li>
+        <li>You need production-grade GCP today.</li>
       </ul>
+    </div>
+  </div>
+</section>
+
+<section class="lp-section" id="tutorials">
+  <div class="lp-section__intro">
+    <span class="lp-eyebrow">Tutorial path</span>
+    <div class="lp-section__heading">
+      <h2>Learn Skaal in five progressive passes.</h2>
+      <a class="lp-section__anchor" href="#tutorials" aria-label="Link to tutorials section">#tutorials</a>
+    </div>
+    <p class="lp-section__sub">
+      The tutorials are written against real code in this repository and add one concept at a time:
+      local storage first, mounted HTTP next, then planning, deployment, migrations, uploads, and streams.
+    </p>
+  </div>
+
+  <div class="lp-uses">
+    <div class="lp-use">
+      <p class="lp-use__lead">Tutorial 1</p>
+      <h3>Build a counter app</h3>
+      <p>Start with <code>App</code>, <code>Store</code>, <code>@app.storage</code>, and <code>@app.function</code>, then run the generated HTTP surface locally.</p>
+      <p><a href="tutorials/first-app/">Start tutorial</a></p>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">Tutorial 2</p>
+      <h3>Mount FastAPI</h3>
+      <p>Keep your public routes in FastAPI and route application work through Skaal compute with <code>app.invoke(...)</code>.</p>
+      <p><a href="tutorials/http-api/">Start tutorial</a></p>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">Tutorial 3</p>
+      <h3>Solve, build, deploy</h3>
+      <p>Inspect catalogs, write <code>plan.skaal.lock</code>, generate artifacts, and move the same app model to a new target.</p>
+      <p><a href="tutorials/planning-and-deployment/">Start tutorial</a></p>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">Tutorial 4</p>
+      <h3>Add relational data</h3>
+      <p>Introduce SQLModel-backed storage and use the relational migration commands instead of hand-maintaining schema changes.</p>
+      <p><a href="tutorials/relational-and-migrations/">Start tutorial</a></p>
+    </div>
+    <div class="lp-use">
+      <p class="lp-use__lead">Tutorial 5</p>
+      <h3>Handle files and streams</h3>
+      <p>Finish with blob uploads, pagination-friendly file listing, and streaming responses from Skaal functions.</p>
+      <p><a href="tutorials/files-and-streaming/">Start tutorial</a></p>
     </div>
   </div>
 </section>
@@ -507,10 +524,11 @@ app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
       <h4>Read next</h4>
       <ul>
         <li><a href="how-it-works/">How Skaal Works</a><span>Planner lifecycle</span></li>
+        <li><a href="comparison/">Comparison</a><span>Skaal vs. Encore, SST, Wing, Modal, Pulumi</span></li>
+        <li><a href="faq/">FAQ</a><span>Lock-in, license, eject path</span></li>
         <li><a href="platform-features/">Platform Features</a><span>Surfaces and runtime</span></li>
         <li><a href="catalogs/">Catalogs</a><span>Overlay model</span></li>
         <li><a href="reference/python-api/">Python API</a><span>In-process orchestration</span></li>
-        <li><a href="examples/">Examples</a><span>Real app shapes</span></li>
       </ul>
     </div>
   </div>

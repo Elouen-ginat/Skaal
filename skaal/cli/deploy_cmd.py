@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -43,19 +42,19 @@ def deploy(
         "-a",
         help="Path to the artifacts directory produced by `skaal build`.",
     ),
-    stack: Optional[str] = typer.Option(
+    stack: str | None = typer.Option(
         None,
         "--stack",
         "-s",
         help="Pulumi stack name. Env: SKAAL_STACK. pyproject: tool.skaal.stack.",
     ),
-    region: Optional[str] = typer.Option(
+    region: str | None = typer.Option(
         None,
         "--region",
         "-r",
         help="Cloud region override. Env: SKAAL_REGION. pyproject: tool.skaal.region.",
     ),
-    gcp_project: Optional[str] = typer.Option(
+    gcp_project: str | None = typer.Option(
         None,
         "--gcp-project",
         help=(

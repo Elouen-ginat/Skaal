@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -35,7 +34,7 @@ def _root(ctx: typer.Context) -> None:
         _browse(catalog_path=None, section="all")
 
 
-def _browse(catalog_path: Optional[Path], section: str) -> None:
+def _browse(catalog_path: Path | None, section: str) -> None:
     """Print the catalog's backend tables.  Unchanged behaviour pre-ADR-022."""
     from skaal import api
 
@@ -47,7 +46,7 @@ def _browse(catalog_path: Optional[Path], section: str) -> None:
         log.info(f"  {'-' * 28} {'-' * 32} {'-' * 12} {'-' * 22} {'-' * 8}")
         for name, spec in sorted(cat.storage.items()):
             dur = ", ".join(spec.durability)
-            lat = f"{spec.read_latency.min}–{spec.read_latency.max}ms"
+            lat = f"{spec.read_latency.min}-{spec.read_latency.max}ms"
             log.info(
                 f"  {name:<28} {spec.display_name:<32} {lat:<12} "
                 f"{dur:<22} ${spec.cost_per_gb_month:.3f}"
@@ -78,7 +77,7 @@ def _browse(catalog_path: Optional[Path], section: str) -> None:
 @app.command("browse")
 @cli_error_boundary
 def browse(
-    catalog_path: Optional[Path] = typer.Option(
+    catalog_path: Path | None = typer.Option(
         None, "--catalog", help="Path to catalog TOML or registered short name."
     ),
     section: str = typer.Option(
@@ -98,7 +97,7 @@ def browse(
 @app.command("validate")
 @cli_error_boundary
 def validate(
-    catalog_path: Optional[Path] = typer.Argument(
+    catalog_path: Path | None = typer.Argument(
         None,
         help="Path to catalog TOML (or registered short name). Falls back to discovery.",
     ),
@@ -136,7 +135,7 @@ def validate(
 @app.command("sources")
 @cli_error_boundary
 def sources(
-    catalog_path: Optional[Path] = typer.Argument(
+    catalog_path: Path | None = typer.Argument(
         None,
         help="Path to catalog TOML (or registered short name). Falls back to discovery.",
     ),

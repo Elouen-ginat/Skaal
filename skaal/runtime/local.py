@@ -86,9 +86,9 @@ class LocalRuntime(BaseRuntime):
         port: int = 8000,
         backend_overrides: dict[str, Any] | None = None,
         *,
-        telemetry: "TelemetryConfig | None" = None,
-        telemetry_runtime: "RuntimeTelemetry | None" = None,
-        auth_http_client: "httpx.AsyncClient | None" = None,
+        telemetry: TelemetryConfig | None = None,
+        telemetry_runtime: RuntimeTelemetry | None = None,
+        auth_http_client: httpx.AsyncClient | None = None,
         kv_backend_factory: Callable[[str], Any] | None = None,
         job_connection: Any | None = None,
     ) -> None:
@@ -120,6 +120,7 @@ class LocalRuntime(BaseRuntime):
         self._job_telemetry = JobWorkerTelemetry()
         self._autostart_task: asyncio.Task[None] | None = None
         self._background_jobs_thread_started = False
+        self._background_jobs_bootstrap_task: asyncio.Task[None] | None = None
         self._job_worker_start_suppressed = False
 
     def _schedule_autostart(self) -> None:
@@ -248,7 +249,7 @@ class LocalRuntime(BaseRuntime):
             return {"error": str(exc)}, 404, None
         except TypeError as exc:
             return {"error": f"Bad arguments for agent route {path!r}: {exc}"}, 422, None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {"error": str(exc), "traceback": traceback.format_exc()}, 500, exc
 
     async def _close_extra_resources(self) -> None:
@@ -370,7 +371,7 @@ class LocalRuntime(BaseRuntime):
         host: str = "127.0.0.1",
         port: int = 8000,
         **config: Any,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """Create a ``LocalRuntime`` from a named backend plugin plus backend config."""
         from skaal.blob import is_blob_model
         from skaal.relational import is_relational_model
@@ -405,7 +406,7 @@ class LocalRuntime(BaseRuntime):
         redis_url: str,
         host: str = "127.0.0.1",
         port: int = 8000,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """Create a ``LocalRuntime`` using Redis backends for all storage classes."""
         return cls.from_backend(
             app,
@@ -422,7 +423,7 @@ class LocalRuntime(BaseRuntime):
         db_path: str | Path = "skaal_local.db",
         host: str = "127.0.0.1",
         port: int = 8000,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """Create a ``LocalRuntime`` backed by SQLite."""
         return cls.from_backend(
             app,
@@ -440,7 +441,7 @@ class LocalRuntime(BaseRuntime):
         database: str = "(default)",
         host: str = "127.0.0.1",
         port: int = 8000,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """
         Create a ``LocalRuntime`` using Cloud Firestore backends for all storage classes.
 
@@ -471,7 +472,7 @@ class LocalRuntime(BaseRuntime):
         port: int = 8000,
         min_size: int = 1,
         max_size: int = 5,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """
         Create a ``LocalRuntime`` backed by PostgreSQL.
 
@@ -500,7 +501,7 @@ class LocalRuntime(BaseRuntime):
         region: str = "us-east-1",
         host: str = "127.0.0.1",
         port: int = 8000,
-    ) -> "LocalRuntime":
+    ) -> LocalRuntime:
         """Create a ``LocalRuntime`` backed by DynamoDB."""
         return cls.from_backend(
             app,
@@ -677,7 +678,7 @@ class LocalRuntime(BaseRuntime):
             raise KeyError(f"No job {job_name!r}. Available: {sorted(self._job_handlers)}")
 
         qualified_name, fn = resolved
-        spec = cast(JobSpec, getattr(fn, "__skaal_job__"))
+        spec = cast(JobSpec, fn.__skaal_job__)
         scheduled_for = normalize_scheduled_for(delay=delay, run_at=run_at)
         normalized_args, normalized_kwargs = ensure_json_payload(args=args, kwargs=kwargs)
         queue = self._job_queue_instance()
@@ -738,7 +739,7 @@ class LocalRuntime(BaseRuntime):
                 InvocationType="Event",
                 Payload=b'{"source":"skaal-jobs-enqueue"}',
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("[skaal/jobs] failed to invoke remote jobs worker: %s", exc)
 
     async def run_job_worker_burst(self, *, max_jobs: int = 10) -> int:
@@ -798,12 +799,12 @@ class LocalRuntime(BaseRuntime):
                         max_jobs=1,
                     )
                     self._job_telemetry.running = 0
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("[skaal/jobs] worker tick failed: %s", exc)
                 self._job_telemetry.running = 0
             try:
                 await asyncio.wait_for(self._job_stop.wait(), timeout=0.05)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     async def _invoke_registered_job(self, job_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -842,7 +843,7 @@ class LocalRuntime(BaseRuntime):
 
         async with self._agent_lock(qualified_name, identity_key):
             agent = agent_cls()
-            setattr(agent, "identity", identity_key)
+            agent.identity = identity_key
             persisted_state = self._decode_agent_state(
                 await backend.get(identity_key) if backend is not None else None
             )
@@ -894,12 +895,12 @@ class LocalRuntime(BaseRuntime):
             content_length = int(headers.get("content-length", "0"))
             if content_length > _MAX_BODY_SIZE:
                 response = (
-                    "HTTP/1.1 413 Payload Too Large\r\n"
-                    "Content-Type: application/json\r\n"
-                    "Connection: close\r\n"
-                    "\r\n"
-                    '{"error": "Request body too large"}'
-                ).encode()
+                    b"HTTP/1.1 413 Payload Too Large\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Connection: close\r\n"
+                    b"\r\n"
+                    b'{"error": "Request body too large"}'
+                )
                 writer.write(response)
                 await writer.drain()
                 return
@@ -917,7 +918,7 @@ class LocalRuntime(BaseRuntime):
             ).encode() + result_bytes
             writer.write(response)
             await writer.drain()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def build_asgi(self) -> Any:
@@ -937,7 +938,6 @@ class LocalRuntime(BaseRuntime):
             from contextlib import asynccontextmanager
 
             from starlette.applications import Starlette
-            from starlette.middleware.wsgi import WSGIMiddleware
             from starlette.requests import Request as StarletteRequest
             from starlette.responses import JSONResponse
             from starlette.routing import Mount, Route
@@ -949,7 +949,7 @@ class LocalRuntime(BaseRuntime):
             ) from exc
 
         @asynccontextmanager
-        async def _lifespan(app: Any) -> AsyncIterator[None]:  # noqa: ANN401
+        async def _lifespan(app: Any) -> AsyncIterator[None]:
             del app
             await self.ensure_started()
             try:
@@ -967,10 +967,10 @@ class LocalRuntime(BaseRuntime):
             )
             return JSONResponse(result, status_code=status)
 
-        async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
+        async def _health(request: Any) -> JSONResponse:
             return JSONResponse({"status": "ok", "app": self.app.name})
 
-        async def _ready(request: Any) -> JSONResponse:  # noqa: ANN001
+        async def _ready(request: Any) -> JSONResponse:
             payload = self._readiness_payload()
             status = 200 if self._readiness_state == "ready" else 503
             return JSONResponse(payload, status_code=status)
@@ -990,6 +990,14 @@ class LocalRuntime(BaseRuntime):
             return application
 
         if wsgi_app is not None:
+            try:
+                from starlette.middleware.wsgi import WSGIMiddleware
+            except ImportError as exc:
+                raise RuntimeError(
+                    "build_asgi() requires starlette's WSGI middleware support for mounted WSGI apps.\n"
+                    "Install it with:  pip install starlette\n"
+                    f"Missing: {exc}"
+                ) from exc
             application = Starlette(
                 lifespan=_lifespan,
                 routes=[
@@ -1059,8 +1067,7 @@ class LocalRuntime(BaseRuntime):
         scheduled = self._collect_schedules()
 
         banner_lines = [f"  http://{self.host}:{self.port}", ""]
-        for name in public_fns:
-            banner_lines.append(f"    POST {_SKAAL_INVOKE_PREFIX}{name}")
+        banner_lines.extend(f"    POST {_SKAAL_INVOKE_PREFIX}{name}" for name in public_fns)
         if scheduled:
             banner_lines.append("")
             for name, fn in sorted(scheduled.items()):
@@ -1189,11 +1196,11 @@ class LocalRuntime(BaseRuntime):
                 try:
                     await self.ensure_started()
                     log.info("[skaal/jobs] started background worker for %s", self.app.name)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning("[skaal/jobs] background worker failed to start: %s", exc)
                     loop.stop()
 
-            loop.create_task(_bootstrap())
+            self._background_jobs_bootstrap_task = loop.create_task(_bootstrap())
             loop.run_forever()
 
         thread = threading.Thread(target=_run, daemon=True, name="skaal-jobs")
@@ -1227,7 +1234,7 @@ class LocalRuntime(BaseRuntime):
                 f"Missing: {exc}"
             ) from exc
 
-        async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
+        async def _health(request: Any) -> JSONResponse:
             return JSONResponse({"status": "ok", "app": self.app.name})
 
         async def _internal(request: StarletteRequest) -> JSONResponse:
@@ -1296,10 +1303,10 @@ class LocalRuntime(BaseRuntime):
                 f"Missing: {exc}"
             ) from exc
 
-        async def _health(request: Any) -> JSONResponse:  # noqa: ANN001
+        async def _health(request: Any) -> JSONResponse:
             return JSONResponse({"status": "ok", "app": self.app.name})
 
-        async def _handle(request: Any) -> JSONResponse:  # noqa: ANN001
+        async def _handle(request: Any) -> JSONResponse:
             body = await request.body()
             result, status = await self._dispatch(
                 request.method,

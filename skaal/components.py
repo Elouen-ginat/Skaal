@@ -431,7 +431,7 @@ class ScheduleTrigger(ProvisionedComponent):
         self,
         name: str,
         *,
-        trigger: "Every | Cron",
+        trigger: Every | Cron,
         target_function: str,
         timezone: str = "UTC",
         emit_to: str | None = None,

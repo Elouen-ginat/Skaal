@@ -371,7 +371,7 @@ class AutomationRunner(PulumiRunner):
                     message=f"Pulumi up failed for target {target!r}.",
                     diagnostics=_command_diagnostics(exc),
                 ) from exc
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 raise DeployError(
                     target=target,
                     phase="up",

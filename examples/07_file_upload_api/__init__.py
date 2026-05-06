@@ -1,3 +1,3 @@
 from .app import api, app
 
-__all__ = ["app", "api"]
+__all__ = ["api", "app"]

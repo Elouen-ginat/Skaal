@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
 # TYPE_CHECKING import to avoid circular deps at runtime
-from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, cast, overload
 
 from skaal.types import (
     AccessPattern,
@@ -100,6 +100,58 @@ class _HasName(Protocol):
 
 class _HasDunderName(Protocol):
     __name__: str
+
+
+class _ComputeMetadataFn(Protocol):
+    __skaal_compute__: Compute
+    __skaal_scale__: Scale
+    __skaal_secrets__: tuple[SecretRef, ...]
+
+
+class _JobMetadataFn(Protocol):
+    __skaal_job__: JobSpec
+
+
+class _ChannelMetadataType(Protocol):
+    __skaal_channel__: dict[str, Any]
+
+
+class _ScheduleMetadataFn(Protocol):
+    __skaal_schedule__: dict[str, Any]
+
+
+def _attach_compute_metadata(
+    fn: F,
+    compute: Compute,
+    *,
+    scale: Scale | None,
+    secrets: tuple[SecretRef, ...] | None,
+) -> F:
+    metadata_fn = cast(_ComputeMetadataFn, fn)
+    metadata_fn.__skaal_compute__ = compute
+    if scale is not None:
+        metadata_fn.__skaal_scale__ = scale
+    if secrets is not None:
+        metadata_fn.__skaal_secrets__ = secrets
+    return fn
+
+
+def _attach_job_metadata(fn: F, spec: JobSpec) -> F:
+    metadata_fn = cast(_JobMetadataFn, fn)
+    metadata_fn.__skaal_job__ = spec
+    return fn
+
+
+def _attach_channel_metadata(cls: C, metadata: dict[str, Any]) -> C:
+    metadata_cls = cast(_ChannelMetadataType, cls)
+    metadata_cls.__skaal_channel__ = metadata
+    return cls
+
+
+def _attach_schedule_metadata(fn: F, metadata: dict[str, Any]) -> F:
+    metadata_fn = cast(_ScheduleMetadataFn, fn)
+    metadata_fn.__skaal_schedule__ = metadata
+    return fn
 
 
 class Module:
@@ -343,11 +395,9 @@ class Module:
                 _compute.rate_limit = rate_limit
             if bulkhead is not None:
                 _compute.bulkhead = bulkhead
-            setattr(fn, "__skaal_compute__", _compute)
-            if scale is not None:
-                setattr(fn, "__skaal_scale__", scale)
+            secret_tuple = tuple(secrets) if secrets else None
+            fn = _attach_compute_metadata(fn, _compute, scale=scale, secrets=secret_tuple)
             if secrets:
-                setattr(fn, "__skaal_secrets__", tuple(secrets))
                 for ref in secrets:
                     self.secret(ref)
             self._functions[fn.__name__] = fn
@@ -382,7 +432,7 @@ class Module:
         """Register a background job handler executed by the runtime worker."""
 
         def decorator(fn: F) -> F:
-            setattr(fn, "__skaal_job__", JobSpec(name=fn.__name__, retry=retry))
+            fn = _attach_job_metadata(fn, JobSpec(name=fn.__name__, retry=retry))
             self._jobs[fn.__name__] = fn
             return fn
 
@@ -433,9 +483,8 @@ class Module:
             durability = Durability(durability)
 
         def decorator(cls: C) -> C:
-            setattr(
+            cls = _attach_channel_metadata(
                 cls,
-                "__skaal_channel__",
                 {
                     "buffer": buffer,
                     "throughput": throughput,
@@ -488,8 +537,7 @@ class Module:
         existing = self._secrets.get(ref.name)
         if existing is not None and existing != ref:
             raise ValueError(
-                f"Secret {ref.name!r} re-declared with different parameters: "
-                f"{existing} vs {ref}"
+                f"Secret {ref.name!r} re-declared with different parameters: {existing} vs {ref}"
             )
         self._secrets[ref.name] = ref
         return ref
@@ -499,7 +547,7 @@ class Module:
         self,
         fn_to_decorate: F,
         *,
-        trigger: "Every | Cron",
+        trigger: Every | Cron,
         emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> F: ...
@@ -509,7 +557,7 @@ class Module:
         self,
         fn_to_decorate: None = ...,
         *,
-        trigger: "Every | Cron",
+        trigger: Every | Cron,
         emit_to: AsyncPublishTarget[object] | None = ...,
         timezone: str = ...,
     ) -> Callable[[F], F]: ...
@@ -518,7 +566,7 @@ class Module:
         self,
         fn_to_decorate: F | None = None,
         *,
-        trigger: "Every | Cron",
+        trigger: Every | Cron,
         emit_to: AsyncPublishTarget[object] | None = None,
         timezone: str = "UTC",
     ) -> F | Callable[[F], F]:
@@ -546,14 +594,9 @@ class Module:
         from skaal.components import ScheduleTrigger
 
         def decorator(fn: F) -> F:
-            setattr(
+            fn = _attach_schedule_metadata(
                 fn,
-                "__skaal_schedule__",
-                {
-                    "trigger": trigger,
-                    "emit_to": emit_to,
-                    "timezone": timezone,
-                },
+                {"trigger": trigger, "emit_to": emit_to, "timezone": timezone},
             )
             self._schedules[fn.__name__] = fn
             st = ScheduleTrigger(

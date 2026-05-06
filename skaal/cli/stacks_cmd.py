@@ -26,8 +26,7 @@ def stacks() -> None:
     base = SkaalSettings()
     if not base.stacks:
         log.info(
-            "No stacks configured. Add profiles under [tool.skaal.stacks.<name>] "
-            "in pyproject.toml."
+            "No stacks configured. Add profiles under [tool.skaal.stacks.<name>] in pyproject.toml."
         )
         return
 

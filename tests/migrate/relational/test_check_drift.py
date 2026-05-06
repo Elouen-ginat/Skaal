@@ -12,23 +12,29 @@ from skaal import App, api
 from skaal.runtime.local import LocalRuntime
 
 
-def _build_app(tmp_path: Path, with_extra_column: bool) -> App:
-    app = App(name="check-app")
+def _model_suffix(tmp_path: Path, variant: str) -> str:
+    return f"{tmp_path.name}_{variant}".replace("-", "_")
 
-    fields: dict = {
+
+def _build_user_model(tmp_path: Path, *, with_extra_column: bool) -> type[SQLModel]:
+    suffix = _model_suffix(tmp_path, "extra" if with_extra_column else "base")
+    fields: dict[str, object] = {
+        "__module__": __name__,
         "__tablename__": f"users_{tmp_path.name}",
         "id": Field(default=None, primary_key=True),
         "email": Field(default=""),
+        "__annotations__": {"id": int | None, "email": str},
     }
     if with_extra_column:
         fields["nickname"] = Field(default="")
+        fields["__annotations__"] = {"id": int | None, "email": str, "nickname": str}
 
-    annotations = {"id": "int | None", "email": "str"}
-    if with_extra_column:
-        annotations["nickname"] = "str"
+    return type(f"User_{suffix}", (SQLModel,), fields, table=True)
 
-    fields["__annotations__"] = annotations
-    User = type("User", (SQLModel,), fields, table=True)
+
+def _build_app(tmp_path: Path, with_extra_column: bool) -> App:
+    app = App(name="check-app")
+    User = _build_user_model(tmp_path, with_extra_column=with_extra_column)
     app.storage(kind="relational", read_latency="< 20ms", durability="persistent")(User)
 
     LocalRuntime.from_sqlite(app, db_path=tmp_path / "drift.db")

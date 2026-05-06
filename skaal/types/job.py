@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from skaal.types.compute import RetryPolicy
 
@@ -24,7 +24,7 @@ class JobHandle:
     scheduled_for: datetime
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     """Lifecycle states for a queued background job."""
 
     QUEUED = "queued"

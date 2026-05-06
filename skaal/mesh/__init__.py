@@ -45,10 +45,9 @@ from skaal.mesh.client import MeshClient
 from skaal.mesh.types import AgentInfo, HealthSnapshot, MigrationState, RoutingInfo
 
 __all__ = [
-    "MeshClient",
-    # Types
     "AgentInfo",
     "HealthSnapshot",
+    "MeshClient",
     "MigrationState",
     "RoutingInfo",
 ]

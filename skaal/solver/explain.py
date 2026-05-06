@@ -31,7 +31,7 @@ def _fail(rich: bool) -> str:
     return "[red]✗[/red]" if rich else "FAIL"
 
 
-def explain_plan(plan: "PlanFile", *, rich: bool = False) -> str:
+def explain_plan(plan: PlanFile, *, rich: bool = False) -> str:
     """
     Return a human-readable explanation of every decision in *plan*.
 
@@ -63,7 +63,7 @@ def explain_plan(plan: "PlanFile", *, rich: bool = False) -> str:
     if plan.compute:
         lines.append(_h("Compute", rich=rich))
         for qname, cspec in sorted(plan.compute.items()):
-            lines.append(f"  {qname}  →  {cspec.instance_type}  (×{cspec.instances})")
+            lines.append(f"  {qname}  →  {cspec.instance_type}  (x{cspec.instances})")
             if cspec.reason:
                 lines.append(_dim(f"    {cspec.reason}", rich=rich))
         lines.append("")
@@ -106,8 +106,7 @@ def render_diagnosis(d: Diagnosis, *, rich: bool = False) -> str:
 
     if d.requested:
         lines.append(_h("Requested:", rich=rich))
-        for text in d.requested.values():
-            lines.append(f"  {text}")
+        lines.extend(f"  {text}" for text in d.requested.values())
         lines.append("")
 
     if not d.candidates:
@@ -149,8 +148,7 @@ def render_diagnosis(d: Diagnosis, *, rich: bool = False) -> str:
             f"{s.requested}, {s.backend_name} would satisfy."
         )
 
-    for note in d.extra_notes:
-        lines.append(_dim(note, rich=rich))
+    lines.extend(_dim(note, rich=rich) for note in d.extra_notes)
 
     return "\n".join(lines).rstrip()
 

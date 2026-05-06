@@ -29,7 +29,7 @@ def _make_constructor(handler: BackendHandler, class_name: str, env_var: str, *,
     return f'{handler.class_name}(os.environ["{env_var}"])'
 
 
-def build_wiring(plan: "PlanFile", *, local: bool = False) -> BackendWiring:
+def build_wiring(plan: PlanFile, *, local: bool = False) -> BackendWiring:
     seen: set[str] = set()
     import_lines: list[str] = []
     override_lines: list[str] = []
@@ -49,5 +49,5 @@ def build_wiring(plan: "PlanFile", *, local: bool = False) -> BackendWiring:
     return BackendWiring("\n".join(import_lines), "\n".join(override_lines))
 
 
-def build_wiring_aws(plan: "PlanFile") -> BackendWiring:
+def build_wiring_aws(plan: PlanFile) -> BackendWiring:
     return build_wiring(plan, local=False)

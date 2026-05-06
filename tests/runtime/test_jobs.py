@@ -9,8 +9,8 @@ from skaal import App, Module, RetryPolicy, Store
 from skaal.runtime.local import LocalRuntime
 
 
-async def _wait_for(assertion, *, timeout: float = 1.0, interval: float = 0.01) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout
+async def _wait_for(assertion, *, max_wait: float = 1.0, interval: float = 0.01) -> None:
+    deadline = asyncio.get_running_loop().time() + max_wait
     while True:
         try:
             await assertion()
@@ -131,7 +131,7 @@ async def test_delayed_job_survives_runtime_restart(tmp_path: Path) -> None:
     async def _eventually_incremented() -> None:
         assert await counts.get("persisted") == 1
 
-    await _wait_for(_eventually_incremented, timeout=2.0)
+    await _wait_for(_eventually_incremented, max_wait=2.0)
     await restarted.shutdown()
 
 

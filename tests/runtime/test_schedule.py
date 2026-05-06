@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from skaal import App
@@ -129,11 +131,11 @@ def test_cron_as_aws_expression_complex():
 
 
 def test_schedule_context_frozen():
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ctx = ScheduleContext(fired_at=datetime.now(timezone.utc))
+    ctx = ScheduleContext(fired_at=datetime.now(UTC))
     with pytest.raises(Exception):
-        ctx.fired_at = datetime.now(timezone.utc)  # type: ignore[misc]
+        ctx.fired_at = datetime.now(UTC)  # type: ignore[misc]
 
 
 def test_build_apscheduler_trigger_interval() -> None:

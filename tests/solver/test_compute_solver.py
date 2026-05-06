@@ -62,21 +62,21 @@ def test_encode_compute_cheapest_cpu():
 def test_encode_compute_gpu_required():
     """GPU compute type filter selects a gpu-capable instance."""
     compute = Compute(compute_type=ComputeType.GPU)
-    name, reason = encode_compute("fn", compute, _CATALOG_COMPUTE)
+    name, _reason = encode_compute("fn", compute, _CATALOG_COMPUTE)
     assert name == "gpu-instance"
 
 
 def test_encode_compute_memory_constraint():
     """Memory ≥ 16GB requirement picks large-cpu or gpu-instance, not small-cpu."""
     compute = Compute(memory="16GB")
-    name, reason = encode_compute("fn", compute, _CATALOG_COMPUTE)
+    name, _reason = encode_compute("fn", compute, _CATALOG_COMPUTE)
     assert name in ("large-cpu", "gpu-instance")
 
 
 def test_encode_compute_empty_catalog():
     """Empty catalog returns default c5-large without raising."""
     compute = Compute()
-    name, reason = encode_compute("fn", compute, {})
+    name, _reason = encode_compute("fn", compute, {})
     assert name == "c5-large"
 
 

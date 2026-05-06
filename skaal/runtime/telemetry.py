@@ -133,7 +133,7 @@ class RuntimeTelemetry:
                 attributes=attributes,
             )
 
-        carrier = {name: value for name, value in headers.items()}
+        carrier = dict(headers)
         scope = self._tracer.start_as_current_span(
             f"{method} {path}",
             context=extract(carrier),
@@ -186,18 +186,18 @@ class RuntimeTelemetry:
     def shutdown(self) -> None:
         try:
             self._meter_provider.shutdown()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.healthy = False
             self.last_error = str(exc)
             log.warning("telemetry meter shutdown failed: %s", exc)
         try:
             self._tracer_provider.shutdown()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.healthy = False
             self.last_error = str(exc)
             log.warning("telemetry tracer shutdown failed: %s", exc)
 
-    def _observe_ready(self, options: Any) -> list[Observation]:  # noqa: ANN401
+    def _observe_ready(self, options: Any) -> list[Observation]:
         if self._runtime is None:
             return []
         state = cast(ReadinessState, self._runtime.readiness_state)
@@ -208,24 +208,24 @@ class RuntimeTelemetry:
             )
         ]
 
-    def _observe_engine_running(self, options: Any) -> list[Observation]:  # noqa: ANN401
+    def _observe_engine_running(self, options: Any) -> list[Observation]:
         return self._observe_engine_metric(
             lambda snapshot: 1 if snapshot.get("running", False) else 0,
             "running",
         )
 
-    def _observe_engine_failures(self, options: Any) -> list[Observation]:  # noqa: ANN401
+    def _observe_engine_failures(self, options: Any) -> list[Observation]:
         return self._observe_engine_metric(
             lambda snapshot: int(snapshot.get("failures", 0)), "failures"
         )
 
-    def _observe_engine_queue_depth(self, options: Any) -> list[Observation]:  # noqa: ANN401
+    def _observe_engine_queue_depth(self, options: Any) -> list[Observation]:
         return self._observe_engine_metric(
             lambda snapshot: snapshot.get("queue_depth"),
             "queue_depth",
         )
 
-    def _observe_engine_active_tasks(self, options: Any) -> list[Observation]:  # noqa: ANN401
+    def _observe_engine_active_tasks(self, options: Any) -> list[Observation]:
         return self._observe_engine_metric(
             lambda snapshot: snapshot.get("active_tasks"),
             "active_tasks",

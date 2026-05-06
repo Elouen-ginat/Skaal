@@ -1,7 +1,5 @@
 """Entry point for the `skaal` CLI."""
 
-from typing import Optional
-
 import typer
 
 from skaal.cli._logging import LogFormat, configure_cli_logging
@@ -51,7 +49,7 @@ def _root(
         "-q",
         help="Suppress INFO logs. Errors still print.",
     ),
-    log_format: Optional[LogFormat] = typer.Option(
+    log_format: LogFormat | None = typer.Option(
         None,
         "--log-format",
         help="text or json. Env: SKAAL_LOG_FORMAT.",

@@ -32,7 +32,7 @@ def gcp_openapi_path(path: str) -> str:
 
 def add_aws_apigw_resources(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     resources: dict[str, Any],
     config: dict[str, Any],
 ) -> None:
@@ -226,7 +226,7 @@ def _build_openapi_spec(
 
 def add_gcp_api_gateway(
     app: AppLike,
-    plan: "PlanFile",
+    plan: PlanFile,
     resources: dict[str, Any],
     outputs: dict[str, Any],
 ) -> None:

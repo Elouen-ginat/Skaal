@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import re
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Callable, List, cast
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
 from skaal.serialization import decode_json_value
@@ -116,7 +118,7 @@ class PostgresBackend:
     def _expiry_deadline(self, ttl: float | None) -> datetime | None:
         if ttl is None:
             return None
-        return datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        return datetime.now(UTC) + timedelta(seconds=ttl)
 
     async def _ensure_connected(self) -> None:
         current_loop = asyncio.get_running_loop()
@@ -142,7 +144,7 @@ class PostgresBackend:
                 columns.append("key")
                 await conn.execute(
                     f'CREATE INDEX IF NOT EXISTS "{self._secondary_index_name(index.name)}" '
-                    f'ON skaal_kv ({", ".join(columns)})'
+                    f"ON skaal_kv ({', '.join(columns)})"
                 )
 
     async def _ensure_relational_engine(self) -> None:
@@ -248,7 +250,7 @@ class PostgresBackend:
             next_cursor = _encode_cursor({"mode": "list", "last_key": page_rows[-1]["key"]})
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         await self._ensure_connected()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
@@ -454,36 +456,35 @@ class PostgresBackend:
 
         await self._ensure_connected()
         try:
-            async with self._pool.acquire() as conn:
-                async with conn.transaction(isolation="serializable"):
-                    row = await conn.fetchrow(
-                        (
-                            "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2 "
-                            "AND (expires_at IS NULL OR expires_at > NOW()) FOR UPDATE"
-                        ),
-                        self.namespace,
-                        key,
-                    )
-                    raw = row["value"] if row is not None else None
-                    if isinstance(raw, str):
-                        current = json.loads(raw)
-                    else:
-                        current = raw
-                    updated = fn(current)
-                    await conn.execute(
-                        """
-                        INSERT INTO skaal_kv (ns, key, value, expires_at)
-                        VALUES ($1, $2, $3::jsonb, $4)
-                        ON CONFLICT (ns, key) DO UPDATE SET
-                            value = excluded.value,
-                            expires_at = excluded.expires_at
-                        """,
-                        self.namespace,
-                        key,
-                        json.dumps(updated),
-                        self._expiry_deadline(ttl),
-                    )
-                    return updated
+            async with self._pool.acquire() as conn, conn.transaction(isolation="serializable"):
+                row = await conn.fetchrow(
+                    (
+                        "SELECT value FROM skaal_kv WHERE ns = $1 AND key = $2 "
+                        "AND (expires_at IS NULL OR expires_at > NOW()) FOR UPDATE"
+                    ),
+                    self.namespace,
+                    key,
+                )
+                raw = row["value"] if row is not None else None
+                if isinstance(raw, str):
+                    current = json.loads(raw)
+                else:
+                    current = raw
+                updated = fn(current)
+                await conn.execute(
+                    """
+                    INSERT INTO skaal_kv (ns, key, value, expires_at)
+                    VALUES ($1, $2, $3::jsonb, $4)
+                    ON CONFLICT (ns, key) DO UPDATE SET
+                        value = excluded.value,
+                        expires_at = excluded.expires_at
+                    """,
+                    self.namespace,
+                    key,
+                    json.dumps(updated),
+                    self._expiry_deadline(ttl),
+                )
+                return updated
         except asyncpg.exceptions.SerializationError as exc:
             raise SkaalConflict(f"atomic_update on {key!r} lost a race") from exc
         except (

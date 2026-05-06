@@ -39,7 +39,7 @@ class GenerateArtifacts(Protocol):
     def __call__(
         self,
         app: AppLike,
-        plan: "PlanFile",
+        plan: PlanFile,
         output_dir: Path,
         source_module: str,
         app_var: str = "app",
@@ -137,7 +137,7 @@ def _local_package(context: DeploymentContext) -> ConfigOverrides:
     return {"localImageRef": image_id or image_name}
 
 
-def _gcp_post_up(context: DeploymentContext, output: "Callable[[str], str]") -> bool:
+def _gcp_post_up(context: DeploymentContext, output: Callable[[str], str]) -> bool:
     from skaal.deploy.packaging.gcp_push import build_and_push_image
 
     if not context.gcp_project:
@@ -158,7 +158,7 @@ def _gcp_post_up(context: DeploymentContext, output: "Callable[[str], str]") -> 
         )
     except DeployError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise DeployError(
             target="gcp",
             phase="image",
@@ -210,7 +210,7 @@ class PulumiDeployTarget(DeployTarget):
     def generate_artifacts(
         self,
         app: AppLike,
-        plan: "PlanFile",
+        plan: PlanFile,
         output_dir: Path,
         source_module: str,
         app_var: str = "app",

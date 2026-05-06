@@ -21,23 +21,19 @@
   {% endif %}
 {% endblock %}
 
-{% block footer %}
+{# Inject navigation links INSIDE the dark .md-footer-meta copyright bar. #}
+{% block copyright %}
   {% if config.extra.footer_links %}
-    <div class="skaal-site-links skaal-site-links--footer">
-      <div class="md-grid">
-        <nav class="skaal-site-links__inner" aria-label="Ecosystem shortcuts">
-          <span class="skaal-site-links__label">Ecosystem</span>
-          {% for item in config.extra.footer_links %}
-            {% if item.external %}
-              {% set href = item.link %}
-            {% else %}
-              {% set href = item.link | url %}
-            {% endif %}
-            <a class="skaal-site-links__link" href="{{ href }}" {% if item.external %}target="_blank" rel="noreferrer"{% endif %}>{{ item.label }}</a>
-          {% endfor %}
-        </nav>
-      </div>
-    </div>
+    <nav class="md-footer-meta__links" aria-label="Site links">
+      {% for item in config.extra.footer_links %}
+        {% if item.external %}
+          {% set href = item.link %}
+        {% else %}
+          {% set href = item.link | url %}
+        {% endif %}
+        <a href="{{ href }}" {% if item.external %}target="_blank" rel="noreferrer"{% endif %}>{{ item.label }}</a>
+      {% endfor %}
+    </nav>
   {% endif %}
   {{ super() }}
 {% endblock %}

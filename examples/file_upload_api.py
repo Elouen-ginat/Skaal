@@ -16,4 +16,4 @@ _SPEC.loader.exec_module(_MODULE)
 app = _MODULE.app
 api = _MODULE.api
 
-__all__ = ["app", "api"]
+__all__ = ["api", "app"]

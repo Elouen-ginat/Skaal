@@ -4,10 +4,10 @@ from skaal.deploy.backends.services import LOCAL_FALLBACK, LOCAL_SERVICE_SPECS
 from skaal.deploy.backends.wiring import build_wiring, build_wiring_aws
 
 __all__ = [
-    "BackendHandler",
     "FALLBACK_WIRE",
     "LOCAL_FALLBACK",
     "LOCAL_SERVICE_SPECS",
+    "BackendHandler",
     "build_wiring",
     "build_wiring_aws",
     "collect_user_packages",

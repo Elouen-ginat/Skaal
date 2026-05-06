@@ -19,7 +19,8 @@ import inspect
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any, cast
+from contextlib import suppress
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
@@ -128,51 +129,52 @@ class SagaExecutor:
         if step_index >= len(self.saga.steps):
             state["status"] = "completed"
             state["finished_at"] = time.time()
-            await self._persist(cast(str, state["saga_id"]), state)
+            await self._persist(_state_saga_id(state), state)
             return state
 
         step = self.saga.steps[step_index]
         fn = self._lookup(step.function)
+        saga_input = _state_input(state)
+        progress = _state_progress(state)
         try:
-            result = await self._invoke(fn, step.timeout_ms, cast(dict[str, Any], state["input"]))
-        except Exception as exc:  # noqa: BLE001
+            result = await self._invoke(fn, step.timeout_ms, saga_input)
+        except Exception as exc:
             state["status"] = "compensating"
             state["failed_step"] = step.function
             state["error"] = repr(exc)
-            state["compensation_index"] = len(cast(list[dict[str, Any]], state["progress"])) - 1
-            await self._persist(cast(str, state["saga_id"]), state)
+            state["compensation_index"] = len(progress) - 1
+            await self._persist(_state_saga_id(state), state)
             return state
 
-        cast(list[dict[str, Any]], state["progress"]).append(
-            {"step": step.function, "compensate": step.compensate, "result": result}
-        )
+        progress.append({"step": step.function, "compensate": step.compensate, "result": result})
         state["step_index"] = step_index + 1
         if int(state["step_index"]) >= len(self.saga.steps):
             state["status"] = "completed"
             state["finished_at"] = time.time()
-        await self._persist(cast(str, state["saga_id"]), state)
+        await self._persist(_state_saga_id(state), state)
         return state
 
     async def _run_compensation_node(self, state: SagaState) -> SagaState:
         compensation_index = int(state.get("compensation_index", -1))
-        progress = cast(list[dict[str, Any]], state["progress"])
+        progress = _state_progress(state)
+        saga_input = _state_input(state)
         if compensation_index >= 0:
             record = progress[compensation_index]
             fn = self.functions.get(record["compensate"])
             if fn is not None:
                 try:
                     if inspect.iscoroutinefunction(fn):
-                        await fn(**cast(dict[str, Any], state["input"]))
+                        await fn(**saga_input)
                     else:
-                        fn(**cast(dict[str, Any], state["input"]))
-                except Exception:  # noqa: BLE001
+                        fn(**saga_input)
+                except Exception:
                     pass
             state["compensation_index"] = compensation_index - 1
 
         if int(state.get("compensation_index", -1)) < 0:
             state["status"] = "failed"
             state["finished_at"] = time.time()
-        await self._persist(cast(str, state["saga_id"]), state)
+        await self._persist(_state_saga_id(state), state)
         return state
 
     @staticmethod
@@ -194,11 +196,27 @@ class SagaExecutor:
     async def _persist(self, saga_id: str, state: Mapping[str, Any]) -> None:
         if self.store is None:
             return
-        try:
+        with suppress(Exception):
             await self.store.set(saga_id, dict(state))
-        except Exception:  # noqa: BLE001
-            # Persistence is best-effort — saga still runs without it.
-            pass
+
+
+def _state_saga_id(state: SagaState) -> str:
+    saga_id = state.get("saga_id")
+    if saga_id is None:
+        raise SkaalError("saga state is missing saga_id")
+    return saga_id
+
+
+def _state_input(state: SagaState) -> dict[str, Any]:
+    return state.get("input", {})
+
+
+def _state_progress(state: SagaState) -> list[dict[str, Any]]:
+    progress = state.get("progress")
+    if progress is None:
+        progress = []
+        state["progress"] = progress
+    return progress
 
 
 class SagaEngine:
@@ -223,7 +241,7 @@ class SagaEngine:
         # Expose on the runtime context so user code can ``await runtime.sagas["place_order"].run(...)``
         sagas: dict[str, SagaExecutor] = getattr(context, "sagas", None) or {}
         sagas[self.saga.name] = self._executor
-        setattr(context, "sagas", sagas)
+        context.sagas = sagas
         self._running = True
 
     async def stop(self) -> None:

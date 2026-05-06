@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import builtins
 import json
 import math
-from typing import Any, Callable, List
+from collections.abc import Callable
+from typing import Any
 
 from skaal.errors import SkaalConflict, SkaalUnavailable
 from skaal.storage import (
@@ -90,7 +92,7 @@ class RedisBackend:
                 continue
             keys.append(stripped)
         if keys:
-            await client.zadd(self._key_index(), {key: 0 for key in keys})
+            await client.zadd(self._key_index(), dict.fromkeys(keys, 0))
 
     async def _remove_stale_key_index_members(self, client: Any, keys: list[str]) -> None:
         for key in keys:
@@ -121,7 +123,7 @@ class RedisBackend:
 
             values = await client.mget(*[self._key(key) for key in keys])
             stale_keys: list[str] = []
-            for key, value in zip(keys, values):
+            for key, value in zip(keys, values, strict=True):
                 if value is None:
                     stale_keys.append(key)
                     continue
@@ -232,7 +234,7 @@ class RedisBackend:
         values = await client.mget(*[self._key(key) for key in keys])
         result = []
         stale_keys: list[str] = []
-        for k, v in zip(keys, values):
+        for k, v in zip(keys, values, strict=True):
             if v is not None:
                 result.append((k, json.loads(v)))
             else:
@@ -261,7 +263,7 @@ class RedisBackend:
             next_cursor = _encode_cursor({"mode": "list", "last_key": items[-1][0]})
         return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
-    async def scan(self, prefix: str = "") -> List[tuple[str, Any]]:
+    async def scan(self, prefix: str = "") -> builtins.list[tuple[str, Any]]:
         page = await self.scan_page(prefix=prefix, limit=10_000, cursor=None)
         items = list(page.items)
         while page.has_more:
@@ -347,7 +349,7 @@ class RedisBackend:
             primary_keys = [self._member_primary_key(member) for member in members]
             values = await client.mget(*[self._key(primary_key) for primary_key in primary_keys])
             stale_members: list[str] = []
-            for member, value in zip(members, values):
+            for member, value in zip(members, values, strict=True):
                 if value is None:
                     stale_members.append(member)
                     continue

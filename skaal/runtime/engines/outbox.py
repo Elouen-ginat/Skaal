@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, cast
 
 from typing_extensions import TypedDict
 
@@ -29,6 +29,10 @@ class OutboxRow(TypedDict):
     delivered: bool
 
 
+class _WritableOutbox(Protocol):
+    write: Callable[[str, object], Awaitable[None]]
+
+
 class OutboxEngine(BackgroundTaskEngine):
     """Background relay that publishes pending outbox rows to a channel."""
 
@@ -41,8 +45,9 @@ class OutboxEngine(BackgroundTaskEngine):
     async def start(self, context: Any) -> None:
         # Install a send helper on the outbox so user code has a one-liner:
         #     await orders_outbox.write(key, payload)
-        if not hasattr(self.outbox, "write"):
-            setattr(self.outbox, "write", self._write_factory())
+        writable_outbox = cast(_WritableOutbox, self.outbox)
+        if not hasattr(writable_outbox, "write"):
+            writable_outbox.write = self._write_factory()
         await self._start_background(self._relay_loop, name=f"outbox:{self._outbox_name()}")
 
     # ── Writer + relay ───────────────────────────────────────────────────────
@@ -73,7 +78,7 @@ class OutboxEngine(BackgroundTaskEngine):
             while not self._stopping.is_set():
                 try:
                     pending = await store_backend.scan("outbox:")
-                except Exception:  # noqa: BLE001
+                except Exception:
                     self._failures += 1
                     pending = []
                 self._queue_depth = sum(
@@ -87,7 +92,7 @@ class OutboxEngine(BackgroundTaskEngine):
                         if not _is_async_publish_target(channel):
                             continue
                         await _publish_outbox_row(channel, row["payload"])
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         # Retry on next tick — at-least-once delivery.
                         self._failures += 1
                         continue
@@ -101,14 +106,14 @@ class OutboxEngine(BackgroundTaskEngine):
                         else:
                             row["delivered"] = True
                             await store_backend.set(key, row)
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         self._failures += 1
                         continue
                     delivered_any = True
                 if not delivered_any:
                     try:
                         await asyncio.wait_for(self._stopping.wait(), timeout=self.poll_interval)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
         except asyncio.CancelledError:
             return
@@ -142,7 +147,7 @@ async def _publish_outbox_row(target: AsyncPublishTarget[object], payload: objec
     raise TypeError("Outbox channel must provide send() or append()")
 
 
-def _backend_of(storage_cls: type[object]) -> "StorageBackend":
+def _backend_of(storage_cls: type[object]) -> StorageBackend:
     """Return the wired backend on a ``@storage`` class.
 
     ``Store`` classes keep their backend on a class-level

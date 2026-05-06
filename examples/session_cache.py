@@ -119,4 +119,4 @@ async def list_sessions_route() -> dict:
 
 app.mount_asgi(api, attribute="api")
 
-__all__ = ["app", "api"]
+__all__ = ["api", "app"]

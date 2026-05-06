@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+import re
+from collections.abc import Callable
+from typing import Any
 
 from skaal.errors import UnsatisfiableConstraints
 from skaal.solver.targets import is_serverless, resolve_family
@@ -30,57 +32,109 @@ def _enum_value(v: Any) -> str:
 ConstraintChecker = Callable[[Any, dict[str, Any]], bool]
 
 
+def _string_options(spec: dict[str, Any], key: str, default: list[str]) -> list[str]:
+    value = spec.get(key)
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    return default
+
+
+def _numeric_bound(spec: dict[str, Any], key: str, *, default: float) -> float:
+    value = spec.get(key)
+    if isinstance(value, dict):
+        maximum = value.get("max")
+        if isinstance(maximum, int | float):
+            return float(maximum)
+    return default
+
+
+def _numeric_value(spec: dict[str, Any], key: str, *, default: float) -> float:
+    value = spec.get(key)
+    if isinstance(value, int | float):
+        return float(value)
+    return default
+
+
+def _constraint_number(value: Any, *, attr: str | None = None) -> float | None:
+    candidate = getattr(value, attr, value) if attr is not None else value
+    if isinstance(candidate, int | float):
+        return float(candidate)
+    if isinstance(candidate, str):
+        match = re.fullmatch(r"\s*([\d.]+)\s*(gb)?\s*", candidate.lower())
+        if match is not None:
+            return float(match.group(1))
+    return None
+
+
 def _check_access_pattern(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("access_patterns", [])
+    return _enum_value(value) in _string_options(spec, "access_patterns", [])
 
 
 def _check_kind(value: Any, spec: dict[str, Any]) -> bool:
-    supported = spec.get("storage_kinds", ["kv"])
+    supported = _string_options(spec, "storage_kinds", ["kv"])
     return _enum_value(value) in supported
 
 
 def _check_durability(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("durability", [])
+    return _enum_value(value) in _string_options(spec, "durability", [])
 
 
 def _check_read_latency(value: Any, spec: dict[str, Any]) -> bool:
-    if value.op not in ("<", "<="):
+    if getattr(value, "op", None) not in ("<", "<="):
         return True  # only enforce upper-bound constraints
-    return spec.get("read_latency", {}).get("max", float("inf")) <= value.ms
+    max_latency = _constraint_number(value, attr="ms")
+    if max_latency is None:
+        return False
+    return _numeric_bound(spec, "read_latency", default=float("inf")) <= max_latency
 
 
 def _check_write_latency(value: Any, spec: dict[str, Any]) -> bool:
-    if value.op not in ("<", "<="):
+    if getattr(value, "op", None) not in ("<", "<="):
         return True
-    return spec.get("write_latency", {}).get("max", float("inf")) <= value.ms
+    max_latency = _constraint_number(value, attr="ms")
+    if max_latency is None:
+        return False
+    return _numeric_bound(spec, "write_latency", default=float("inf")) <= max_latency
 
 
 def _check_write_throughput(value: Any, spec: dict[str, Any]) -> bool:
-    return spec.get("write_throughput", {}).get("max", 0) >= value
+    required = _constraint_number(value, attr="value")
+    if required is None:
+        required = _constraint_number(value)
+    if required is None:
+        return False
+    return _numeric_bound(spec, "write_throughput", default=0.0) >= required
 
 
 def _check_size_hint(value: Any, spec: dict[str, Any]) -> bool:
-    max_size = spec.get("max_size_gb", 0)
-    return max_size == 0 or max_size >= value  # 0 means unlimited
+    max_size = _numeric_value(spec, "max_size_gb", default=0.0)
+    requested_size = _constraint_number(value)
+    if requested_size is None:
+        return False
+    return max_size == 0 or max_size >= requested_size  # 0 means unlimited
 
 
 def _check_consistency(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("consistency", [])
+    return _enum_value(value) in _string_options(spec, "consistency", [])
 
 
 def _check_residency(value: Any, spec: dict[str, Any]) -> bool:
-    return _enum_value(value) in spec.get("residency", [])
+    return _enum_value(value) in _string_options(spec, "residency", [])
 
 
 def _check_retention(value: Any, spec: dict[str, Any]) -> bool:
-    if value is None or getattr(value, "policy", None) != "expire":
+    policy = getattr(value, "policy", None)
+    if value is None or policy != "expire":
         return True
-    if not spec.get("supports_ttl", False):
+    supports_ttl = spec.get("supports_ttl", False)
+    if not isinstance(supports_ttl, bool) or not supports_ttl:
         return False
     duration = getattr(value, "duration", None)
     seconds = getattr(duration, "seconds", None)
-    cap = spec.get("max_ttl_seconds")
-    return seconds is None or cap is None or seconds <= cap
+    ttl_seconds = float(seconds) if isinstance(seconds, int | float) else None
+    cap_value = spec.get("max_ttl_seconds")
+    cap = float(cap_value) if isinstance(cap_value, int | float) else None
+    return ttl_seconds is None or cap is None or ttl_seconds <= cap
 
 
 _CONSTRAINT_CHECKERS: dict[str, ConstraintChecker] = {

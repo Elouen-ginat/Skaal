@@ -115,7 +115,7 @@ class RedisStreamChannel:
         start_id = "0" if from_beginning else "$"
         try:
             await self._client.xgroup_create(key, group, id=start_id, mkstream=True)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # BUSYGROUP = group already exists — safe to ignore.
             if "BUSYGROUP" not in str(exc):
                 raise

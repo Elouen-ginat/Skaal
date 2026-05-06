@@ -88,6 +88,8 @@ nav:
   - Guides:
       - How It Works: how-it-works.md
       - Platform Features: platform-features.md
+      - Comparison: comparison.md
+      - FAQ: faq.md
       - Examples: examples.md
       - CLI: cli.md
       - CLI Configuration: cli-configuration.md
@@ -108,19 +110,38 @@ nav:
       - Constraint Model: design/001-infrastructure-as-constraints.md
 
 extra:
-  homepage: https://github.com/Elouen-ginat/Skaal
+  homepage: https://elouen-ginat.github.io/Skaal/
   header_links:
+    - label: Get Started
+      link: getting-started/
     - label: Tutorials
       link: tutorials/
+    - label: How It Works
+      link: how-it-works/
     - label: CLI
       link: cli/
-    - label: CLI Config
-      link: cli-configuration/
     - label: Python API
       link: reference/python-api/
+    - label: Comparison
+      link: comparison/
+    - label: FAQ
+      link: faq/
+  footer_links:
+    - label: Get Started
+      link: getting-started/
+    - label: How It Works
+      link: how-it-works/
+    - label: Catalogs
+      link: catalogs/
     - label: Examples
       link: examples/
-  footer_links:
+    - label: Comparison
+      link: comparison/
+    - label: FAQ
+      link: faq/
+    - label: GitHub
+      link: https://github.com/Elouen-ginat/Skaal
+      external: true
     - label: Pulumi
       link: https://www.pulumi.com/docs/
       external: true
@@ -138,9 +159,6 @@ extra:
       external: true
     - label: Z3
       link: https://z3prover.github.io/api/html/
-      external: true
-    - label: GitHub
-      link: https://github.com/Elouen-ginat/Skaal
       external: true
 
 copyright: Copyright &copy; 2026 Skaal contributors
