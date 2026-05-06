@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import platform
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -172,7 +174,9 @@ def test_local_dev_artifacts_bundle_linux_mesh_wheel_when_available(tmp_path: Pa
 
     wheels_dir = tmp_path / "target" / "wheels"
     wheels_dir.mkdir(parents=True)
-    wheel_name = "skaal_mesh-0.3.2-cp311-cp311-manylinux2014_x86_64.whl"
+    py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    arch = "aarch64" if platform.machine().lower() in {"arm64", "aarch64"} else "x86_64"
+    wheel_name = f"skaal_mesh-0.3.2-{py_tag}-{py_tag}-manylinux2014_{arch}.whl"
     (wheels_dir / wheel_name).write_text("fake-wheel", encoding="utf-8")
 
     generate_local_artifacts(
