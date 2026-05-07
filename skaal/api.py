@@ -1,7 +1,7 @@
 """Skaal Python API.
 
 In-process equivalents of the ``skaal`` CLI commands. These functions accept
-either a live :class:`~skaal.app.App` instance or a ``"module:variable"``
+either a live `App` instance or a `"module:variable"`
 reference and return typed Python objects instead of printing to stdout.
 """
 
@@ -80,7 +80,7 @@ __all__ = [
 
 @dataclass(frozen=True)
 class PlanDiff:
-    """Structured diff between two :class:`~skaal.plan.PlanFile` instances."""
+    """Structured diff between two `PlanFile` instances."""
 
     old: PlanFile
     new: PlanFile
@@ -109,11 +109,11 @@ class MigrationInfo:
 
 @dataclass(frozen=True)
 class InfraStatus:
-    """Snapshot of the resources in a :class:`~skaal.plan.PlanFile`.
+    """Snapshot of the resources in a `PlanFile`.
 
-    Returned by :func:`infra_status`.  Includes the raw plan plus a map of any
+    Returned by `infra_status`. Includes the raw plan plus a map of any
     currently-active migrations, so callers do not have to re-query
-    :class:`~skaal.migrate.engine.MigrationEngine` themselves.
+    `MigrationEngine` themselves.
     """
 
     plan: PlanFile
@@ -180,10 +180,10 @@ def load_app(module_app: str) -> App:
 
 
 def resolve_app(ref: AppRef) -> App:
-    """Normalise an :data:`AppRef` to a live :class:`~skaal.app.App` instance.
+    """Normalize an `AppRef` to a live `App` instance.
 
-    Accepts either a ``"module:variable"`` string or an already-constructed
-    :class:`~skaal.app.App` / :class:`~skaal.module.Module`, and returns the
+    Accepts either a `"module:variable"` string or an already-constructed
+    `App` or `Module`, and returns the
     instance unchanged in the latter case.
     """
     from skaal.module import Module
@@ -199,9 +199,9 @@ def resolve_app(ref: AppRef) -> App:
 
 
 def _split_ref(ref: AppRef) -> tuple[str, str]:
-    """Return ``(source_module, app_var)`` for writing into a plan file.
+    """Return `(source_module, app_var)` for writing into a plan file.
 
-    When *ref* is an :class:`App` instance there is no module reference, so
+    When *ref* is an `App` instance there is no module reference, so
     both elements default to empty strings (the caller can fill them in later).
     """
     if isinstance(ref, str) and ":" in ref:
@@ -218,10 +218,9 @@ def catalog(
     *,
     target: str | None = None,
 ) -> Catalog:
-    """Load a catalog TOML and return a typed
-    :class:`~skaal.catalog.models.Catalog`.
+    """Load a catalog TOML and return a typed `Catalog`.
 
-    Equivalent to ``skaal catalog`` (without the pretty-printing — the return
+    Equivalent to `skaal catalog` without the pretty-printing. The return
     value can be introspected programmatically).
 
     Args:
@@ -257,18 +256,17 @@ def plan(
     compute it without touching disk.
 
     Args:
-        app:         Either a live :class:`~skaal.app.App` or a
-                     ``"module:variable"`` string.
-        target:      Deploy target (``"aws"``, ``"gcp"``, ``"local"``).  Falls
-                     back to the resolved ``SkaalSettings.target``.
+        app:         Either a live `App` or a `"module:variable"` string.
+        target:      Deploy target (`"aws"`, `"gcp"`, `"local"`). Falls
+                     back to the resolved `SkaalSettings.target`.
         catalog:     Path to the catalog TOML.  Falls back to
-                     ``SkaalSettings.catalog`` or the default search order
-                     implemented by :func:`skaal.catalog.loader.load_catalog`.
-        write:       If True (default) write ``plan.skaal.lock``.
+                     `SkaalSettings.catalog` or the default search order
+                     implemented by `skaal.catalog.loader.load_catalog`.
+        write:       If True, write `plan.skaal.lock`.
         output_path: Custom path for the written lock file.
 
     Returns:
-        The solved :class:`~skaal.plan.PlanFile`.
+        The solved `PlanFile`.
 
     Raises:
         FileNotFoundError: If the catalog cannot be found.
@@ -303,7 +301,7 @@ def plan(
 
 
 def _coerce_plan(value: PlanFile | Path | str | None) -> PlanFile:
-    """Return a :class:`PlanFile` from a plan object, a path, or the default."""
+    """Return a `PlanFile` from a plan object, a path, or the default."""
     if isinstance(value, PlanFile):
         return value
     path = Path(value) if value is not None else Path(PLAN_FILE_NAME)
@@ -325,8 +323,8 @@ def build(
 ) -> list[Path]:
     """Generate deployment artifacts from a solved plan.
 
-    Equivalent to ``skaal build``.  Reads ``plan.skaal.lock`` by default; pass
-    a :class:`~skaal.plan.PlanFile` or an explicit path to override.
+    Equivalent to `skaal build`. Reads `plan.skaal.lock` by default. Pass
+    a `PlanFile` or an explicit path to override.
 
     Args:
         plan:       The plan to build from.  Defaults to reading
@@ -526,11 +524,11 @@ def _run_hooks(
     cwd: Path,
     extra_env: dict[str, str] | None = None,
 ) -> None:
-    """Run each argv in *commands* sequentially with :mod:`subprocess`.
+    """Run each argv in *commands* sequentially with `subprocess`.
 
-    Raises :class:`subprocess.CalledProcessError` on the first failure so a
+    Raises `subprocess.CalledProcessError` on the first failure so a
     failing pre-deploy hook aborts the deploy before it touches Pulumi, and a
-    failing post-deploy hook surfaces as a non-zero exit from ``skaal deploy``.
+    failing post-deploy hook surfaces as a non-zero exit from `skaal deploy`.
     """
     import os
     import subprocess
@@ -597,13 +595,12 @@ def build_runtime(
 ) -> Any:
     """Construct a runtime for *app*.
 
-    Returns a :class:`~skaal.runtime.local.LocalRuntime` by default, or a
-    :class:`~skaal.runtime.mesh_runtime.MeshRuntime` when *distributed* is
-    ``True`` (requires ``skaal[mesh]``).
+    Returns a `LocalRuntime` by default, or a `MeshRuntime` when *distributed*
+    is `True` and the `skaal[mesh]` extra is installed.
 
-    Mirrors the options of :func:`run` but does not start the HTTP server,
+    Mirrors the options of `run` but does not start the HTTP server,
     so callers can attach middleware, inspect the backends dict, or invoke
-    ``serve()`` / ``shutdown()`` themselves.
+    `serve()` and `shutdown()` themselves.
     """
     skaal_app = resolve_app(app)
 
@@ -632,7 +629,7 @@ async def serve_async(
     distributed: bool = False,
     node_id: str = "node-0",
 ) -> None:
-    """Async variant of :func:`run` — await inside an existing event loop."""
+    """Async variant of `run` for use inside an existing event loop."""
     runtime = build_runtime(
         app,
         host=host,
@@ -659,11 +656,11 @@ def run(
 ) -> None:
     """Run a Skaal app locally, blocking until the server is stopped.
 
-    Equivalent to ``skaal run``.  Starts a minimal asyncio HTTP server where
-    every ``@app.function()`` becomes a ``POST /{name}`` endpoint.
+    Equivalent to `skaal run`. Starts a minimal asyncio HTTP server where
+    every `@app.function()` becomes a `POST /{name}` endpoint.
 
-    Use :func:`serve_async` inside an already-running event loop, or
-    :func:`build_runtime` to construct a runtime without starting it.
+    Use `serve_async` inside an already-running event loop, or
+    `build_runtime` to construct a runtime without starting it.
     """
     try:
         asyncio.run(
@@ -756,7 +753,7 @@ def diff(
         catalog:  Catalog path to use when re-solving *app*.
 
     Returns:
-        A :class:`PlanDiff`.
+        A `PlanDiff`.
     """
     old = _coerce_plan(old_plan)
 

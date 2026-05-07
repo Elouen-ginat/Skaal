@@ -78,11 +78,11 @@ class ExternalComponent(ComponentBase):
     2. Injects connection info into the app runtime via the secret subsystem.
     3. Lets the solver account for their declared latency in co-location decisions.
 
-    Connection info is supplied via ``connection_string`` (literal, not recommended
-    for production) or ``secret`` (a typed :class:`~skaal.types.SecretRef` declaring
+    Connection info is supplied via `connection_string` (literal, not recommended
+    for production) or `secret` (a typed `SecretRef` declaring
     the provider that holds the DSN at deploy time).  The runtime / deploy
     layers consume the same secret declaration: AWS Secrets Manager, GCP Secret
-    Manager, or plain env injection — see :doc:`/secrets`.
+    Manager, or plain env injection.
     """
 
     def __init__(
@@ -150,7 +150,7 @@ class Proxy(ProvisionedComponent):
     based on the declared throughput/latency constraints and the ``@deploy``
     target, unless ``implementation`` is pinned.
 
-    Usage::
+    Examples:
 
         proxy = Proxy(
             "edge",
@@ -204,7 +204,7 @@ class APIGateway(ProvisionedComponent):
     The solver selects the implementation (Kong, AWS API Gateway, Traefik, …)
     based on constraints and deploy target.
 
-    Usage::
+    Examples:
 
         gw = APIGateway(
             "public-api",
@@ -284,7 +284,7 @@ class ExternalStorage(ExternalComponent):
     ``latency`` allows the solver to reason about co-location (e.g. keep a
     function on the same rack as the external DB).
 
-    Usage::
+    Examples:
 
         legacy_db = ExternalStorage(
             "legacy-postgres",
@@ -331,7 +331,7 @@ class ExternalQueue(ExternalComponent):
     """
     Reference to a pre-existing message broker or queue (Kafka, RabbitMQ, …).
 
-    Usage::
+    Examples:
 
         kafka = ExternalQueue(
             "company-kafka",
@@ -372,7 +372,7 @@ class ExternalObservability(ExternalComponent):
 
     The Skaal runtime emits metrics and traces to this endpoint when declared.
 
-    Usage::
+    Examples:
 
         prom = ExternalObservability(
             "prometheus",
@@ -411,10 +411,10 @@ class ScheduleTrigger(ProvisionedComponent):
     Maps to **AWS EventBridge** (rule + Lambda permission), **GCP Cloud
     Scheduler** (job → Cloud Run), or **APScheduler** for local development.
 
-    Created automatically by ``@app.schedule()``; attach manually only for
+    Created automatically by `@app.schedule()`; attach manually only for
     advanced configuration.
 
-    Usage (manual)::
+    Examples:
 
         trigger = ScheduleTrigger(
             "daily-report",
@@ -460,11 +460,11 @@ class AppRef(ExternalComponent):
     Reference to another deployed Skaal app.
 
     Calls functions on a remote Skaal app via HTTP/HTTPS POST using
-    ``httpx``.  The base URL is resolved from ``base_url`` (literal) or
-    ``base_url_secret`` (typed :class:`~skaal.types.SecretRef` whose env var
+    `httpx`. The base URL is resolved from `base_url` (literal) or
+    `base_url_secret` (typed `SecretRef` whose env var
     holds the URL at runtime).
 
-    Usage::
+    Examples:
 
         payments = AppRef("payments", base_url_secret=Secret("PAYMENTS_SERVICE_URL"))
         app.attach(payments)

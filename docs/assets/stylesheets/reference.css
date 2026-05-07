@@ -1,0 +1,1114 @@
+/* =============================================================================
+ * Skaal — Reference page styling
+ *
+ * Visual goal: docs/design_system mock referred to as "dx-*" classes. This
+ * file ports those visual rules onto the markup `mkdocstrings-python` actually
+ * emits, instead of authoring fresh HTML.
+ *
+ * Real selectors emitted by mkdocstrings:
+ *   - <div class="doc doc-object doc-class">      class panel
+ *   - <div class="doc doc-object doc-function">   function/method panel
+ *   - <div class="doc doc-object doc-module">     module panel
+ *   - <h2..h5 class="doc doc-heading">            heading row
+ *   - <code class="doc-symbol doc-symbol-heading doc-symbol-class">  type icon  ← three classes!
+ *   - <code class="doc-symbol doc-symbol-toc     doc-symbol-class">  TOC icon
+ *   - <div class="doc-signature highlight"><pre>…</pre></div>        signature block
+ *   - <div class="doc doc-contents">              description body
+ *   - <p class="doc doc-class-bases">             "Bases: X" line
+ *   - <p><span class="doc-section-title">Parameters:</span></p>      section title (Google style)
+ *   - <table>...<tr class="doc-section-item">                          parameter table
+ *   - <details class="mkdocstrings-source">                          collapsible source
+ *
+ *  IMPORTANT: `doc-symbol-class` etc. are SEPARATE classes, not one hyphenated
+ *  modifier. Selectors must use `.doc-symbol-heading.doc-symbol-class` and
+ *  not `.doc-symbol-heading-class` (which matches nothing).
+ * ========================================================================== */
+
+/* =============================================================================
+ * Tokens (local to reference pages — mock palette)
+ * ========================================================================== */
+:root {
+  /* Pill backgrounds + foregrounds for symbol-kind badges in headings. */
+  --sk-ref-pill-class-bg:      rgba(95, 168, 255, 0.14);
+  --sk-ref-pill-class-fg:      #2c7fd6;
+  --sk-ref-pill-method-bg:     rgba(167, 180, 194, 0.22);
+  --sk-ref-pill-method-fg:     #4a5566;
+  --sk-ref-pill-function-bg:   rgba(19, 181, 168, 0.14);
+  --sk-ref-pill-function-fg:   #0f8e84;
+  --sk-ref-pill-module-bg:     rgba(201, 106, 61, 0.14);
+  --sk-ref-pill-module-fg:     #b05a30;
+  --sk-ref-pill-attribute-bg:  rgba(154, 230, 110, 0.20);
+  --sk-ref-pill-attribute-fg:  #4f7d20;
+
+  /* Pygments token colors used in dark code blocks. */
+  --sk-pyg-keyword:    #5fa8ff;
+  --sk-pyg-builtin:    #f0c674;
+  --sk-pyg-class-name: #f0c674;
+  --sk-pyg-function:   #ffffff;
+  --sk-pyg-decorator:  #13b5a8;
+  --sk-pyg-string:     #9ae66e;
+  --sk-pyg-number:     #f0c674;
+  --sk-pyg-comment:    rgba(245, 251, 255, 0.45);
+  --sk-pyg-operator:   rgba(245, 251, 255, 0.55);
+  --sk-pyg-punct:      rgba(245, 251, 255, 0.65);
+  --sk-pyg-fg:         #e5f3f7;
+}
+
+/* =============================================================================
+ * 1) Class / function / module panel — port of `.dx-api`
+ *
+ * The outermost mkdocstrings wrapper for a class is `<div class="doc doc-object
+ * doc-class">`. Wrap it in a card that matches the mock's main API panel.
+ * ========================================================================== */
+.md-typeset .doc.doc-object.doc-class,
+.md-typeset .doc.doc-object.doc-function,
+.md-typeset .doc.doc-object.doc-attribute {
+  margin: 1rem 0 2.25rem;
+  padding: 0;                                     /* head/body have their own */
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+/* HEAD zone — heading row sits in the top section with a soft gradient and a
+   trailing rule that visually separates it from the body. Mirrors mock's
+   `.dx-api__head` (padding: 22px 24px 14px; background: linear-gradient...). */
+.md-typeset .doc.doc-object.doc-class > .doc-heading,
+.md-typeset .doc.doc-object.doc-function > .doc-heading,
+.md-typeset .doc.doc-object.doc-attribute > .doc-heading {
+  margin: 0;
+  padding: 1.4rem 1.5rem 0.9rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0) 100%);
+  border-bottom: 1px solid var(--border-1);
+}
+
+/* BODY zone — every direct child after the heading wears the body padding.
+   `.doc-signature`, `.doc-contents`, `.doc-children` are the three things
+   mkdocstrings can place there. */
+.md-typeset .doc.doc-object.doc-class > .doc-signature,
+.md-typeset .doc.doc-object.doc-function > .doc-signature,
+.md-typeset .doc.doc-object.doc-attribute > .doc-signature {
+  margin: 1.7rem 1.5rem 0.5rem;
+}
+
+.md-typeset .doc.doc-object.doc-class > .doc-contents,
+.md-typeset .doc.doc-object.doc-function > .doc-contents,
+.md-typeset .doc.doc-object.doc-attribute > .doc-contents {
+  padding: 1.1rem 1.5rem 0.6rem;
+}
+
+.md-typeset .doc.doc-object.doc-class > .doc-children,
+.md-typeset .doc.doc-object.doc-function > .doc-children {
+  padding: 0 1.5rem 1.4rem;
+}
+
+/* When the panel ends with .doc-contents (no children), give it the bottom
+   body padding so the panel doesn't look truncated. */
+.md-typeset .doc.doc-object.doc-class > .doc-contents:last-child,
+.md-typeset .doc.doc-object.doc-function > .doc-contents:last-child,
+.md-typeset .doc.doc-object.doc-attribute > .doc-contents:last-child {
+  padding-bottom: 1.4rem;
+}
+
+/* Modules host nested classes/functions, so a card around the module would
+   nest cards. Keep modules flat — only their CHILDREN wear panel chrome. */
+.md-typeset .doc.doc-object.doc-module {
+  margin: 1.5rem 0 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Module-level heading (e.g. `skaal.app`) — keep flat, no head-zone gradient,
+   no border-bottom (it's just the section title). */
+.md-typeset .doc.doc-object.doc-module > .doc-heading {
+  margin: 1.5rem 0 0.8rem;
+  padding: 0 0 0.5rem;
+  background: transparent;
+  border-bottom: 1px solid var(--border-1);
+}
+
+/* Children of a class (its methods) should not each render their own card,
+   because the class itself is already a card. Strip the panel from
+   doc-children > doc-function and lay them out as flat dashed-separated
+   members within the body padding zone. */
+.md-typeset .doc.doc-class > .doc-children .doc.doc-object.doc-function,
+.md-typeset .doc.doc-class > .doc-children .doc.doc-object.doc-attribute {
+  margin: 0.6rem 0 1rem;
+  padding: 1rem 0 0;
+  border: 0;
+  border-top: 1px dashed var(--border-1);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Strip the head-zone padding from member functions — they live in the body
+   zone of their parent class panel and shouldn't double up. */
+.md-typeset .doc.doc-class > .doc-children .doc.doc-object > .doc-heading {
+  padding: 0 0 0.45rem;
+  background: transparent;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.md-typeset .doc.doc-class > .doc-children .doc.doc-object > .doc-signature,
+.md-typeset .doc.doc-class > .doc-children .doc.doc-object > .doc-contents {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.md-typeset .doc.doc-class > .doc-children > :first-child.doc.doc-object {
+  border-top: 0;
+  padding-top: 0.4rem;
+}
+
+/* =============================================================================
+ * 2) Heading row — name on the left, kind pill on the right
+ *
+ * mkdocstrings emits:
+ *   <h3 class="doc doc-heading">
+ *     <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>
+ *     <span class="doc doc-object-name doc-class-name">App</span>
+ *     <a class="headerlink">¶</a>
+ *   </h3>
+ *
+ * Make the heading a flex row, push the symbol pill to the right, and use a
+ * ::before to fill it with a readable label ("Class", "Method", …).
+ * Parameter sub-headings (h5.doc-heading-parameter) must be excluded.
+ * ========================================================================== */
+
+.md-typeset .doc.doc-heading:not(.doc-heading-parameter) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.6rem;
+  padding: 0 0 0.5rem;
+  border-bottom: 1px solid var(--border-1);
+  font-family: var(--font-mono);
+}
+
+/* Object name takes the available space. */
+.md-typeset .doc.doc-heading:not(.doc-heading-parameter) > .doc-object-name {
+  flex: 1 1 auto;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.005em;
+  color: var(--fg-1);
+}
+
+/* The kind icon — convert from a tiny single-letter pill into a text badge.
+   These ::before/::after resets neutralise mkdocstrings' default content. */
+.md-typeset .doc.doc-heading > .doc-symbol-heading {
+  order: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 3.2rem;
+  height: 1.45rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: var(--sk-ref-pill-method-bg);
+  color: var(--sk-ref-pill-method-fg);
+  font: 700 0.66rem/1 var(--font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading::before,
+.md-typeset .doc.doc-heading > .doc-symbol-heading::after {
+  content: "" !important;
+  background: none !important;
+}
+
+/* Per-kind label + color. Note the COMPOUND selector — both classes must match
+   on the same element. This is what was wrong before. */
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-class {
+  background: var(--sk-ref-pill-class-bg);
+  color: var(--sk-ref-pill-class-fg);
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-class::before {
+  content: "Class" !important;
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-method {
+  background: var(--sk-ref-pill-method-bg);
+  color: var(--sk-ref-pill-method-fg);
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-method::before {
+  content: "Method" !important;
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-function {
+  background: var(--sk-ref-pill-function-bg);
+  color: var(--sk-ref-pill-function-fg);
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-function::before {
+  content: "Function" !important;
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-module {
+  background: var(--sk-ref-pill-module-bg);
+  color: var(--sk-ref-pill-module-fg);
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-module::before {
+  content: "Module" !important;
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-attribute {
+  background: var(--sk-ref-pill-attribute-bg);
+  color: var(--sk-ref-pill-attribute-fg);
+}
+
+.md-typeset .doc.doc-heading > .doc-symbol-heading.doc-symbol-attribute::before {
+  content: "Attribute" !important;
+}
+
+/* Permalink "¶" — push to far right, fade unless the heading is hovered. */
+.md-typeset .doc.doc-heading:not(.doc-heading-parameter) > .headerlink {
+  order: 3;
+  margin-left: 0;
+  opacity: 0;
+  color: var(--fg-3);
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.md-typeset .doc.doc-heading:not(.doc-heading-parameter):hover > .headerlink {
+  opacity: 0.7;
+}
+
+/* =============================================================================
+ * 3) Parameter sub-heading — flatten so the parameter table stays clean.
+ * ========================================================================== */
+.md-typeset h5.doc-heading-parameter {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: 700 0.86rem var(--font-mono);
+  color: var(--fg-1);
+}
+
+.md-typeset h5.doc-heading-parameter > code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-weight: inherit;
+}
+
+.md-typeset h5.doc-heading-parameter > .headerlink {
+  display: none;
+}
+
+/* =============================================================================
+ * 4) "Bases:" line that mkdocstrings emits beneath a class heading
+ * ========================================================================== */
+.md-typeset .doc-class-bases {
+  margin: 0.2rem 0 0.9rem;
+  font: 500 0.84rem var(--font-body);
+  color: var(--fg-3);
+}
+
+.md-typeset .doc-class-bases code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--skaal-color-signal-teal);
+  font-weight: 600;
+}
+
+/* =============================================================================
+ * 5) Signature block — dark window with a "PYTHON" header strip
+ *
+ * Eyebrow "SIGNATURE" sits ABOVE the dark window via ::before, then ::after
+ * draws the inline header strip on top of the code. This avoids any markup
+ * change to the mkdocstrings output.
+ * ========================================================================== */
+.md-typeset .doc-signature {
+  position: relative;
+  margin: 1.7rem 0 1.4rem;
+  border: 1px solid rgba(14, 23, 38, 0.08);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-code-2) 0%, var(--bg-code) 100%);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* Eyebrow above the block (outside the dark window). */
+.md-typeset .doc-signature::before {
+  content: "SIGNATURE";
+  position: absolute;
+  top: -1.25rem;
+  left: 0;
+  font: 700 0.7rem/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  color: var(--skaal-color-signal-teal);
+}
+
+/* "PYTHON" tag at the top of the dark window. */
+.md-typeset .doc-signature::after {
+  content: "PYTHON";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 2rem;
+  padding: 0 0.95rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--fg-on-dark-3);
+  font: 700 0.66rem/1 var(--font-body);
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+
+.md-typeset .doc-signature pre {
+  margin: 0;
+  padding: 2.65rem 1.05rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+}
+
+.md-typeset .doc-signature code {
+  background: transparent;
+  color: var(--sk-pyg-fg);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+/* =============================================================================
+ * 6) Code blocks inside docstrings — make them dark too (mock requirement)
+ *
+ * Docstring examples become `<div class="highlight"><pre>…</pre></div>` inside
+ * `.doc-contents`. The site-wide `.md-typeset .highlight` rule in extra.css
+ * paints them light; we override JUST inside .doc-contents to use the dark
+ * window, so prose pages outside reference docs stay light.
+ * ========================================================================== */
+.md-typeset .doc-contents .highlight {
+  border: 1px solid rgba(14, 23, 38, 0.08);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-code-2) 0%, var(--bg-code) 100%);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+  margin: 0.8rem 0;
+}
+
+.md-typeset .doc-contents .highlight pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.md-typeset .doc-contents .highlight code {
+  background: transparent;
+  color: var(--sk-pyg-fg);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+/* Material's copy-button overlay needs to read on dark. */
+.md-typeset .doc-contents .highlight .md-code__button,
+.md-typeset .doc-signature .md-code__button {
+  color: var(--fg-on-dark-3);
+  opacity: 1;
+}
+
+.md-typeset .doc-contents .highlight .md-code__button:hover,
+.md-typeset .doc-signature .md-code__button:hover {
+  color: #fff;
+}
+
+.md-typeset .doc-contents .highlight .md-code__nav,
+.md-typeset .doc-signature .md-code__nav {
+  background: transparent;
+}
+
+/* =============================================================================
+ * 7) Pygments dark theme — applied ONLY inside dark code surfaces
+ *    (i.e. `.doc-signature` and `.doc-contents .highlight`), so prose code
+ *    blocks elsewhere on the site keep their existing light theme.
+ * ========================================================================== */
+
+/* Keywords: class, def, return, import, from, if, for, async, await, … */
+.md-typeset .doc-signature .k,
+.md-typeset .doc-signature .kn,
+.md-typeset .doc-signature .kd,
+.md-typeset .doc-signature .kc,
+.md-typeset .doc-signature .kr,
+.md-typeset .doc-signature .ow,
+.md-typeset .doc-contents .highlight .k,
+.md-typeset .doc-contents .highlight .kn,
+.md-typeset .doc-contents .highlight .kd,
+.md-typeset .doc-contents .highlight .kc,
+.md-typeset .doc-contents .highlight .kr,
+.md-typeset .doc-contents .highlight .ow {
+  color: var(--sk-pyg-keyword);
+}
+
+/* Builtin types (str, int, dict, list, …) and class names in declarations. */
+.md-typeset .doc-signature .nb,
+.md-typeset .doc-signature .nc,
+.md-typeset .doc-contents .highlight .nb,
+.md-typeset .doc-contents .highlight .nc {
+  color: var(--sk-pyg-class-name);
+}
+
+/* Function/method names in `def NAME(...)` and `class NAME(...)`. */
+.md-typeset .doc-signature .nf,
+.md-typeset .doc-contents .highlight .nf {
+  color: var(--sk-pyg-function);
+}
+
+/* Decorators (@storage, @app.function). */
+.md-typeset .doc-signature .nd,
+.md-typeset .doc-contents .highlight .nd {
+  color: var(--sk-pyg-decorator);
+}
+
+/* Strings. */
+.md-typeset .doc-signature .s,
+.md-typeset .doc-signature .s1,
+.md-typeset .doc-signature .s2,
+.md-typeset .doc-signature .sd,
+.md-typeset .doc-signature .se,
+.md-typeset .doc-signature .sb,
+.md-typeset .doc-signature .sh,
+.md-typeset .doc-contents .highlight .s,
+.md-typeset .doc-contents .highlight .s1,
+.md-typeset .doc-contents .highlight .s2,
+.md-typeset .doc-contents .highlight .sd,
+.md-typeset .doc-contents .highlight .se,
+.md-typeset .doc-contents .highlight .sb,
+.md-typeset .doc-contents .highlight .sh {
+  color: var(--sk-pyg-string);
+}
+
+/* Numbers. */
+.md-typeset .doc-signature .m,
+.md-typeset .doc-signature .mi,
+.md-typeset .doc-signature .mf,
+.md-typeset .doc-signature .mh,
+.md-typeset .doc-signature .mo,
+.md-typeset .doc-contents .highlight .m,
+.md-typeset .doc-contents .highlight .mi,
+.md-typeset .doc-contents .highlight .mf,
+.md-typeset .doc-contents .highlight .mh,
+.md-typeset .doc-contents .highlight .mo {
+  color: var(--sk-pyg-number);
+}
+
+/* Comments. */
+.md-typeset .doc-signature .c,
+.md-typeset .doc-signature .c1,
+.md-typeset .doc-signature .cm,
+.md-typeset .doc-signature .ch,
+.md-typeset .doc-signature .cs,
+.md-typeset .doc-contents .highlight .c,
+.md-typeset .doc-contents .highlight .c1,
+.md-typeset .doc-contents .highlight .cm,
+.md-typeset .doc-contents .highlight .ch,
+.md-typeset .doc-contents .highlight .cs {
+  color: var(--sk-pyg-comment);
+  font-style: italic;
+}
+
+/* Punctuation, operators, generic names. */
+.md-typeset .doc-signature .p,
+.md-typeset .doc-contents .highlight .p {
+  color: var(--sk-pyg-punct);
+}
+
+.md-typeset .doc-signature .o,
+.md-typeset .doc-contents .highlight .o {
+  color: var(--sk-pyg-operator);
+}
+
+.md-typeset .doc-signature .n,
+.md-typeset .doc-signature .na,
+.md-typeset .doc-signature .nv,
+.md-typeset .doc-contents .highlight .n,
+.md-typeset .doc-contents .highlight .na,
+.md-typeset .doc-contents .highlight .nv {
+  color: var(--sk-pyg-fg);
+}
+
+/* `self`, `cls` — slightly faded to read as bound-receiver hints. */
+.md-typeset .doc-signature .bp,
+.md-typeset .doc-contents .highlight .bp {
+  color: var(--sk-pyg-operator);
+  font-style: italic;
+}
+
+/* Generic prompts/output (used in shell snippets). */
+.md-typeset .doc-contents .highlight .go,
+.md-typeset .doc-contents .highlight .gp {
+  color: var(--fg-on-dark-3);
+}
+
+/* =============================================================================
+ * 8) Section title eyebrows — "PARAMETERS:", "RETURNS:", "RAISES:" inserted
+ *    by mkdocstrings as `<p><span class="doc-section-title">…</span></p>`.
+ * ========================================================================== */
+.md-typeset .doc-contents .doc-section-title {
+  display: inline-block;
+  margin: 1.6rem 0 0.3rem;
+  font: 700 0.7rem/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .doc-contents p:has(> .doc-section-title) {
+  margin-bottom: 0.3rem;
+}
+
+/* =============================================================================
+ * 9) Parameters / Returns / Raises tables — port `.dx-params`
+ *
+ * Anchor on `tr.doc-section-item` so prose tables on the same page (e.g. on
+ * the index reference page) stay untouched.
+ * ========================================================================== */
+.md-typeset table:has(tr.doc-section-item) {
+  display: table;
+  width: 100%;
+  margin: 0.2rem 0 1.4rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: none;
+}
+
+.md-typeset table:has(tr.doc-section-item) th {
+  padding: 0.65rem 0.95rem;
+  background: rgba(246, 251, 249, 0.85);
+  border-bottom: 1px solid var(--border-1);
+  color: var(--fg-3);
+  font: 700 0.66rem/1 var(--font-body);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.md-typeset table:has(tr.doc-section-item) td {
+  padding: 0.85rem 0.95rem;
+  border-bottom: 1px solid var(--border-1);
+  vertical-align: top;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.md-typeset table:has(tr.doc-section-item) tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Name column — bold mono, no wrap. */
+.md-typeset table:has(tr.doc-section-item) td:first-child {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--fg-1);
+}
+
+/* Type column — mkdocstrings wraps types in <code>; restyle to a dark-text
+   pill-less inline that doesn't compete with the row chrome. */
+.md-typeset table:has(tr.doc-section-item) td:nth-child(2) > code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--sk-ref-pill-class-fg);
+  font-weight: 500;
+}
+
+/* Description column. */
+.md-typeset table:has(tr.doc-section-item) .doc-md-description p {
+  margin: 0;
+}
+
+.md-typeset table:has(tr.doc-section-item) .doc-md-description p + p {
+  margin-top: 0.4rem;
+}
+
+/* Default cell — stylize <code> defaults; promote <em>required</em> to a pill. */
+.md-typeset table:has(tr.doc-section-item) td:last-child > code {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border-1);
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  color: var(--fg-2);
+}
+
+.md-typeset table:has(tr.doc-section-item) td > em:only-child {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.55rem;
+  border-radius: 0.4rem;
+  background: rgba(201, 106, 61, 0.10);
+  border: 1px solid rgba(201, 106, 61, 0.22);
+  color: var(--skaal-color-rust-copper);
+  font: 700 0.62rem/1.4 var(--font-body);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  font-style: normal;
+}
+
+/* =============================================================================
+ * 10) Source-code collapse — port a quieter version of the mock's source link
+ * ========================================================================== */
+.md-typeset details.mkdocstrings-source {
+  margin: 1rem 0 0.4rem;
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+}
+
+.md-typeset details.mkdocstrings-source > summary {
+  padding: 0.55rem 0.9rem;
+  font: 600 0.78rem var(--font-body);
+  color: var(--fg-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.md-typeset details.mkdocstrings-source > summary::-webkit-details-marker {
+  display: none;
+}
+
+.md-typeset details.mkdocstrings-source > summary::before {
+  content: "{ }";
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: var(--skaal-color-signal-teal);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.md-typeset details.mkdocstrings-source[open] > summary::before {
+  content: "{ }";
+}
+
+.md-typeset details.mkdocstrings-source > summary code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fg-1);
+  font-weight: 700;
+}
+
+/* When opened, the embedded line-numbered table is busy and light by default;
+   match the dark window treatment for visual consistency. */
+.md-typeset details.mkdocstrings-source[open] {
+  background: linear-gradient(180deg, var(--bg-code-2) 0%, var(--bg-code) 100%);
+  border-color: rgba(14, 23, 38, 0.12);
+}
+
+.md-typeset details.mkdocstrings-source[open] > summary {
+  color: var(--fg-on-dark-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.md-typeset details.mkdocstrings-source[open] > summary code {
+  color: var(--fg-on-dark-1);
+}
+
+.md-typeset details.mkdocstrings-source .highlighttable,
+.md-typeset details.mkdocstrings-source .highlighttable td,
+.md-typeset details.mkdocstrings-source .highlight {
+  background: transparent !important;
+  border: 0;
+  box-shadow: none;
+}
+
+.md-typeset details.mkdocstrings-source .highlighttable .linenos {
+  color: rgba(245, 251, 255, 0.30);
+  background: transparent;
+}
+
+.md-typeset details.mkdocstrings-source .highlighttable code {
+  background: transparent;
+  color: var(--sk-pyg-fg);
+}
+
+/* Apply Pygments dark theme inside the open source view too. */
+.md-typeset details.mkdocstrings-source[open] .k,
+.md-typeset details.mkdocstrings-source[open] .kn,
+.md-typeset details.mkdocstrings-source[open] .kd,
+.md-typeset details.mkdocstrings-source[open] .kc {
+  color: var(--sk-pyg-keyword);
+}
+
+.md-typeset details.mkdocstrings-source[open] .nb,
+.md-typeset details.mkdocstrings-source[open] .nc {
+  color: var(--sk-pyg-class-name);
+}
+
+.md-typeset details.mkdocstrings-source[open] .nf {
+  color: var(--sk-pyg-function);
+}
+
+.md-typeset details.mkdocstrings-source[open] .nd {
+  color: var(--sk-pyg-decorator);
+}
+
+.md-typeset details.mkdocstrings-source[open] .s,
+.md-typeset details.mkdocstrings-source[open] .s1,
+.md-typeset details.mkdocstrings-source[open] .s2,
+.md-typeset details.mkdocstrings-source[open] .sd {
+  color: var(--sk-pyg-string);
+}
+
+.md-typeset details.mkdocstrings-source[open] .c,
+.md-typeset details.mkdocstrings-source[open] .c1,
+.md-typeset details.mkdocstrings-source[open] .cm {
+  color: var(--sk-pyg-comment);
+  font-style: italic;
+}
+
+.md-typeset details.mkdocstrings-source[open] .p {
+  color: var(--sk-pyg-punct);
+}
+
+.md-typeset details.mkdocstrings-source[open] .o {
+  color: var(--sk-pyg-operator);
+}
+
+.md-typeset details.mkdocstrings-source[open] .n {
+  color: var(--sk-pyg-fg);
+}
+
+/* =============================================================================
+ * 11) Right sidebar (`md-sidebar--secondary`) — clean "On this page" TOC
+ *
+ * The default mkdocstrings TOC includes type-text icons (mod / class / meth /
+ * param) which clutter the page TOC. Hide them; restyle the TOC to look like
+ * the mock's `.dx-toc`.
+ * ========================================================================== */
+.md-sidebar--secondary .doc-symbol-toc {
+  display: none !important;
+}
+
+.md-sidebar--secondary .md-nav__title {
+  font: 700 0.66rem/1 var(--font-body);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.md-sidebar--secondary .md-nav__list {
+  gap: 0.15rem;
+}
+
+.md-sidebar--secondary .md-nav__item > .md-nav__link {
+  padding: 0.2rem;
+  margin-left: -0.7rem;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-3);
+  transition: color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard);
+}
+
+.md-sidebar--secondary .md-nav__item > .md-nav__link:hover {
+  background: transparent;
+  border-left-color: rgba(19, 181, 168, 0.4);
+  color: var(--skaal-color-signal-teal);
+  transform: none;
+}
+
+.md-sidebar--secondary .md-nav__item .md-nav__link--active,
+.md-sidebar--secondary .md-nav__item .md-nav__link[aria-current="page"] {
+  background: transparent;
+  border-left-color: var(--skaal-color-signal-teal);
+  color: var(--fg-1);
+  font-weight: 600;
+}
+
+.md-sidebar {
+  padding: 0 !important;
+}
+
+/* =============================================================================
+ * 12) Hand-authored hero (`.sk-ref-hero`) — top-of-page block, copy from a
+ *     reference page's markdown via inline HTML.
+ * ========================================================================== */
+
+.md-typeset .sk-ref-hero {
+  position: relative;
+  margin: 0 0 2rem;
+  padding-bottom: 1.8rem;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.md-typeset .sk-ref-hero__breadcrumbs {
+  margin: 0 0 0.85rem;
+  font: 500 0.78rem var(--font-mono);
+  color: var(--fg-3);
+}
+
+.md-typeset .sk-ref-hero__breadcrumbs a {
+  color: var(--fg-3);
+  text-decoration: none;
+}
+
+.md-typeset .sk-ref-hero__breadcrumbs a:hover {
+  color: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .sk-ref-hero__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.95rem;
+  padding: 0.32rem 0.75rem;
+  border: 1px solid rgba(19, 181, 168, 0.20);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--fg-1);
+  font: 700 0.7rem/1 var(--font-body);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+.md-typeset .sk-ref-hero__kicker-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .sk-ref-hero__title {
+  margin: 0 0 0.7rem;
+  font: 700 clamp(2rem, 3.6vw, 2.9rem) var(--font-heading);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.md-typeset .sk-ref-hero__title em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--skaal-color-signal-teal) 0%, var(--skaal-color-cloud-blue) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.md-typeset .sk-ref-hero__lead {
+  max-width: 60ch;
+  margin: 0 0 1.1rem;
+  color: var(--fg-2);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.md-typeset .sk-ref-hero__pills {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.md-typeset .sk-ref-hero__pills li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  font: 500 0.78rem var(--font-mono);
+  color: var(--fg-2);
+}
+
+.md-typeset .sk-ref-hero__pills li b {
+  font-weight: 500;
+  color: var(--fg-3);
+}
+
+/* =============================================================================
+ * 13) Section eyebrow (`.dx-h2-row`) — hand-authored above each ## heading.
+ * Use pattern in markdown:
+ *   <div class="dx-h2-row"><span class="dx-h2-row__eyebrow">Entrypoint</span></div>
+ *   ## App
+ * ========================================================================== */
+.md-typeset .dx-h2-row {
+  margin: 2.4rem 0 0;
+}
+
+.md-typeset .dx-h2-row__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font: 700 0.7rem/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .dx-h2-row__eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 1.2rem;
+  height: 1px;
+  background: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .dx-h2-row + h2 {
+  margin-top: 0.4rem;
+}
+
+body .md-content article {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body .md-content article > h1:first-child {
+  margin-top: 0.2rem;
+  margin-bottom: 0.6rem;
+  font: 700 clamp(2rem, 3.6vw, 2.9rem) var(--font-heading);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+/* Increase the column gap to the mock's 36px-ish (extra.css uses a clamp that
+   tops out at ~42px). Just nudge the article so it breathes like .dx-article. */
+body .md-content {
+  padding: 0;
+}
+
+/* ---------- Left sidebar (page navigation) — mock `.dx-side` look ----------
+ *
+ * Mock width is 248px (`.dx-shell` grid-template-columns: 248px ...). The
+ * site default token is 11rem (176px) which feels cramped under a wider mock.
+ * Bump to 15.5rem (~248px) on reference pages.
+ */
+
+/* Group section titles ("REFERENCE", "GUIDES", ...) sit alongside a thin rule. */
+.md-sidebar--primary .md-nav__title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.65rem 0.5rem;
+  font: 700 0.62rem/1 var(--font-body);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.md-sidebar--primary .md-nav__title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-1);
+}
+
+/* Tighter row chrome: rounded rectangles, subtle hover, prominent active row. */
+.md-sidebar--primary .md-nav__list {
+  margin: 0.1rem 0;
+}
+
+.md-sidebar--primary .md-nav__item {
+  margin: 0;
+}
+
+.md-sidebar--primary .md-nav__item > .md-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.05rem 0;
+  padding: 0.3rem 0.3rem;
+  border: 0;
+  border-radius: 0px;
+  background: transparent;
+  color: var(--fg-2);
+  font: 200 0.84rem/1 var(--font-body);
+  transition: background var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+
+.md-sidebar--primary .md-nav__item > .md-nav__link:hover {
+  background: rgba(14, 23, 38, 0.045);
+  color: var(--fg-1);
+  transform: none;
+}
+
+.md-sidebar--primary .md-nav__item .md-nav__link--active,
+.md-sidebar--primary .md-nav__item .md-nav__link[aria-current="page"] {
+  background: rgba(19, 181, 168, 0.10);
+  color: #0f8e84;
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--skaal-color-signal-teal);
+}
+
+.md-sidebar--primary .md-nav__item .md-nav__link--active:hover,
+.md-sidebar--primary .md-nav__item .md-nav__link[aria-current="page"]:hover {
+  background: rgba(19, 181, 168, 0.14);
+  color: #0f8e84;
+}
+
+/* Nested levels (e.g. Reference > Python API > Overview) — slight indent
+   instead of the heavier left rule Material defaults to. */
+.md-sidebar--primary .md-nav__item .md-nav .md-nav__list {
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--border-1);
+  margin-left: 0.5rem;
+}
+
+.md-sidebar--primary .md-nav__item .md-nav .md-nav__link {
+  font-size: 0.8rem;
+  padding-left: 0.55rem;
+}
+
+/* =============================================================================
+ * 15) Responsive
+ * ========================================================================== */
+@media (max-width: 720px) {
+  .md-typeset .doc.doc-heading:not(.doc-heading-parameter) {
+    flex-wrap: wrap;
+  }
+
+  .md-typeset .doc-signature::before {
+    position: static;
+    display: block;
+    margin-bottom: 0.4rem;
+  }
+
+  .md-typeset .sk-ref-hero__title {
+    font: 700 clamp(1.7rem, 6vw, 2.2rem) var(--font-heading);
+  }
+}

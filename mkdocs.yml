@@ -35,11 +35,11 @@ plugins:
           paths:
             - .
           options:
-            docstring_style: sphinx
+            docstring_style: google
             inherited_members: true
             merge_init_into_class: true
             members_order: source
-            parameter_headings: true
+            parameter_headings: false
             separate_signature: true
             show_root_heading: true
             show_root_toc_entry: false
@@ -74,6 +74,7 @@ extra_css:
   - design_system/tokens/skaal-tokens.css
   - design_system/styles/landing.css
   - assets/stylesheets/extra.css
+  - assets/stylesheets/reference.css
 
 nav:
   - Home: index.md
@@ -120,45 +121,74 @@ extra:
       link: how-it-works/
     - label: CLI
       link: cli/
-    - label: Python API
+    - label: API
       link: reference/python-api/
-    - label: Comparison
-      link: comparison/
-    - label: FAQ
-      link: faq/
-  footer_links:
-    - label: Get Started
-      link: getting-started/
-    - label: How It Works
-      link: how-it-works/
-    - label: Catalogs
-      link: catalogs/
     - label: Examples
       link: examples/
-    - label: Comparison
-      link: comparison/
-    - label: FAQ
-      link: faq/
-    - label: GitHub
-      link: https://github.com/Elouen-ginat/Skaal
-      external: true
-    - label: Pulumi
-      link: https://www.pulumi.com/docs/
-      external: true
-    - label: AWS
-      link: https://docs.aws.amazon.com/
-      external: true
-    - label: GCP
-      link: https://cloud.google.com/docs
-      external: true
-    - label: Docker
-      link: https://docs.docker.com/
-      external: true
-    - label: FastAPI
-      link: https://fastapi.tiangolo.com/
-      external: true
-    - label: Z3
-      link: https://z3prover.github.io/api/html/
-      external: true
+  footer_tagline: >-
+    Infrastructure as constraints for Python. A Z3-backed planner that turns
+    latency, durability, and throughput requirements into a deployable stack.
+  footer_groups:
+    - title: Docs
+      links:
+        - label: Get Started
+          link: getting-started/
+        - label: Tutorials
+          link: tutorials/
+        - label: How It Works
+          link: how-it-works/
+        - label: Catalogs
+          link: catalogs/
+        - label: Examples
+          link: examples/
+    - title: Reference
+      links:
+        - label: Python API
+          link: reference/python-api/
+        - label: CLI
+          link: cli/
+        - label: CLI Configuration
+          link: cli-configuration/
+        - label: Constraint Model
+          link: design/001-infrastructure-as-constraints/
+        - label: Design System
+          link: design_system/
+    - title: Project
+      links:
+        - label: GitHub
+          link: https://github.com/Elouen-ginat/Skaal
+          external: true
+        - label: Issues
+          link: https://github.com/Elouen-ginat/Skaal/issues
+          external: true
+        - label: Releases
+          link: https://github.com/Elouen-ginat/Skaal/releases
+          external: true
+        - label: License (GPL-3.0)
+          link: https://github.com/Elouen-ginat/Skaal/blob/main/LICENSE
+          external: true
+        - label: Contribute
+          link: https://github.com/Elouen-ginat/Skaal/blob/main/CONTRIBUTING.md
+          external: true
+    - title: Resources
+      links:
+        - label: Pulumi
+          link: https://www.pulumi.com/docs/
+          external: true
+        - label: Z3
+          link: https://z3prover.github.io/api/html/
+          external: true
+        - label: FastAPI
+          link: https://fastapi.tiangolo.com/
+          external: true
+        - label: AWS
+          link: https://docs.aws.amazon.com/
+          external: true
+        - label: GCP
+          link: https://cloud.google.com/docs
+          external: true
+        - label: Docker
+          link: https://docs.docker.com/
+          external: true
 
 copyright: Copyright &copy; 2026 Skaal contributors

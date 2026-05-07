@@ -1,10 +1,10 @@
-"""Typed KV storage container: ``Store[T]``.
+"""Typed key-value storage primitives.
 
-``Store`` is Skaal's single KV abstraction. It supports both explicit key-based
-access and model-centric access with inferred primary keys.
+`Store[T]` is Skaal's keyed storage abstraction. It supports explicit
+`(key, value)` access as well as model-centric helpers that infer the primary
+key from a Pydantic model.
 
-Usage::
-
+Examples:
     from pydantic import BaseModel
     from skaal import App, Store
 
@@ -25,13 +25,17 @@ Usage::
         pass
 
     user = User(id="u1", name="Alice", address=Address(street="1 Main", city="NYC"))
+    await Users.set("u1", user)
+    alice = await Users.get("u1")
+    page = await Users.list_page(limit=50)
 
-    await Users.set("u1", user)          # explicit key
-    alice = await Users.get("u1")        # returns User instance
-    all_users = await Users.list()        # list[tuple[str, User]]
+Notes:
+    `list_page`, `scan_page`, and `query_index` expose cursor-based pagination.
+    Use `list`, `scan`, and `all` when materializing the entire result set is acceptable.
 
-    await Users.add(user)                 # key inferred from user.id
-    await Users.all()                     # list[User]
+See Also:
+    `BlobStore`: Object storage for binary payloads.
+    `VectorStore`: Similarity search for embedding-backed models.
 """
 
 from __future__ import annotations
@@ -429,6 +433,19 @@ class Store(Generic[T]):
         limit: int = 100,
         cursor: str | None = None,
     ) -> Page[tuple[str, T]]:
+        """Return a single page of key-value pairs.
+
+        Args:
+            limit: Maximum number of pairs to return.
+            cursor: Opaque pagination cursor from a previous page.
+
+        Returns:
+            A `Page` containing `(key, value)` pairs.
+
+        See Also:
+            `list`: Drain every page into memory.
+            `scan_page`: Prefix-filtered pagination.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         page = await cls._backend.list_page(limit=limit, cursor=cursor)
@@ -448,6 +465,20 @@ class Store(Generic[T]):
         limit: int = 100,
         cursor: str | None = None,
     ) -> Page[tuple[str, T]]:
+        """Return a single page of key-value pairs filtered by prefix.
+
+        Args:
+            prefix: Restrict results to keys that start with this prefix.
+            limit: Maximum number of pairs to return.
+            cursor: Opaque pagination cursor from a previous page.
+
+        Returns:
+            A `Page` containing `(key, value)` pairs.
+
+        See Also:
+            `scan`: Drain every matching page into memory.
+            `list_page`: Unfiltered pagination.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         page = await cls._backend.scan_page(prefix=prefix, limit=limit, cursor=cursor)
@@ -468,6 +499,24 @@ class Store(Generic[T]):
         limit: int = 100,
         cursor: str | None = None,
     ) -> Page[T]:
+        """Return a single page of values from a secondary index.
+
+        Args:
+            index_name: Name of the configured secondary index.
+            key: Partition key value to match in the index.
+            limit: Maximum number of values to return.
+            cursor: Opaque pagination cursor from a previous page.
+
+        Returns:
+            A `Page` containing typed model values.
+
+        Raises:
+            ValueError: If `index_name` is unknown to the configured backend.
+
+        Notes:
+            This method returns values only. Use `list_page` or `scan_page` when
+            you also need primary keys.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         page = await cls._backend.query_index(index_name, key, limit=limit, cursor=cursor)

@@ -92,7 +92,7 @@ class PyprojectTomlSource(PydanticBaseSettingsSource):
 
 
 class StackProfile(BaseModel):
-    """Per-stack overrides layered on top of the base :class:`SkaalSettings`.
+    """Per-stack overrides layered on top of the base `SkaalSettings`.
 
     Only the fields that may legitimately differ between stacks are exposed
     here.  Everything left as ``None`` falls through to the base value.
@@ -237,7 +237,7 @@ class SkaalSettings(BaseSettings):
 
     # ── Stack resolution ──────────────────────────────────────────────────────
     def for_stack(self, name: str | None = None) -> SkaalSettings:
-        """Return a new :class:`SkaalSettings` with the *name* profile applied.
+        """Return a new `SkaalSettings` with the *name* profile applied.
 
         Passing ``None`` or a stack name that has no profile returns a copy of
         ``self`` unchanged (so callers can call this unconditionally).  When a

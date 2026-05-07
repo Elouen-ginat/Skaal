@@ -1,12 +1,20 @@
-"""Schedule trigger types and context for ``@app.schedule()``.
+"""Schedule triggers and helpers for `@app.schedule()`.
 
-Trigger types are Pydantic models — validated on construction and
-serialisable to JSON for the constraint solver / plan file.
+Trigger types are Pydantic models that validate on construction and serialize
+cleanly into plan metadata.
 
-Cloud mapping
--------------
-- :class:`Every` → AWS ``rate(N unit)``  |  GCP/APScheduler ``IntervalTrigger``
-- :class:`Cron`  → AWS ``cron(...)``     |  GCP ``CronTrigger.from_crontab()``
+Examples:
+    @app.schedule(trigger=Every(interval="5m"))
+    async def cleanup() -> None:
+        ...
+
+    @app.schedule(trigger=Cron(expression="0 8 * * *"))
+    async def daily_report() -> None:
+        ...
+
+Notes:
+    `Every` maps to AWS `rate(...)` expressions and local interval triggers.
+    `Cron` maps to AWS `cron(...)` expressions and cron-compatible schedulers.
 """
 
 from __future__ import annotations
@@ -46,9 +54,16 @@ _UNIT_SECONDS: dict[str, float] = {
 
 
 def _parse_seconds(interval: str) -> float:
-    """Parse ``'30s'``, ``'5m'``, ``'2h'`` → seconds as float.
+    """Parse a human-readable interval into seconds.
 
-    Raises :class:`ValueError` on unrecognised format.
+    Args:
+        interval: Interval string such as `30s`, `5m`, or `2h`.
+
+    Returns:
+        Interval duration in seconds.
+
+    Raises:
+        ValueError: If `interval` does not use a recognized unit.
     """
     match = _INTERVAL_RE.match(interval.strip())
     if not match:
@@ -67,12 +82,15 @@ def _parse_seconds(interval: str) -> float:
 class Every(BaseModel):
     """Repeat on a fixed interval.
 
-    Accepts ``'30s'``, ``'5m'``, ``'2h'`` (seconds / minutes / hours).
+    Accepts `30s`, `5m`, and `2h` style strings.
 
-    Example::
-
+    Examples:
         @app.schedule(trigger=Every(interval="5m"))
-        async def cleanup(): ...
+        async def cleanup() -> None:
+            ...
+
+    See Also:
+        `Cron`: Use cron syntax for calendar-based schedules.
     """
 
     interval: str
@@ -85,11 +103,22 @@ class Every(BaseModel):
 
     @property
     def seconds(self) -> float:
-        """Interval in seconds."""
+        """Return the interval duration in seconds.
+
+        Returns:
+            Interval duration converted to seconds.
+        """
         return _parse_seconds(self.interval)
 
     def as_rate_expression(self) -> str:
-        """AWS EventBridge ``rate(N unit)`` expression."""
+        """Return the AWS EventBridge `rate(N unit)` representation.
+
+        Returns:
+            EventBridge rate expression for this interval.
+
+        See Also:
+            `as_cron_expression`: Convert the same interval into a cron form when possible.
+        """
         secs = self.seconds
         if secs >= 3600 and secs % 3600 == 0:
             n = int(secs // 3600)
@@ -103,11 +132,18 @@ class Every(BaseModel):
         return f"rate({n} {unit})"
 
     def as_cron_expression(self) -> str:
-        """5-field cron expression for GCP Cloud Scheduler.
+        """Return a 5-field cron expression when the interval is cron-compatible.
 
-        Only supports intervals that divide evenly into minutes or hours.
-        Sub-minute intervals are not representable as cron and raise
-        :class:`ValueError`.
+        Returns:
+            Cron expression for schedulers that expect 5-field cron syntax.
+
+        Raises:
+            ValueError: If the interval is sub-minute or cannot be expressed as a whole number
+                of minutes.
+
+        Notes:
+            Sub-minute intervals remain local-runtime only because standard cron syntax cannot
+            represent them.
         """
         secs = self.seconds
         if secs < 60:
@@ -131,10 +167,13 @@ class Every(BaseModel):
 class Cron(BaseModel):
     """Standard 5-field cron expression.
 
-    Example::
+    Examples:
+        @app.schedule(trigger=Cron(expression="0 8 * * *"))
+        async def daily_report() -> None:
+            ...
 
-        @app.schedule(trigger=Cron(expression="0 8 * * *"))  # daily 08:00 UTC
-        async def daily_report(): ...
+    See Also:
+        `Every`: Use interval syntax for fixed-rate schedules.
     """
 
     expression: str
@@ -151,19 +190,22 @@ class Cron(BaseModel):
         return v
 
     def as_aws_expression(self) -> str:
-        """AWS EventBridge 6-field cron expression (appends year wildcard ``*``)."""
+        """Return the AWS EventBridge 6-field cron representation.
+
+        Returns:
+            EventBridge cron expression with the year wildcard appended.
+        """
         min_, hr, dom, mon, dow = self.expression.split()
         return f"cron({min_} {hr} {dom} {mon} {dow} *)"
 
 
 class ScheduleContext(BaseModel):
-    """Injected into scheduled functions that declare a ``ctx: ScheduleContext`` param.
+    """Context injected into scheduled callables that accept `ctx`.
 
-    Example::
-
+    Examples:
         @app.schedule(trigger=Every(interval="1h"))
         async def hourly_job(ctx: ScheduleContext) -> None:
-            print(f"Fired at {ctx.fired_at}")
+            print(ctx.fired_at)
     """
 
     fired_at: datetime
@@ -181,6 +223,15 @@ class ScheduleFunctionMetadata(TypedDict):
 
 
 def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
+    """Build an APScheduler trigger from Skaal schedule metadata.
+
+    Args:
+        trigger: Skaal schedule definition.
+        timezone: IANA timezone name for the trigger.
+
+    Returns:
+        APScheduler trigger instance matching `trigger`.
+    """
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
@@ -197,6 +248,22 @@ def build_scheduled_job(
     logger: Any | None = None,
     log_lifecycle: bool = False,
 ) -> Callable[[], Awaitable[None]]:
+    """Wrap a scheduled callable with Skaal runtime behavior.
+
+    Args:
+        fn: User-defined scheduled callable.
+        name: Logical job name used in logs.
+        emit_to: Optional channel or append-only target for non-`None` results.
+        logger: Logger used for lifecycle messages.
+        log_lifecycle: Whether to emit start and completion log messages.
+
+    Returns:
+        Awaitable zero-argument callable ready for scheduler registration.
+
+    Notes:
+        If `fn` declares `ctx`, Skaal injects a `ScheduleContext` instance automatically.
+    """
+
     async def _job() -> None:
         ctx = ScheduleContext(fired_at=datetime.now(UTC))
         if logger is not None and log_lifecycle:
@@ -228,6 +295,20 @@ def create_async_scheduler(
     logger: Any | None = None,
     log_lifecycle: bool = False,
 ) -> Any:
+    """Create an `AsyncIOScheduler` for the registered scheduled callables.
+
+    Args:
+        scheduled: Mapping of job names to decorated scheduled functions.
+        event_loop: Optional event loop to bind into the scheduler.
+        logger: Logger used for scheduled job lifecycle messages.
+        log_lifecycle: Whether to emit start and completion log messages.
+
+    Returns:
+        Configured APScheduler `AsyncIOScheduler` instance.
+
+    See Also:
+        `build_scheduled_job`: Wrap each callable with Skaal runtime behavior.
+    """
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     scheduler = (
