@@ -1,0 +1,74 @@
+name: Tag release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tag-release-main
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from pyproject.toml
+        id: ver
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          text = Path("pyproject.toml").read_text(encoding="utf-8")
+          match = re.search(r'^version = "(\d+\.\d+\.\d+)"$', text, re.MULTILINE)
+          if match is None:
+              raise SystemExit("Could not find root package version in pyproject.toml")
+          version = match.group(1)
+          tag = f"v{version}"
+
+          github_output = Path(os.environ["GITHUB_OUTPUT"])
+          with github_output.open("a", encoding="utf-8") as handle:
+              handle.write(f"version={version}\n")
+              handle.write(f"tag={tag}\n")
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        id: tag
+        env:
+          NEW_TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet "refs/tags/${NEW_TAG}" >/dev/null; then
+            echo "Tag ${NEW_TAG} already exists locally"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git ls-remote --tags origin "refs/tags/${NEW_TAG}" | grep -q "${NEW_TAG}"; then
+            echo "Tag ${NEW_TAG} already exists on origin"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git tag "${NEW_TAG}"
+          git push origin "${NEW_TAG}"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch release workflow
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_TAG: ${{ steps.ver.outputs.tag }}
+        run: gh workflow run release.yml --ref "${NEW_TAG}"

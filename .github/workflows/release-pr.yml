@@ -1,10 +1,6 @@
-name: Auto Release
+name: Release PR
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
@@ -19,29 +15,19 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  pull-requests: write
 
 concurrency:
-  group: auto-release-main
+  group: release-pr
   cancel-in-progress: false
 
 jobs:
-  bump-tag-and-release:
-    if: >
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.actor.login != 'github-actions[bot]' &&
-        !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
-      )
+  open-pr:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -58,7 +44,7 @@ jobs:
         id: bump
         shell: python
         env:
-          BUMP_KIND: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
+          BUMP_KIND: ${{ github.event.inputs.bump }}
         run: |
           import os
           import re
@@ -142,12 +128,19 @@ jobs:
               handle.write(f"old_version={old_version}\n")
               handle.write(f"new_version={new_version}\n")
               handle.write(f"tag=v{new_version}\n")
+              handle.write(f"branch=release/v{new_version}\n")
 
-      - name: Commit and tag release
+      - name: Push branch and open PR
         env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_VERSION: ${{ steps.bump.outputs.old_version }}
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
           NEW_TAG: ${{ steps.bump.outputs.tag }}
+          BUMP_KIND: ${{ steps.bump.outputs.bump_kind }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
         run: |
+          set -euo pipefail
+          git checkout -b "${BRANCH}"
           git add \
             Cargo.toml \
             mesh/Cargo.toml \
@@ -158,12 +151,34 @@ jobs:
             skaal/deploy/pulumi/render.py \
             tests/deploy/test_mesh_artifacts.py
           git commit -m "chore(release): bump version to ${NEW_TAG}"
-          git tag "${NEW_TAG}"
-          git push origin HEAD:main
-          git push origin "${NEW_TAG}"
+          git push --force-with-lease origin "${BRANCH}"
 
-      - name: Dispatch release workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NEW_TAG: ${{ steps.bump.outputs.tag }}
-        run: gh workflow run release.yml --ref "${NEW_TAG}"
+          cat > /tmp/pr-body.md <<EOF
+          Bumps the package version from \`${OLD_VERSION}\` to \`${NEW_VERSION}\` (\`${BUMP_KIND}\` bump).
+
+          Merging this PR to \`main\` will:
+
+          1. Trigger the **Tag release** workflow, which creates the \`${NEW_TAG}\` tag.
+          2. Trigger the **Release** workflow on that tag, which builds wheels,
+             publishes to PyPI / TestPyPI, and creates a GitHub Release.
+
+          > CI does not run automatically on PRs opened by \`github-actions[bot]\`
+          > (a GitHub default-token limitation). Push an empty commit, or close
+          > and reopen the PR, to trigger CI.
+
+          ---
+
+          _This PR was opened automatically by the \`Release PR\` workflow._
+          EOF
+
+          if gh pr view "${BRANCH}" --json number >/dev/null 2>&1; then
+            gh pr edit "${BRANCH}" \
+              --title "chore(release): bump version to ${NEW_TAG}" \
+              --body-file /tmp/pr-body.md
+          else
+            gh pr create \
+              --base main \
+              --head "${BRANCH}" \
+              --title "chore(release): bump version to ${NEW_TAG}" \
+              --body-file /tmp/pr-body.md
+          fi

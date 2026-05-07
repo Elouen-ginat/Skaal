@@ -87,7 +87,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: publish-testpypi
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -108,7 +108,7 @@ jobs:
 
   publish-mesh-pypi:
     name: Publish skaal-mesh to PyPI
-    needs: build-mesh-wheels
+    needs: publish-mesh-testpypi
     runs-on: ubuntu-latest
     environment:
       name: pypi
