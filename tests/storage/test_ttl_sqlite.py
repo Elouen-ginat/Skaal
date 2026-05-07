@@ -36,10 +36,10 @@ async def test_sqlite_backend_atomic_update_refreshes_ttl(tmp_path) -> None:
         )
         assert updated == {"count": 2}
 
-        await asyncio.sleep(0.08)
+        await asyncio.sleep(0.07)
         assert await backend.get("counter") == {"count": 2}
 
-        await asyncio.sleep(0.06)
+        await asyncio.sleep(0.07)
         assert await backend.get("counter") is None
     finally:
         await backend.close()

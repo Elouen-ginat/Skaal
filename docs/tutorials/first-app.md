@@ -70,7 +70,7 @@ When you do not mount your own ASGI app, Skaal exposes the compute functions dir
 Increment a counter:
 
 ```bash
-curl -s http://127.0.0.1:8000/increment \
+curl -s http://127.0.0.1:8000/_skaal/invoke/increment \
   -H "Content-Type: application/json" \
   -d '{"name": "hits"}'
 ```
@@ -78,7 +78,7 @@ curl -s http://127.0.0.1:8000/increment \
 Read it back:
 
 ```bash
-curl -s http://127.0.0.1:8000/get_count \
+curl -s http://127.0.0.1:8000/_skaal/invoke/get_count \
   -H "Content-Type: application/json" \
   -d '{"name": "hits"}'
 ```
@@ -86,7 +86,7 @@ curl -s http://127.0.0.1:8000/get_count \
 List every counter:
 
 ```bash
-curl -s http://127.0.0.1:8000/list_counts \
+curl -s http://127.0.0.1:8000/_skaal/invoke/list_counts \
   -H "Content-Type: application/json" \
   -d '{}'
 ```

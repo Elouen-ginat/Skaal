@@ -64,6 +64,12 @@ app = "todo_api:app"
 
 If you created the project with `skaal init`, that setting already exists.
 
+Then Plan the app to generate the initial `plan.skaal.lock`:
+
+```bash
+skaal plan
+```
+
 ## Run Migrations
 
 Generate a revision from the current model set:
@@ -100,7 +106,7 @@ skaal migrate relational upgrade --dry-run
 Roll back one revision if you need to:
 
 ```bash
-skaal migrate relational downgrade -1
+skaal migrate relational downgrade base
 ```
 
 ## Why This Matters

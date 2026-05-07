@@ -29,7 +29,7 @@ That gives you three useful checks:
 Solve your app against the local target:
 
 ```bash
-skaal plan todo_api:app --target local --catalog catalogs/local.toml
+skaal plan --target local --catalog catalogs/local.toml todo_api:app
 ```
 
 This writes `plan.skaal.lock`. Treat that file as the resolved infrastructure contract for the current app, target, and catalog combination.
@@ -70,6 +70,18 @@ skaal build --out artifacts --dev
 
 ## Deploy the Local Stack
 
+
+To deploy you need the Pulumi CLI installed and configured. Then run:
+```bash
+pip install "skaal[deploy]"
+```
+
+Go to **[Pulumi Installation](https://www.pulumi.com/docs/get-started/download-install/)** for the full instructions.
+
+Also make sure to have Docker installed and running for the local target. See **[Docker Installation](https://docs.docker.com/get-docker/)**.
+
+Then deploy the generated stack:
+
 ```bash
 skaal deploy --artifacts-dir artifacts
 skaal infra status
@@ -88,7 +100,7 @@ skaal destroy --artifacts-dir artifacts --stack local
 The main Skaal promise shows up here: the application model stays the same while the target changes.
 
 ```bash
-skaal plan todo_api:app --target aws --catalog catalogs/aws.toml
+skaal plan --target aws --catalog catalogs/aws.toml todo_api:app
 skaal build --out artifacts
 skaal deploy --artifacts-dir artifacts --stack prod
 ```

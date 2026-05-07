@@ -6,8 +6,8 @@ Run locally:
 
 Try it:
 
-    curl -s -X POST localhost:8000/increment -d '{{"name":"hits"}}'
-    curl -s -X POST localhost:8000/get_count -d '{{"name":"hits"}}'
+    curl -s -X POST localhost:8000/_skaal/invoke/increment -d '{{"name":"hits"}}'
+    curl -s -X POST localhost:8000/_skaal/invoke/get_count -d '{{"name":"hits"}}'
 """
 
 from skaal import App, Store
