@@ -1,4 +1,23 @@
-"""Typed vector storage surface backed by LangChain vector stores."""
+"""Typed vector storage primitives.
+
+`VectorStore[T]` models similarity search over structured documents. Skaal
+extracts a document id and text fields from the Pydantic model, then delegates
+embedding and retrieval work to the configured vector backend.
+
+Examples:
+    class KnowledgeBase(VectorStore[Article]):
+        pass
+
+    await KnowledgeBase.add([Article(id="a1", title="Intro", body="...")])
+    matches = await KnowledgeBase.similarity_search("getting started", k=3)
+
+Notes:
+    Vector storage requires the optional `skaal[vector]` dependencies.
+
+See Also:
+    `Store`: Typed key-value storage for exact lookups.
+    `BlobStore`: Object storage for binary payloads.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +65,7 @@ class HashEmbeddings:
 
 
 def _require_langchain_core() -> None:
-    """Raise :class:`~skaal.errors.MissingExtraError` if the vector extra is missing."""
+    """Raise `MissingExtraError` if the vector extra is missing."""
     from skaal.errors import MissingExtraError
 
     try:
@@ -135,7 +154,33 @@ async def _call_backend(
 
 
 class VectorStore(Generic[T]):
-    """Typed wrapper around a LangChain-compatible vector store backend."""
+    """Typed wrapper around a LangChain-compatible vector store backend.
+
+    Subclass `VectorStore[T]` with a Pydantic model to index documents for
+    semantic retrieval. Skaal derives document identifiers from the model key
+    field and automatically chooses text fields for embedding when you do not
+    configure them explicitly.
+
+    Examples:
+        class Article(BaseModel):
+            id: str
+            title: str
+            body: str
+
+        class KnowledgeBase(VectorStore[Article]):
+            pass
+
+        await KnowledgeBase.add([Article(id="a1", title="Intro", body="...")])
+        results = await KnowledgeBase.similarity_search("intro guide")
+
+    Notes:
+        The backend is configured when the runtime or deploy pipeline wires the
+        store. Direct method calls before wiring raise `NotImplementedError`.
+
+    See Also:
+        `similarity_search`: Retrieve typed documents by semantic relevance.
+        `similarity_search_with_score`: Retrieve documents plus backend scores.
+    """
 
     __skaal_value_type__: ClassVar[type | None] = None
     __skaal_key_field__: ClassVar[str] = "id"
@@ -269,6 +314,17 @@ class VectorStore(Generic[T]):
 
     @classmethod
     async def add(cls, items: Sequence[T | dict[str, Any]]) -> list[str]:
+        """Add typed items to the vector index.
+
+        Args:
+            items: Typed model instances or dictionaries coercible to the store model.
+
+        Returns:
+            The document identifiers accepted by the backend.
+
+        See Also:
+            `similarity_search`: Query the stored documents.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         typed_items = [cls._coerce_item(item) for item in items]
@@ -287,6 +343,19 @@ class VectorStore(Generic[T]):
         k: int = 4,
         filter: dict[str, Any] | None = None,
     ) -> list[T]:
+        """Return the most similar stored documents for `query`.
+
+        Args:
+            query: Natural-language search text.
+            k: Maximum number of results to return.
+            filter: Optional backend-specific metadata filter.
+
+        Returns:
+            Typed model instances ordered by relevance.
+
+        See Also:
+            `similarity_search_with_score`: Include backend-provided scores.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         kwargs: dict[str, Any] = {"k": k}
@@ -309,6 +378,19 @@ class VectorStore(Generic[T]):
         k: int = 4,
         filter: dict[str, Any] | None = None,
     ) -> list[tuple[T, float]]:
+        """Return the most similar stored documents together with scores.
+
+        Args:
+            query: Natural-language search text.
+            k: Maximum number of results to return.
+            filter: Optional backend-specific metadata filter.
+
+        Returns:
+            Tuples of `(item, score)` ordered by relevance.
+
+        Notes:
+            Score semantics depend on the backend and selected distance metric.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         kwargs: dict[str, Any] = {"k": k}
@@ -325,6 +407,15 @@ class VectorStore(Generic[T]):
 
     @classmethod
     async def delete(cls, ids: Sequence[str] | None = None) -> None:
+        """Delete indexed documents.
+
+        Args:
+            ids: Specific document identifiers to remove. When omitted, the
+                backend may delete all indexed content.
+
+        Notes:
+            Full-store deletion behavior is backend-dependent when `ids` is `None`.
+        """
         cls._ensure_wired()
         assert cls._backend is not None
         payload = list(ids) if ids is not None else None
@@ -332,5 +423,10 @@ class VectorStore(Generic[T]):
 
     @classmethod
     async def close(cls) -> None:
+        """Release backend resources held by the vector store.
+
+        Notes:
+            Most applications rely on the runtime to close stores automatically.
+        """
         if cls._backend is not None and hasattr(cls._backend, "close"):
             await cls._backend.close()

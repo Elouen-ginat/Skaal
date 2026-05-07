@@ -117,11 +117,11 @@ def iter_channels() -> dict[str, Callable[..., None]]:
 
 
 def get_catalog_path(name: str) -> Path:
-    """Resolve a short catalog name (e.g. ``"aws"``) to a file path.
+    """Resolve a short catalog name (e.g. `"aws"`) to a file path.
 
-    Entry-point handlers may be either a :class:`pathlib.Path`, a ``str``,
+    Entry-point handlers may be either a `pathlib.Path`, a `str`,
     or a zero-arg callable that returns one — the last form lets a package
-    compute the path dynamically (e.g. from ``importlib.resources``).
+    compute the path dynamically (e.g. from `importlib.resources`).
     """
     discovered = _load_group("skaal.catalogs")
     if name in discovered:

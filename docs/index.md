@@ -107,16 +107,6 @@ app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
   </div>
 </div>
 
-<nav class="lp-quicknav" aria-label="Jump to homepage sections">
-  <a class="lp-quicknav__link" href="#how">How it works</a>
-  <a class="lp-quicknav__link" href="#use-cases">Use cases</a>
-  <a class="lp-quicknav__link" href="#tiers">Storage tiers</a>
-  <a class="lp-quicknav__link" href="#catalogs">Catalogs</a>
-  <a class="lp-quicknav__link" href="#cli">CLI loop</a>
-  <a class="lp-quicknav__link" href="#compare">Compare &amp; FAQ</a>
-  <a class="lp-quicknav__link" href="#tutorials">Tutorials</a>
-</nav>
-
 <section class="lp-section" id="how">
   <div class="lp-section__intro">
     <span class="lp-eyebrow">How Skaal works</span>

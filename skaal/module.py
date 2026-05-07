@@ -47,11 +47,11 @@ class ModuleExport:
     """
     Typed handle for symbols exported by a Module.
 
-    Returned by ``module.export(...)``. Carries references to the exported
+    Returned by `module.export(...)`. Carries references to the exported
     storage classes, agents, functions, and channels so that mounting apps
     can use them as direct Python references.
 
-    Usage::
+    Examples:
 
         exports = auth.export(User, Sessions)
         # In mounting app:
@@ -160,12 +160,12 @@ class Module:
 
     A Module can declare storage, agents, functions, channels, and patterns —
     but it has no deploy target. Modules are mounted into Apps (or other Modules)
-    via ``app.use(module)``, namespacing their resources automatically.
+    via `app.use(module)`, namespacing their resources automatically.
 
-    Modules are published as pip packages (convention: ``skaal-<name>``). They
-    expose their public API via ``module.export(...)``.
+    Modules are published as pip packages by convention as `skaal-<name>`. They
+    expose their public API via `module.export(...)`.
 
-    Usage::
+    Examples:
 
         auth = Module("auth")
 
@@ -471,7 +471,7 @@ class Module:
         """
         Register a Channel subclass as a named, constraint-bearing resource.
 
-        Usage::
+        Examples:
 
             @auth.channel(throughput="> 500 events/s", durability="durable")
             class UserEvents(Channel[UserEvent]):
@@ -503,10 +503,10 @@ class Module:
     def attach(self, component: Any) -> Any:
         """Attach an external or provisioned component to this module.
 
-        If the component carries a :class:`~skaal.types.SecretRef`
+        If the component carries a `SecretRef`
         (e.g. ``ExternalStorage(secret=...)``) the secret is auto-declared
         so the runtime registry resolves it without a separate
-        ``app.secret(...)`` call.
+        `app.secret(...)` call.
         """
         from skaal.components import ExternalComponent
 
@@ -531,8 +531,8 @@ class Module:
     def secret(self, ref: SecretRef) -> SecretRef:
         """Declare a secret consumed by this module's functions and agents.
 
-        The declaration is collected into ``PlanFile.secrets`` at plan time and
-        resolved by the runtime :class:`~skaal.secrets.SecretRegistry` at boot.
+        The declaration is collected into `PlanFile.secrets` at plan time and
+        resolved by the runtime `SecretRegistry` at boot.
         """
         existing = self._secrets.get(ref.name)
         if existing is not None and existing != ref:
@@ -573,11 +573,11 @@ class Module:
         """Register a background function triggered on a time-based schedule.
 
         The appropriate cloud scheduler is provisioned automatically:
-        - **AWS**: EventBridge rule + Lambda permission
-        - **GCP**: Cloud Scheduler job → Cloud Run
-        - **Local**: APScheduler ``AsyncIOScheduler``
+        - AWS: EventBridge rule plus Lambda permission
+        - GCP: Cloud Scheduler job to Cloud Run
+        - Local: APScheduler `AsyncIOScheduler`
 
-        Can be used as::
+        Examples:
 
             @app.schedule(trigger=Every(interval="5m"))
             async def cleanup(): ...
@@ -587,9 +587,9 @@ class Module:
                 print(f"Fired at {ctx.fired_at}")
 
         Args:
-            trigger:   :class:`~skaal.schedule.Every` or :class:`~skaal.schedule.Cron`.
+            trigger:   `Every` or `Cron` schedule definition.
             emit_to:   Optional Channel / EventLog to publish non-``None`` results to.
-            timezone:  IANA timezone string (default: ``"UTC"``).
+            timezone:  IANA timezone string. Defaults to `"UTC"`.
         """
         from skaal.components import ScheduleTrigger
 
@@ -617,7 +617,7 @@ class Module:
         """
         Register a pattern (EventLog, Projection, Saga, Outbox) with this module.
 
-        Usage::
+        Examples:
 
             auth.pattern(UserEventLog)
         """

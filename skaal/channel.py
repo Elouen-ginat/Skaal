@@ -12,15 +12,15 @@ class Channel(Generic[T]):
     """
     A typed, buffered channel for inter-component communication.
 
-    When marked ``@shared``, the channel becomes a distributed message bus backed
+    When marked `@shared`, the channel becomes a distributed message bus backed
     by Redis Streams, Kafka, or any other wire-function registered under
-    ``[project.entry-points."skaal.channels"]``.  When local, it is an
-    in-process ``asyncio.Queue``.
+    `[project.entry-points."skaal.channels"]`. When local, it is an
+    in-process `asyncio.Queue`.
 
-    The runtime patches the channel's ``send`` / ``receive`` methods with a
-    concrete backend.  Before patching, both raise :class:`NotImplementedError`.
+    The runtime patches the channel's `send` and `receive` methods with a
+    concrete backend. Before patching, both raise `NotImplementedError`.
 
-    Usage::
+    Examples:
 
         events: Channel[GameEvent] = Channel(buffer=1000)
 
@@ -40,7 +40,8 @@ class Channel(Generic[T]):
     async def send(self, item: T) -> None:
         """Send an item to the channel.
 
-        Raises :class:`NotImplementedError` until the runtime wires a backend.
+        Raises:
+            NotImplementedError: If the runtime has not wired a backend yet.
         """
         raise NotImplementedError(
             "Channel.send() is not wired yet. Call a wire function (e.g. wire_local, wire_redis)."
@@ -49,7 +50,8 @@ class Channel(Generic[T]):
     async def receive(self) -> AsyncIterator[T]:
         """Receive items from the channel as an async iterator.
 
-        Raises :class:`NotImplementedError` until the runtime wires a backend.
+        Raises:
+            NotImplementedError: If the runtime has not wired a backend yet.
         """
         raise NotImplementedError(
             "Channel.receive() is not wired yet. Call a wire function (e.g. wire_local, wire_redis)."
@@ -78,7 +80,7 @@ def wire(channel: Channel[Any], backend: str, **kwargs: Any) -> None:
 
 
 def wire_local(channel: Channel[Any], *, topic: str = "default") -> None:
-    """Wire a :class:`Channel` to an in-process ``asyncio.Queue`` backend."""
+    """Wire a `Channel` to an in-process `asyncio.Queue` backend."""
     from skaal.runtime.channels import LocalChannel
 
     local = LocalChannel()
@@ -106,7 +108,7 @@ def wire_redis(
     group: str = "default",
     consumer: str = "worker-0",
 ) -> None:
-    """Wire a :class:`Channel` to a Redis Streams backend."""
+    """Wire a `Channel` to a Redis Streams backend."""
     from skaal.backends.redis_channel import RedisStreamChannel
 
     backend = RedisStreamChannel(url=url, namespace=namespace)

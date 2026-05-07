@@ -1,11 +1,11 @@
 """Skaal exception hierarchy.
 
 Every backend, plugin, or deploy path that raises an error should surface it
-as a subclass of :class:`SkaalError` so callers can write portable
-``except`` clauses regardless of which concrete backend is active.
+as a subclass of `SkaalError` so callers can write portable `except`
+clauses regardless of which concrete backend is active.
 
-Native exceptions from underlying libraries (``aioredis.WatchError``,
-``asyncpg.UniqueViolationError``, ``botocore.exceptions.ClientError``, …)
+Native exceptions from underlying libraries (`aioredis.WatchError`,
+`asyncpg.UniqueViolationError`, `botocore.exceptions.ClientError`, ...)
 are wrapped at the backend boundary — never leaked through the protocol.
 """
 
@@ -83,7 +83,7 @@ class CatalogError(SkaalConfigError):
 class SkaalSolverError(SkaalError):
     """Constraint solving failed.
 
-    Common parent of :class:`UnsatisfiableConstraints` so the CLI can install
+    Common parent of `UnsatisfiableConstraints` so the CLI can install
     a single error-boundary branch for every solver-side problem.
     """
 
@@ -93,9 +93,9 @@ class SkaalSolverError(SkaalError):
 class UnsatisfiableConstraints(SkaalSolverError):
     """No catalog entry satisfies the declared constraints.
 
-    Carries an optional :class:`~skaal.types.solver.Diagnosis` describing
+    Carries an optional `Diagnosis` describing
     which candidates were considered and which constraint each one
-    violated.  ``diagnosis is None`` corresponds to the legacy short-string
+    violated. `diagnosis is None` corresponds to the legacy short-string
     error path — preserved for backwards compatibility.
     """
 
@@ -157,16 +157,16 @@ def require_extra(
     *,
     feature: str | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator that turns a missing optional dep into a :class:`MissingExtraError`.
+    """Decorator that turns a missing optional dependency into `MissingExtraError`.
 
     Args:
-        extra:    The extra name as it appears in ``pip install 'skaal[X]'``.
+        extra:    The extra name as it appears in `pip install 'skaal[X]'`.
         modules:  Top-level modules whose presence proves the extra is installed.
-                  The first ``ImportError`` is converted to ``MissingExtraError``.
-        feature:  Human-readable feature name for the error message. Defaults
-                  to ``extra``.
+                  The first `ImportError` is converted to `MissingExtraError`.
+        feature:  Human-readable feature name for the error message. Defaults to
+                  `extra`.
 
-    Example::
+    Examples:
 
         @require_extra("vector", ["langchain_core"], feature="vector storage")
         def _build_vector_index(...): ...

@@ -8,10 +8,12 @@
 {% block header %}
   {{ super() }}
   {% if config.extra.header_links %}
-    <div class="skaal-site-links skaal-site-links--header">
+    {# Rendered out-of-band; the script in `block libs` relocates it INTO
+       `.md-header__inner` so the links sit on the same row as the logo.
+       The fallback bar remains usable if JavaScript is disabled. #}
+    <div class="skaal-site-links skaal-site-links--header" data-skaal-header-nav>
       <div class="md-grid">
         <nav class="skaal-site-links__inner" aria-label="Documentation shortcuts">
-          <span class="skaal-site-links__label">Quick Links</span>
           {% for item in config.extra.header_links %}
             {% if item.external %}
               {% set href = item.link %}
@@ -26,19 +28,98 @@
   {% endif %}
 {% endblock %}
 
-{# Inject navigation links INSIDE the dark .md-footer-meta copyright bar. #}
-{% block copyright %}
-  {% if config.extra.footer_links %}
-    <nav class="md-footer-meta__links" aria-label="Site links">
-      {% for item in config.extra.footer_links %}
-        {% if item.external %}
-          {% set href = item.link %}
-        {% else %}
-          {% set href = item.link | url %}
-        {% endif %}
-        <a href="{{ href }}" {% if item.external %}target="_blank" rel="noreferrer"{% endif %}>{{ item.label }}</a>
-      {% endfor %}
-    </nav>
-  {% endif %}
+{% block libs %}
   {{ super() }}
+  {% if config.extra.footer_groups %}
+    {# Mega footer markup lives in a <template>; the script below clones it
+       into `.md-footer` ABOVE `.md-footer-meta`. Authoring here (rather than
+       in JS) keeps link configuration declarative in `mkdocs.yml`. #}
+    <template id="skaal-mega-footer-tpl">
+      <div class="skaal-footer-mega">
+        <div class="skaal-footer-mega__inner md-grid">
+          <div class="skaal-footer-mega__brand">
+            <a class="skaal-footer-mega__title" href="{{ '' | url }}">
+              {% if config.theme.logo %}
+                <img class="skaal-footer-mega__logo" src="{{ config.theme.logo | url }}" alt="" />
+              {% endif %}
+              <span>{{ config.site_name }}</span>
+            </a>
+            {% if config.extra.footer_tagline %}
+              <p class="skaal-footer-mega__tagline">{{ config.extra.footer_tagline }}</p>
+            {% endif %}
+          </div>
+          <div class="skaal-footer-mega__columns">
+            {% for group in config.extra.footer_groups %}
+              <div class="skaal-footer-mega__col">
+                <span class="skaal-footer-mega__heading">{{ group.title }}</span>
+                <ul class="skaal-footer-mega__list">
+                  {% for item in group.links %}
+                    {% if item.external %}
+                      {% set href = item.link %}
+                    {% else %}
+                      {% set href = item.link | url %}
+                    {% endif %}
+                    <li><a class="skaal-footer-mega__link" href="{{ href }}" {% if item.external %}target="_blank" rel="noreferrer"{% endif %}>{{ item.label }}</a></li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </template>
+  {% endif %}
+  <script>
+    (function () {
+      function relocate() {
+        // Move header shortcut nav INTO the .md-header__inner row.
+        var headerInner = document.querySelector('.md-header__inner');
+        var src = document.querySelector('[data-skaal-header-nav]');
+        if (headerInner && src && !headerInner.querySelector('.skaal-header-nav')) {
+          var inner = src.querySelector('.skaal-site-links__inner');
+          if (inner) {
+            var nav = document.createElement('nav');
+            nav.className = 'skaal-header-nav';
+            nav.setAttribute('aria-label', 'Documentation shortcuts');
+            Array.from(inner.children).forEach(function (child) {
+              if (child.classList && child.classList.contains('skaal-site-links__link')) {
+                var a = child.cloneNode(true);
+                a.classList.remove('skaal-site-links__link');
+                a.classList.add('skaal-header-nav__link');
+                nav.appendChild(a);
+              }
+            });
+            var anchor = headerInner.querySelector('.md-header__option')
+              || headerInner.querySelector('.md-search')
+              || headerInner.querySelector('.md-header__source');
+            if (anchor) {
+              headerInner.insertBefore(nav, anchor);
+            } else {
+              headerInner.appendChild(nav);
+            }
+          }
+          src.remove();
+        }
+
+        // Inject mega footer ABOVE .md-footer-meta inside the same <footer>.
+        var tpl = document.getElementById('skaal-mega-footer-tpl');
+        var meta = document.querySelector('.md-footer .md-footer-meta');
+        if (tpl && meta && !document.querySelector('.skaal-footer-mega')) {
+          var fragment = tpl.content.cloneNode(true);
+          meta.parentNode.insertBefore(fragment, meta);
+        }
+      }
+
+      // mkdocs-material exposes `document$` for SPA-style navigation. Use it
+      // when present so the relocation re-runs on every page; otherwise fall
+      // back to a one-shot DOMContentLoaded handler.
+      if (typeof document$ !== 'undefined' && document$ && typeof document$.subscribe === 'function') {
+        document$.subscribe(relocate);
+      } else if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', relocate);
+      } else {
+        relocate();
+      }
+    })();
+  </script>
 {% endblock %}

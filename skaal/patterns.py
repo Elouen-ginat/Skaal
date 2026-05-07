@@ -44,11 +44,11 @@ class EventLog(Generic[T]):
     """
     Append-only, ordered, replayable typed event log (Event Sourcing).
 
-    Internally sets ``__skaal_storage__`` with
-    ``access_pattern=AccessPattern.EVENT_LOG`` so the solver treats it as a
+    Internally sets `__skaal_storage__` with
+    `access_pattern=AccessPattern.EVENT_LOG` so the solver treats it as a
     normal storage declaration and maps it to Kafka / Kinesis / EventStore.
 
-    Usage::
+    Examples:
 
         OrderEvents: EventLog[OrderEvent] = EventLog(retention="30d", partitions=16)
         app.pattern(OrderEvents)
@@ -175,13 +175,13 @@ class EventLog(Generic[T]):
 
 class Projection(Generic[TSource, TView]):
     """
-    CQRS read-model derived from a source ``EventLog``.
+    CQRS read-model derived from a source `EventLog`.
 
     Declares that *target* storage is rebuilt by applying *handler* to each
     event from *source*. The solver co-locates source and target on the same
     compute/storage cluster.
 
-    Usage::
+    Examples:
 
         OrderSummaries: Projection[OrderEvent, OrderSummary] = Projection(
             source=OrderEvents,
@@ -248,16 +248,16 @@ class Saga:
 
     Supports two coordination strategies:
 
-    - ``"compensation"`` (default) — Saga pattern: on failure, run compensations
+        - `"compensation"` (default): Saga pattern. On failure, run compensations
       in reverse order. Preferred for long-running, loosely-coupled workflows.
-    - ``"2pc"`` — Two-Phase Commit: all steps prepare then commit atomically.
+        - `"2pc"`: Two-phase commit. All steps prepare then commit atomically.
       Preferred when strong atomicity is required and participants support 2PC.
 
     Steps reference functions by **string name** (not object reference) to
-    avoid circular imports across module boundaries. The solver validates that
-    all named functions are registered before ``skaal plan`` completes.
+        avoid circular imports across module boundaries. The solver validates that
+        all named functions are registered before `skaal plan` completes.
 
-    Usage::
+        Examples:
 
         PlaceOrder = Saga(
             name="place_order",
@@ -320,7 +320,7 @@ class Outbox(Generic[T]):
     This prevents the dual-write problem where a state update can succeed but
     the corresponding event publish can fail.
 
-    Usage::
+    Examples:
 
         OrderOutbox: Outbox[OrderEvent] = Outbox(
             channel=OrderEvents,
@@ -329,7 +329,7 @@ class Outbox(Generic[T]):
         )
         app.pattern(OrderOutbox)
 
-        # Inside an agent handler — the runtime intercepts the return value:
+        # Inside an agent handler, the runtime intercepts the return value:
         @handler
         async def confirm(self) -> OrderConfirmed:
             self.status = "confirmed"

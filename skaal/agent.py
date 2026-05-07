@@ -49,7 +49,7 @@ class Agent(metaclass=AgentMeta):
     Agents have a persistent identity key and single-threaded execution per identity.
     Fields marked @persistent survive restarts.
 
-    Usage::
+    Examples:
 
         @app.agent(persistent=True)
         class Customer(Agent):

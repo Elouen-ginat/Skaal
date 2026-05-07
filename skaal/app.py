@@ -14,18 +14,18 @@ class App(Module):
     """
     Central registry for a Skaal application.
 
-    ``App`` extends ``Module`` with HTTP mounting (``mount()``).  All storage,
+    `App` extends `Module` with HTTP mounting via `mount()`. All storage,
     agent, function, channel, pattern, and attach methods are inherited from
-    ``Module``.
+    `Module`.
 
-    Deployment target and region are environment concerns — they are passed to
-    ``skaal deploy`` via CLI flags or environment variables (``SKAAL_TARGET``,
-    ``SKAAL_REGION``), not declared in application code.  Scaling policy
+    Deployment target and region are environment concerns. They are passed to
+    `skaal deploy` via CLI flags or environment variables (`SKAAL_TARGET`,
+    `SKAAL_REGION`), not declared in application code. Scaling policy
     (min/max instances, concurrency) lives in the catalog's
-    ``[compute.X.deploy]`` section so it can be overridden per environment
+    `[compute.X.deploy]` section so it can be overridden per environment
     without touching source code.
 
-    Usage::
+    Examples:
 
         app = App("my-service")
 
@@ -46,22 +46,22 @@ class App(Module):
 
         Args:
             wsgi_app:  The WSGI callable itself (e.g. ``dash_app.server``).
-                       Pass ``None`` if only generating deploy artifacts without
+                       Pass `None` if only generating deploy artifacts without
                        a running Dash/Flask instance (e.g. Dash not installed).
             attribute: Dotted attribute path in the source module used by the
                        deploy generators to reference the WSGI app in generated
-                       entry-point files, e.g. ``"dash_app.server"``.
+                       entry-point files, e.g. `"dash_app.server"`.
 
-        ``skaal run`` uses *wsgi_app* directly — it serves via uvicorn +
-        starlette ``WSGIMiddleware`` so the full Dash/Flask UI is available
-        at ``http://localhost:<port>``.
+        `skaal run` uses *wsgi_app* directly and serves it via uvicorn plus
+        starlette `WSGIMiddleware`, so the full Dash/Flask UI is available at
+        `http://localhost:<port>`.
 
-        ``skaal deploy`` uses *attribute* to generate the correct entry point:
+        `skaal deploy` uses *attribute* to generate the correct entry point:
 
-        - **Cloud Run**: ``main.py`` with gunicorn serving ``application``
-        - **Lambda**: ``handler.py`` with ``Mangum`` wrapping the WSGI app
+        - Cloud Run: `main.py` with gunicorn serving `application`
+        - Lambda: `handler.py` with `Mangum` wrapping the WSGI app
 
-        Example::
+        Examples:
 
             import dash
             from skaal import App, Store
@@ -90,18 +90,18 @@ class App(Module):
         Register a native ASGI application (FastAPI, Starlette) to be served by
         this Skaal app.
 
-        Prefer this over ``mount_wsgi()`` for ASGI-native frameworks — no
-        ``WSGIMiddleware`` adapter is needed, so you get full HTTP/2 and
+        Prefer this over `mount_wsgi()` for ASGI-native frameworks. No
+        `WSGIMiddleware` adapter is needed, so you get full HTTP/2 and
         WebSocket support.
 
         Args:
-            asgi_app:  The ASGI callable (e.g. ``fastapi_app``).
-                       Pass ``None`` when generating deploy artifacts without a
+            asgi_app:  The ASGI callable (e.g. `fastapi_app`).
+                       Pass `None` when generating deploy artifacts without a
                        live instance.
             attribute: Dotted attribute path used by deploy generators in the
-                       generated entry-point files, e.g. ``"fastapi_app"``.
+                       generated entry-point files, e.g. `"fastapi_app"`.
 
-        Example::
+        Examples:
 
             from fastapi import FastAPI
             from skaal import App, Store
@@ -129,11 +129,11 @@ class App(Module):
         """
         Embed a Module AND map its HTTP-serving functions under a URL prefix.
 
-        Equivalent to ``app.use(module)`` but additionally registers route
+        Equivalent to `app.use(module)` but additionally registers route
         prefix mappings so the deploy engine wires the proxy / API gateway
         correctly.
 
-        Usage::
+        Examples:
 
             app.mount(auth, prefix="/auth")
             # auth's functions are now accessible at /auth/*
