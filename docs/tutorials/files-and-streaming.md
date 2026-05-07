@@ -80,6 +80,7 @@ The full repository example at `examples/07_file_upload_api/app.py` expands this
 ## Stream a Response
 
 Streaming uses a different part of the runtime: `app.invoke_stream(...)`.
+Add this code to the same app:
 
 ```python
 import asyncio

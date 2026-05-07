@@ -44,11 +44,11 @@ skaal run examples.counter:app
 Then open a second terminal and try:
 
 ```bash
-curl -s http://127.0.0.1:8000/increment \
+curl -s http://127.0.0.1:8000/_skaal/invoke/increment \
     -H "Content-Type: application/json" \
     -d '{"name": "hits"}'
 
-curl -s http://127.0.0.1:8000/list_counts \
+curl -s http://127.0.0.1:8000/_skaal/invoke/list_counts \
     -H "Content-Type: application/json" \
     -d '{}'
 ```
