@@ -1,4 +1,4 @@
-:root {
+:root > *{
   --skaal-layout-max: 1600px;
   --skaal-sidebar-width: 11rem;
   --skaal-panel-bg: rgba(255, 255, 255, 0.92);
@@ -11,7 +11,24 @@
   --md-accent-fg-color: var(--skaal-color-signal-teal);
   --md-typeset-a-color: var(--skaal-color-signal-teal);
   --md-default-bg-color: var(--bg-page);
+  --md-code-fg-color: var(--fg-on-dark-1);
   --md-code-bg-color: var(--bg-code);
+  --md-code-bg-color--light: #172338;
+  --md-code-bg-color--lighter: rgba(23, 35, 56, 0.82);
+  --md-code-hl-color: var(--skaal-color-cloud-blue);
+  --md-code-hl-color--light: rgba(95, 168, 255, 0.16);
+  --md-code-hl-number-color: #ffb86b;
+  --md-code-hl-special-color: #ff7da8;
+  --md-code-hl-function-color: #c9a7ff;
+  --md-code-hl-constant-color: #8fd3ff;
+  --md-code-hl-keyword-color: #7ab8ff;
+  --md-code-hl-string-color: #7fe3b2;
+  --md-code-hl-name-color: var(--fg-on-dark-1);
+  --md-code-hl-operator-color: var(--fg-on-dark-2);
+  --md-code-hl-punctuation-color: var(--fg-on-dark-2);
+  --md-code-hl-comment-color: var(--fg-on-dark-3);
+  --md-code-hl-generic-color: var(--fg-on-dark-2);
+  --md-code-hl-variable-color: #9ed0ff;
 }
 
 body {
@@ -592,6 +609,7 @@ article hr {
   border: 1px solid var(--border-1);
   border-radius: 0.55rem;
   background: rgba(255, 255, 255, 0.66);
+  color: var(--font-body);
 }
 
 .md-typeset pre:not(.mermaid) {
@@ -820,7 +838,7 @@ article hr {
 
 .skaal-cli-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 1rem;
   margin: 1.25rem 0 2rem;
 }
