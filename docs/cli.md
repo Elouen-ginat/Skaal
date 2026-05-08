@@ -161,6 +161,7 @@ Useful options:
 | --- | --- |
 | `--target`, `-t` | Select the deploy target such as `local`, `aws`, `gcp`, or `aws-lambda`. |
 | `--catalog PATH` | Use a specific catalog file instead of discovery or project defaults. |
+| `--reoptimize` | Force re-solving all backend choices even when a lock file already exists. |
 | `--pin NAME=BACKEND` | Pin one variable to a backend while investigating solver output. |
 
 ### `skaal diff`

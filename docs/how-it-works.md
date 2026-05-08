@@ -40,9 +40,9 @@ Skaal keeps the application model stable and treats infrastructure selection as 
 ## The command loop
 
 ```bash
-skaal plan --app myapp:app --catalog catalogs/local.toml
-skaal build --app myapp:app --target local --catalog catalogs/local.toml
-skaal deploy --app myapp:app --target local --catalog catalogs/local.toml
+skaal plan   myapp:app --catalog catalogs/local.toml
+skaal build  --out artifacts
+skaal deploy --artifacts-dir artifacts
 ```
 
 The same shape applies to cloud targets. You swap the target and catalog, not the business logic.
