@@ -119,9 +119,9 @@ The project name must be a valid Python identifier.
 Run a Skaal app locally with either an explicit `MODULE:APP` or the value from `[tool.skaal] app`.
 
 ```bash
-skaal run examples.counter:app
-skaal run examples.counter:app --persist
-skaal run examples.counter:app --host 0.0.0.0 --port 9000
+skaal run examples.01_quickstart.app:app
+skaal run examples.01_quickstart.app:app --persist
+skaal run examples.01_quickstart.app:app --host 0.0.0.0 --port 9000
 ```
 
 Key options:
@@ -151,8 +151,8 @@ Reload defaults to automatic mode: on for interactive development, off for non-i
 `skaal plan` runs the solver, resolves backend assignments, and writes `plan.skaal.lock`.
 
 ```bash
-skaal plan examples.counter:app --target local --catalog catalogs/local.toml
-skaal plan examples.todo_api:app --target aws --catalog catalogs/aws.toml
+skaal plan examples.01_quickstart.app:app --target local --catalog catalogs/local.toml
+skaal plan examples.04_fullstack_split.backend:app --target aws --catalog catalogs/aws.toml
 ```
 
 Useful options:
@@ -176,7 +176,7 @@ Use `skaal diff` in two modes:
 
 ```bash
 skaal diff
-skaal diff examples.counter:app
+skaal diff examples.01_quickstart.app:app
 ```
 
 Without an app argument it prints the current plan summary. With `MODULE:APP` it re-solves and shows what would change between the existing plan and the fresh one.

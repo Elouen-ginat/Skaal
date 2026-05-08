@@ -139,7 +139,7 @@ These variables map onto the shared settings model.
 
 | Variable | Maps to | Example |
 | --- | --- | --- |
-| `SKAAL_APP` | `tool.skaal.app` | `examples.counter:app` |
+| `SKAAL_APP` | `tool.skaal.app` | `examples.01_quickstart.app:app` |
 | `SKAAL_TARGET` | `tool.skaal.target` | `local` |
 | `SKAAL_REGION` | `tool.skaal.region` | `us-east-1` |
 | `SKAAL_OUT` | `tool.skaal.out` | `artifacts` |

@@ -51,5 +51,5 @@ Rules of thumb:
 
 Examples:
 
-- `examples.todo_api:app` mounts FastAPI over Skaal compute for a CRUD API.
-- `examples.fastapi_streaming:app` streams SSE from a Skaal async generator.
+- `examples.04_fullstack_split.backend:app` mounts FastAPI over Skaal compute for a CRUD API and streams SSE from a Skaal async generator.
+- `examples.02_storage_tour.app:app` co-hosts a Dash UI alongside Skaal storage tiers via `mount_wsgi`.
