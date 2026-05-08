@@ -40,7 +40,7 @@ Skaal keeps the application model stable and treats infrastructure selection as 
 ## The command loop
 
 ```bash
-skaal plan   myapp:app --catalog catalogs/local.toml
+skaal plan --catalog catalogs/local.toml myapp:app
 skaal build  --out artifacts
 skaal deploy --artifacts-dir artifacts
 ```
