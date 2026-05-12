@@ -63,12 +63,24 @@ async def hourly_compact() -> None:
     ...
 ```
 
-Calling `signup` from another module is typed end-to-end and identical whether running locally or in the cloud:
+Calling `signup` from another module is typed end-to-end and identical whether running locally or in the cloud — **no generated client package, no separate import path**. The decorated symbol is itself the typed client:
 
 ```python
-from skaal_clients.acme import signup
+from acme.signup import signup            # the original module path
 result: User = await signup(User(id="u1", email="a@b.com"))
+#       ^^^^                              # Pylance: result is User
+#                ^^^^^^                   # Pylance: signup is FunctionRef[[User], User]
 ```
+
+Same story for storage primitives — the class **is** the client:
+
+```python
+from acme.users import Users
+user: User | None = await Users.get("u1")  # Pylance: user is User | None
+await Users.put("u1", user)                # Pylance: Users.put takes (str, User)
+```
+
+There is no `skaal_clients/` package generated into the source tree. The IDE sees the real types from the real source, instantly, no codegen step in the loop. (For *cross-process* RPC into another Skaal app's source tree, the optional `skaal stubs` command emits a typed `.pyi` stub package — see §6.6 and §6.13.)
 
 The user runs:
 
@@ -149,7 +161,7 @@ app.mount("/api", api)        # Skaal owns the deploy (API Gateway / Cloud Run);
 6. **PR-level infra diffs** — a GitHub Action that runs `skaal plan --env prod` against the merge base and posts the rendered diff as a sticky PR comment.
 7. **Explicit pin-on-first-deploy.** Once a primitive is bound to a backend in an environment, the binding is persisted in `skaal.lock` and held until the user changes it. No silent re-architecting.
 8. **Bidirectional traceability** between source and deployed resources via embedded resource tags (`skaal:source=<module>:<lineno>`) and a `skaal where <resource>` / `skaal trace <log-line>` CLI.
-9. **A single override vocabulary** (`@app.storage(backend="redis")`, `@app.compute(memory_mb=1024)`) used everywhere — same words for local override, env-specific override, and global override.
+9. **A single override vocabulary** — typed backend class tokens (`Store[User, Redis]`, `Relational[Sale, BigQuery]`) at declaration sites; the same names as strings only inside `skaal.toml` env overrides. Same words for local override, env-specific override, and global override; LSP follows the class token straight to the backend SDK.
 
 ## 5. Reference designs and what we steal from each
 
@@ -182,11 +194,11 @@ app.mount("/api", api)        # Skaal owns the deploy (API Gateway / Cloud Run);
   │   BoundPlan → Pulumi program (cloud) or in-process runtime   │
   │   (local). Same BoundPlan drives both, by design.            │
   ├──────────────────────────────────────────────────────────────┤
-  │ Layer 5 — Typed clients                                      │
-  │   InferredPlan → generated Python module                     │
-  │   `skaal_clients/` injected into the dev path, importable    │
-  │   so `Users.get(...)` is typed end-to-end with no manual     │
-  │   wiring.                                                    │
+  │ Layer 5 — Typed-client surface (NO codegen in dev loop)      │
+  │   The primitive classes ARE the typed clients. `Users.get`   │
+  │   is typed via `Store[User, B]`; the IDE resolves it from    │
+  │   the user's own source. Cross-process RPC uses `skaal       │
+  │   stubs` (one-shot .pyi emit). See §6.6, §6.13.              │
   ├──────────────────────────────────────────────────────────────┤
   │ Layer 6 — Diff + trace                                       │
   │   BoundPlan ↔ deployed-state ↔ source map = `skaal plan`,    │
@@ -391,21 +403,71 @@ app.mount("/api", api)
 
 These are the only two ways to put compute in an app. Both are inferred as resources (`FUNCTION` or `ASGI_SERVICE`); both bind through the defaults table; both get the same tagging, secrets, telemetry, and PR-diff treatment. Neither requires the user to learn a Skaal-specific routing DSL.
 
+#### 6.4.2 Their static types (Pylance-discoverable)
+
+The two shapes are typed so that the IDE sees the user's original signature on every call site — there is no opaque wrapper that swallows the parameter and return types.
+
+```python
+from typing import Awaitable, Callable, ParamSpec, TypeVar, overload
+from skaal.types import FunctionMetadata, AuthMethod
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+class FunctionRef(Generic[P, R]):
+    """Returned by @app.function. Statically callable, plus carries metadata."""
+    metadata: FunctionMetadata
+    async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+    async def local(self, *args: P.args, **kwargs: P.kwargs) -> R: ...   # force in-process
+    async def remote(self, *args: P.args, **kwargs: P.kwargs) -> R: ...  # force RPC
+
+@overload
+def function(fn: Callable[P, Awaitable[R]], /) -> FunctionRef[P, R]: ...
+@overload
+def function(
+    *,
+    memory_mb: int | None = None,
+    timeout_s: float | None = None,
+    min_concurrency: int | None = None,
+    max_concurrency: int | None = None,
+    auth: AuthMethod | None = None,
+) -> Callable[[Callable[P, Awaitable[R]]], FunctionRef[P, R]]: ...
+```
+
+For `app.mount`:
+
+```python
+from asgiref.typing import ASGIApplication  # standard ASGI 3 protocol
+
+class App:
+    def mount(self, path: str, app: ASGIApplication, /) -> None: ...
+```
+
+Any FastAPI / Starlette / Litestar instance satisfies `ASGIApplication`; Pylance catches mistakes like passing a sync WSGI app or a plain callable.
+
 ### 6.5 The override vocabulary (the entire user-facing tuning surface)
 
 Three knobs. That's the whole API for "I want something other than the default."
 
-1. **Resource-local override** — at the declaration site:
+1. **Resource-local override** — at the declaration site, using a **typed backend class** (not a string), so Pylance sees it:
 
    ```python
-   class Users(Store[User], backend="redis"):
+   from skaal.backends.redis import Redis
+   from skaal.backends.bigquery import BigQuery
+
+   class Users(Store[User, Redis]):                    # second generic param == backend
        ...
+
+   class Sales(Relational[Sale, BigQuery]):
+       transaction_id: str = Field(primary_key=True)
 
    @app.function(memory_mb=1024, timeout_s=30)
    async def signup(user: User) -> User: ...
    ```
 
-   `backend=` accepts only names registered for that `ResourceKind` (§6.12); passing an unknown or kind-incompatible name fails at import time with the list of valid names.
+   When the second generic parameter is omitted (e.g. `Store[User]`), the env profile picks the backend through the defaults table. When it is supplied, the binding is **type-pinned**: the class is statically known to be a Redis-backed `Store`, every method signature on it specialises to Redis capabilities, and the `Users.native()` escape (§6.13) returns the concrete Redis client typed as `redis.asyncio.Redis`. An env override that tries to point a type-pinned class at a different backend fails at config-load time with a typed error.
+
+   String forms (`backend="redis"`) are **not** accepted at declaration sites — strings are opaque to the IDE. They are accepted only inside `skaal.toml` (which is itself a string format) and validated against the registry at load time.
 
 2. **Environment override** — in `skaal.toml`:
 
@@ -419,45 +481,67 @@ Three knobs. That's the whole API for "I want something other than the default."
    "acme.users:Avatars" = { backend = "s3", region = "us-east-1" }
    ```
 
-3. **Per-invocation client overrides** — for tests and one-offs, the typed client accepts an explicit binding:
+3. **Per-invocation client overrides** — for tests and one-offs, the primitive class itself accepts an explicit binding (no separate import path; LSP keeps full completion):
 
    ```python
-   from skaal_clients.acme.users import Users
-   await Users.bind(memory_backend).put("u1", user)   # only in tests
+   from acme.users import Users
+   from skaal.testing import in_memory
+   await Users.bind(in_memory()).put("u1", user)   # only in tests
    ```
 
 Anything beyond these three knobs is a sign the user is trying to express a constraint, which is the product we just deleted. The defaults table absorbs the rest.
 
-#### 6.5.1 Worked example — switching `Relational` from Postgres to BigQuery
+#### 6.5.1 Worked example — switching `Relational` from Postgres to BigQuery (and getting back the real BigQuery client)
 
-A frequent real question: "I want `class Sales(Relational)` to live on BigQuery in my analytics environment, but on Postgres in dev." Three concrete ways to express it, all using the same three knobs:
+A frequent real question: "I want `class Sales(Relational)` to live on BigQuery in my analytics environment, and when I need to drop down to a BigQuery `Client` for an analytical SQL query, that should be typed and discoverable in my IDE." Three concrete ways to express it.
 
 ```python
 # acme/sales.py
 from datetime import datetime
 from decimal import Decimal
-from skaal import Relational
 from sqlmodel import Field
+from skaal import Relational
+from skaal.backends.bigquery import BigQuery        # the typed backend token
 
-# Option A — pin at the declaration site. Sticks across every environment
-# unless a later override re-pins it. Use when the model is BigQuery-shaped
-# by nature (append-only, no row updates, partitioned by `occurred_at`).
-class Sales(Relational, backend="bigquery", partition_by="occurred_at"):
+class Sale(BaseModel):
+    transaction_id: str
+    amount: Decimal
+    occurred_at: datetime
+
+# Option A — type-pinned at the declaration site (recommended for backend-shaped models).
+class Sales(Relational[Sale, BigQuery], partition_by="occurred_at"):
     transaction_id: str = Field(primary_key=True)
     amount: Decimal
     occurred_at: datetime
 ```
 
 ```python
-# Option B — keep the class plain, override per environment.
-class Sales(Relational):
+# Drop-down to the real BigQuery client — fully typed in Pylance.
+from google.cloud.bigquery import Client as BQClient
+
+bq: BQClient = await Sales.native()        # Pylance: bq is google.cloud.bigquery.Client
+job = bq.query(
+    "SELECT DATE_TRUNC(occurred_at, MONTH) AS m, SUM(amount) AS revenue "
+    "FROM acme_warehouse.sales GROUP BY m"
+)
+for row in job.result():
+    ...
+```
+
+Because `Sales` is declared `Relational[Sale, BigQuery]`, `Sales.native()` statically resolves to `BQClient`. Hover over `bq` in VSCode → `(variable) bq: Client`. Autocomplete on `bq.` shows every BigQuery SDK method. No `cast()`, no `Any`, no stringly-typed indirection.
+
+```python
+# Option B — keep the class agnostic. Use when the same code must run on
+# Postgres in dev and BigQuery in warehouse. The trade-off: Sales.native()
+# returns the union BackendClient type, and the user must narrow it.
+class Sales(Relational[Sale]):
     transaction_id: str = Field(primary_key=True)
     amount: Decimal
     occurred_at: datetime
 ```
 
 ```toml
-# skaal.toml — same code; Postgres in dev, BigQuery in the warehouse env.
+# skaal.toml — env-level override, same code on Postgres in dev, BigQuery in warehouse.
 [env.dev]
 profile = "cloud-aws"
 
@@ -469,13 +553,22 @@ region  = "EU"
 "acme.sales:Sales" = { backend = "bigquery", options = { dataset = "acme_warehouse", partition_by = "occurred_at" } }
 ```
 
+For Option B, the typed escape uses the backend module directly — no HKT trickery needed:
+
+```python
+from skaal.backends.bigquery import BigQuery
+bq: BQClient = await BigQuery.client_for(Sales)   # Pylance: bq is BQClient
+```
+
+`BigQuery.client_for(model)` is a typed classmethod with a concrete return type. The user opts in to "I know this binding is BigQuery in this code path" by importing `BigQuery` — and the moment they do, the IDE gives them the full SDK.
+
 ```bash
 # Option C — moving an already-deployed binding. Updates skaal.lock and
 # generates the migration step Pulumi will run.
 $ skaal rebind --env warehouse acme.sales:Sales bigquery
 ```
 
-What makes any of this work is **one registered backend**: `bigquery`, in the same `skaal/binding/registry.py` (§6.12) that lists `postgres`, `sqlite`, `dynamodb`, etc. The registry entry declares the `ResourceKind`s it satisfies and the feature flags it supports; without a matching entry, the framework rejects `backend="bigquery"` at import time with a pointer to `skaal backends list`. There is no TOML catalog and no entry-point plugin layer — adding a new backend is one Python module plus one registry line.
+What makes all of this work is **one registered backend**: `BigQuery`, exported from `skaal.backends.bigquery` and registered in `skaal/binding/registry.py` (§6.12) under the name `"bigquery"`. The registry entry declares the `ResourceKind`s it satisfies, the feature flags it supports, and the typed `NativeClient` it exposes; without a matching entry, the framework rejects `Relational[Sale, BigQuery]` at import time with a pointer to `skaal backends list`. There is no TOML catalog and no entry-point plugin layer — adding a new backend is one Python module (the typed token + a thin adapter) plus one registry line.
 
 #### 6.5.2 Kinds, not just names — why BigQuery is not a drop-in for Postgres
 
@@ -489,7 +582,7 @@ What makes any of this work is **one registered backend**: `bigquery`, in the sa
 | `bigquery` | `relational-analytics` |
 | `redshift` (future) | `relational-analytics` |
 
-A `Relational` class infers its required kinds from its declaration: a `primary_key` plus calls to `.update(...)` or `.delete(...)` in the codebase mark it as `relational-oltp`; append-only with `partition_by=...` and `@app.function` query patterns mark it `relational-analytics`. If the user binds `backend="bigquery"` to a class the inference flagged as OLTP-shaped, import fails with:
+A `Relational` class infers its required kinds from its declaration: a `primary_key` plus calls to `.update(...)` or `.delete(...)` in the codebase mark it as `relational-oltp`; append-only with `partition_by=...` and `@app.function` query patterns mark it `relational-analytics`. If the user writes `Relational[Sale, BigQuery]` on a class the inference flagged as OLTP-shaped, import fails with:
 
 ```
 RelationalKindMismatch: acme.sales:Sales is bound to 'bigquery' which supports
@@ -500,19 +593,32 @@ RelationalKindMismatch: acme.sales:Sales is bound to 'bigquery' which supports
 
 This is the only place the framework gets opinionated about workload semantics. It is deterministic, source-located, and uses the same vocabulary as the rest of the override system.
 
-### 6.6 Generated typed clients
+### 6.6 The primitive class **is** the typed client (no codegen in the dev loop)
 
-When `skaal run`, `skaal plan`, or `skaal build` runs, the framework emits a `skaal_clients/` package alongside the user's source. It contains:
+Earlier drafts of this ADR proposed an auto-generated `skaal_clients/` package. That is the **wrong choice for Python**: Pylance and Pyright cannot resolve symbols that don't exist on disk until a build step runs, generated packages cause merge conflicts and stale-state bugs, and Python's import system makes "the class is the client" a far cleaner answer than codegen.
 
-- One module per declared `Store[T]`/`BlobStore`/`Channel[T]`/`Relational` with fully typed methods derived from the pydantic schema and declared secondary indexes.
-- One module per `@app.function` exposing a typed RPC client (`signup(user: User) -> User`), so other Python modules can call functions without restating the wire shape and without importing the implementation directly.
-- A `manifest.json` (validated by a pydantic `ClientManifest` model) for IDE plugins and tooling.
+The redesigned model: **every primitive class is itself the typed client.** No generation, no separate import path, no manifest in the dev loop.
 
-Notably absent: any client for mounted ASGI services. If the user mounts FastAPI via `app.mount("/api", fastapi_app)`, the client surface for that subtree is whatever FastAPI provides (e.g. its own OpenAPI-generated clients). Skaal does not double-generate over a routing framework it doesn't own; that would be the exact mistake `@app.handler` was making.
+| Surface | What the user imports | Why it's already typed |
+|---|---|---|
+| `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` | The user's own class directly: `from acme.users import Users` | The class is `Generic[T, BackendT]`; method signatures specialise on `T` and `B`. Pylance resolves with zero codegen. |
+| `@app.function` callables | The decorated symbol: `from acme.signup import signup` | The decorator returns `FunctionRef[P, R]` typed via `ParamSpec` (§6.4.2); call-site shows the original signature. |
+| Backend-native escape | `from skaal.backends.bigquery import BigQuery; await BigQuery.client_for(Sales)` or `await Sales.native()` (when type-pinned) | Concrete return type per backend (`google.cloud.bigquery.Client`, `redis.asyncio.Redis`, `asyncpg.Pool`, …). |
+| Mounted ASGI services | The user's own FastAPI / Starlette / Litestar app | Skaal does not own this surface. Users keep the client tooling that ships with their routing framework (FastAPI's OpenAPI client gen, etc.). |
 
-The generation step is incremental, fast (< 200 ms for small apps), and idempotent. The package is git-ignored by default; users opt in to committing it. `skaal run` re-generates on import; `skaal plan` re-generates as a side effect; `skaal build` emits the same package into the artifact.
+What happens at runtime is that `skaal run` and `skaal deploy` wire each declared class to a concrete backend through the binding layer — but at *typing* time, none of that matters: the class hierarchy is fully visible to Pylance from the moment the user finishes typing it.
 
-Crucially, the typed-client surface is the same shape whether the binding is local SQLite or cloud DynamoDB — the runtime swaps the backend transparently. The user never imports a backend.
+#### 6.6.1 The one case codegen is justified — cross-process stubs
+
+There is exactly one legitimate codegen path: when **another Python project** wants to call a Skaal app's `@app.function`s by name without importing its source tree. For that, Skaal ships a single command:
+
+```bash
+$ skaal stubs --from ./services/billing --to ./apps/web/_stubs --as billing_stubs
+```
+
+This emits a typed `.pyi`-only stub package (no runtime code) listing every `@app.function` and `Store[T]` exposed by the source app, validated against a pydantic `StubManifest` model. The consuming project drops the path into `pyrightconfig.json` / `pyproject.toml` and gets full LSP completion against the remote service. Stubs are explicit, opt-in, and live in the consuming project — not in the producing one. Same-process callers never run this command.
+
+This collapses the "always-generated `skaal_clients/`" idea down to: "the class is the client; stubs only exist for crossing a service boundary."
 
 ### 6.7 `skaal plan` as a diff, not a JSON dump
 
@@ -596,7 +702,43 @@ Runtime logs include the same `skaal:source` field on every emitted log record, 
 
 ### 6.12 The backend registry (replaces the catalog and the plugin layer)
 
-A single Python module — `skaal/binding/registry.py` — owns the list of every backend Skaal knows. It is built and exposed as a pydantic model so the same data structure powers the binder, `skaal backends list`, and the import-time validation that rejects bad `backend=` overrides:
+A single Python module — `skaal/binding/registry.py` — owns the list of every backend Skaal knows. Each backend is **both a typed class token** (imported and used as the second generic parameter on `Store`/`Relational`/etc.) **and a registry entry** (a pydantic record describing kinds, profiles, capabilities, and the typed native client). The same data structure powers the binder, `skaal backends list`, the import-time validation, and the typed `.native()` / `.client_for()` escape hatches.
+
+```python
+# skaal/backends/_base.py
+from typing import ClassVar, TypeVar, Generic
+
+NativeClientT = TypeVar("NativeClientT")
+
+class Backend(Generic[NativeClientT]):
+    """Base for every backend type token. Subclasses are imported at user code sites."""
+    name: ClassVar[str]
+    kinds: ClassVar[frozenset[str]]
+    NativeClient: ClassVar[type[NativeClientT]]
+
+    @classmethod
+    async def client_for(cls, resource: type) -> NativeClientT:
+        """Typed escape hatch. Return type is the backend's concrete SDK client."""
+        ...
+
+# skaal/backends/bigquery/__init__.py
+from google.cloud.bigquery import Client as _BQClient
+from skaal.backends._base import Backend
+
+class BigQuery(Backend[_BQClient]):
+    name = "bigquery"
+    kinds = frozenset({"relational-analytics"})
+    NativeClient = _BQClient
+
+# skaal/backends/postgres/__init__.py
+from asyncpg import Pool as _PgPool
+class Postgres(Backend[_PgPool]):
+    name = "postgres"
+    kinds = frozenset({"relational-oltp", "relational-analytics"})
+    NativeClient = _PgPool
+```
+
+The registry then captures the operational metadata (profiles, capabilities, options schema) per backend:
 
 ```python
 class BackendCapabilities(BaseModel):
@@ -607,35 +749,124 @@ class BackendCapabilities(BaseModel):
     streaming: bool = False
     row_updates: bool = False
     partitioning: bool = False
-    # …add only as a kind genuinely requires it.
 
 class BackendEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    name: str                            # "postgres", "bigquery", "redis", …
-    kinds: frozenset[str]                # {"relational-oltp", "relational-analytics"}
-    profiles: frozenset[EnvProfile]      # which env profiles can pick it
+    token: type[Backend]                 # the typed class (BigQuery, Postgres, Redis, …)
+    profiles: frozenset[EnvProfile]
     capabilities: BackendCapabilities
-    impl_path: str                       # dotted path to the implementation class
     options_schema: type[BaseModel]      # pydantic schema for backend-specific options
 
 REGISTRY: tuple[BackendEntry, ...] = (
-    BackendEntry(name="postgres",  kinds={"relational-oltp", "relational-analytics"}, profiles={LOCAL, CLOUD_AWS}, …),
-    BackendEntry(name="bigquery",  kinds={"relational-analytics"},                    profiles={CLOUD_GCP},        …),
-    BackendEntry(name="dynamodb",  kinds={"store"},                                   profiles={CLOUD_AWS},        …),
-    BackendEntry(name="firestore", kinds={"store"},                                   profiles={CLOUD_GCP},        …),
-    BackendEntry(name="s3",        kinds={"blob"},                                    profiles={CLOUD_AWS},        …),
+    BackendEntry(token=Postgres,  profiles={LOCAL, CLOUD_AWS}, …),
+    BackendEntry(token=BigQuery,  profiles={CLOUD_GCP},        …),
+    BackendEntry(token=Redis,     profiles={LOCAL, CLOUD_AWS}, …),
+    BackendEntry(token=DynamoDB,  profiles={CLOUD_AWS},        …),
+    BackendEntry(token=Firestore, profiles={CLOUD_GCP},        …),
+    BackendEntry(token=S3,        profiles={CLOUD_AWS},        …),
     # …
 )
 ```
 
 Rules the registry enforces (all at import time, all with source-located errors):
 
-1. Every `backend=` override resolves to exactly one `BackendEntry`. Unknown names → `UnknownBackendError` listing valid alternatives.
-2. The chosen entry's `kinds` must include every kind the inferred resource requires (§6.5.2). Otherwise → `BackendKindMismatch` with the offending source line.
+1. Every typed binding (`Store[T, B]`, `Relational[T, B]`, …) requires `B` to be a registered `Backend` subclass. Unknown class → `UnknownBackendError` listing valid alternatives.
+2. The chosen entry's `token.kinds` must include every kind the inferred resource requires (§6.5.2). Otherwise → `BackendKindMismatch` with the offending source line.
 3. The entry must include the active `Environment.profile` in `profiles`. Otherwise → `BackendNotAvailableInProfile`.
 4. Backend-specific options (`partition_by=`, `dataset=`, …) are validated against `options_schema`. No untyped option dicts cross the binding boundary.
+5. Env-level string overrides in `skaal.toml` are looked up by `token.name` and validated against the same rules at config-load time.
 
-The registry is a static module. Adding a new backend is one PR that adds an implementation file, one `BackendEntry`, and one test. There is no entry-point discovery, no TOML catalog overlay, no per-environment plugin set. Third-party backends re-enter in a later version through a documented `BackendProtocol` plus a registration call; the registry's data shape is already designed to admit them.
+The registry is a static module. Adding a new backend is one PR that adds a `Backend` subclass, one `BackendEntry`, and one test. There is no entry-point discovery, no TOML catalog overlay, no per-environment plugin set. Third-party backends re-enter in a later version through a documented `BackendProtocol` plus a registration call; the registry's data shape is already designed to admit them.
+
+### 6.13 Static typing and LSP discoverability (the binding contract)
+
+This section is the framework's typing contract. Every public API listed in §8 must satisfy it. CI enforces it via Pyright in strict mode against the example apps; the success criteria in §12 include an explicit LSP-discoverability check.
+
+#### 6.13.1 Generic shapes
+
+Every storage-like primitive carries two type parameters: the payload model and (optionally) the backend token. Both are visible to Pylance:
+
+```python
+from typing import Generic, TypeVar
+from typing_extensions import TypeVar as TypeVarExt        # PEP 696 default= on 3.11
+
+T = TypeVar("T", bound=BaseModel)
+B = TypeVarExt("B", bound=Backend, default=Backend)        # default = generic backend
+
+class Store(Generic[T, B]):
+    @classmethod
+    async def get(cls, key: str) -> T | None: ...
+    @classmethod
+    async def put(cls, key: str, value: T) -> None: ...
+    @classmethod
+    async def native(cls) -> B.NativeClient: ...           # typed escape
+
+class Relational(Generic[T, B]): ...
+class BlobStore(Generic[B]): ...
+class Channel(Generic[T, B]): ...
+```
+
+Resulting Pylance experience:
+
+| User code | Pylance reveals |
+|---|---|
+| `class Users(Store[User, Redis]): ...` | `Users` is `type[Store[User, Redis]]` |
+| `await Users.get("u1")` | `User \| None` |
+| `await Users.put("u1", x)` | requires `x: User`; passing a `dict` errors |
+| `await Users.native()` | `redis.asyncio.Redis` |
+| `class Avatars(BlobStore[S3]): ...` then `await Avatars.native()` | `aioboto3.S3.Client` |
+| `class Sales(Relational[Sale, BigQuery]): ...` then `await Sales.native()` | `google.cloud.bigquery.Client` |
+| `class Plain(Store[User]): ...` then `await Plain.native()` | `BackendClient` (a Protocol covering the common surface; users go through `BigQuery.client_for(Plain)` for the concrete type) |
+
+#### 6.13.2 The four idiomatic patterns
+
+```python
+# 1. Type-agnostic, env-bound.  Use when the same code must run on multiple backends.
+class Users(Store[User]):                        # backend defaulted; env picks it
+    ...
+
+# 2. Type-pinned, IDE-typed native escape.  Use when the model is backend-shaped by nature.
+from skaal.backends.redis import Redis
+class Cache(Store[CachedValue, Redis]):
+    ...
+client: redis.asyncio.Redis = await Cache.native()   # Pylance autocompletes Redis SDK
+
+# 3. Type-agnostic with explicit backend escape.  Use when you want both portability and
+#    occasional drop-down to a specific backend's SDK.
+from skaal.backends.bigquery import BigQuery
+class Sales(Relational[Sale]):
+    ...
+bq: bigquery.Client = await BigQuery.client_for(Sales)   # explicit, typed, opt-in
+
+# 4. Decorated function.  Auto-RPC; signature is preserved at call sites.
+@app.function
+async def signup(user: User) -> User:
+    ...
+result: User = await signup(User(...))           # Pylance shows (user: User) -> User
+```
+
+#### 6.13.3 Discoverability properties (each one tested)
+
+| Property | Test |
+|---|---|
+| No `Any` leaks from public API | `pyright --strict skaal/ examples/` reports zero implicit-`Any` warnings on any imported symbol. |
+| Decorator preserves signatures | After `signup = app.function(signup)`, `reveal_type(signup)` is `FunctionRef[[User], User]`, and `await signup(user)` reveals `User`. |
+| Backend type token gives concrete client | After `class Cache(Store[V, Redis])`, `reveal_type(await Cache.native())` is `redis.asyncio.Redis`. |
+| Cross-backend native escape is opt-in and typed | `reveal_type(await BigQuery.client_for(Sales))` is `google.cloud.bigquery.Client`. |
+| Kind mismatches are reported at import time | `class Sales(Relational[Sale, BigQuery])` plus a call to `Sales.update(...)` errors out at import (not at runtime) with `BackendKindMismatch`. |
+| ASGI mount is type-checked | `app.mount("/api", 42)` fails Pyright; `app.mount("/api", FastAPI())` passes. |
+| Pydantic surfaces round-trip through `model_validate_json` | `InferredPlan.model_validate_json(plan.model_dump_json()) == plan` in tests. |
+| No string-typed backend at declaration sites | `grep -RE 'backend\s*=\s*"' skaal/ examples/` returns zero hits. Strings appear only in `skaal.toml`. |
+| Generated stubs (when used) declare `py.typed` | `skaal stubs` always emits a `py.typed` marker and `*.pyi` files; the package is a `partial-stub` per PEP 561. |
+
+#### 6.13.4 Why this is enforceable
+
+Two specific design choices keep the above LSP-trivial rather than requiring HKT gymnastics:
+
+1. **Per-backend escape methods over higher-kinded inference.** `BigQuery.client_for(Sales)` is a concrete classmethod with a concrete return type. We avoid relying on `B.NativeClient` resolution in user code paths where Pyright would struggle; the `.native()` form is sugar that works for the type-pinned case only.
+2. **Class tokens, not strings, at every declaration site.** A token is a real Python class — its import is resolvable, its identity is checkable, and it's discoverable by the IDE's autocomplete. A string is none of those.
+
+Together they give a framework whose entire public surface is navigable from a single `Go to Definition` chain, starting from the user's own class declaration and ending at the underlying SDK client.
 
 ## 7. The new CLI
 
@@ -644,7 +875,7 @@ Trimmed to what fits the thesis. Each verb has one clear job.
 | Verb | Purpose |
 |---|---|
 | `skaal init` | Scaffold a new project. Writes `skaal.toml` with one env (`local`) and a starter `app.py`. |
-| `skaal run` | Start the local runtime. Hot reload by default in TTY. Regenerates `skaal_clients/`. |
+| `skaal run` | Start the local runtime. Hot reload by default in TTY. No client codegen (the primitive classes are the clients; see §6.6). |
 | `skaal map` | Print the source → resource tree for an environment. |
 | `skaal plan [--env <name>] [--against=deployed]` | Print the structural or state diff. |
 | `skaal deploy --env <name>` | Provision via Pulumi. Updates `skaal.lock`. |
@@ -653,34 +884,63 @@ Trimmed to what fits the thesis. Each verb has one clear job.
 | `skaal unbind --env <name> <resource>` | Remove a pinned binding (resource is being deleted). |
 | `skaal where <resource> [--env <name>]` | Open the cloud-console URL for a deployed resource. |
 | `skaal trace <log-or-resource>` | Print the source location for a deployed resource or log line. |
-| `skaal backends list [--kind <k>] [--profile <p>]` | Print every backend the registry knows, with its supported kinds and profiles. Discovery surface for `backend=` overrides. |
-| `skaal doctor` | Sanity-check toolchain (pulumi, docker, cloud credentials). |
+| `skaal backends list [--kind <k>] [--profile <p>]` | Print every backend the registry knows, with its `Backend` token import path, supported kinds, and profiles. Discovery surface for typed declaration-site bindings. |
+| `skaal stubs --from <src-app> --to <out-dir> [--as <pkg>]` | Emit a typed `.pyi`-only stub package for cross-process callers (PEP 561 `partial-stub` with `py.typed`). Idempotent; no runtime code generated. |
+| `skaal doctor` | Sanity-check toolchain (pulumi, docker, cloud credentials, pyright version). |
 
 Removed verbs: `skaal catalog *`, `skaal solver *`, `skaal explain` (folded into `skaal plan --explain`).
 
 ## 8. New public API surface (canonical)
 
-`skaal/__init__.py` `__all__` shrinks materially. The keep list:
+`skaal/__init__.py` `__all__` shrinks materially. The keep list, with the typed generic shapes:
 
-```
-App, Module, ModuleExport,
-Store, BlobStore, Channel, Relational,
-Cron, Every, Schedule, ScheduleContext,
-Secret, SecretRegistry,
-Duration, TTL, Retention, Page, SecondaryIndex,
-JobSpec, JobHandle, JobResult, JobStatus,
+```python
+# Composition
+App, Module, ModuleExport
+
+# Typed primitives (all Generic, second param is the Backend token)
+Store[T, B = Backend], Relational[T, B = Backend],
+BlobStore[B = Backend], Channel[T, B = Backend]
+
+# Typed callable
+FunctionRef[P, R],              # returned by @app.function
+function,                       # the single callable primitive (typed via ParamSpec + overload)
+
+# Schedules / jobs
+Cron, Every, Schedule, ScheduleContext
+JobSpec, JobHandle, JobResult, JobStatus
+
+# Secrets (typed payload)
+Secret[T], SecretRegistry
+
+# Value types (all pydantic)
+Duration, TTL, Retention, Page[T], SecondaryIndex
 InvokeContext, BeforeInvoke,
-RetryPolicy, RateLimitPolicy, CircuitBreaker, Bulkhead,
-ensure_relational_schema, open_relational_session,
-sync_run,
-```
+RetryPolicy, RateLimitPolicy, CircuitBreaker, Bulkhead
 
-The keep list also adds the renamed/new decorator and the registry's user-discoverable surface:
+# Backend tokens — imported from skaal.backends.<name>
+Backend[NativeClientT],         # base; user code rarely references directly
+# concrete tokens live in skaal.backends.<name> and are imported there:
+#   from skaal.backends.bigquery import BigQuery
+#   from skaal.backends.postgres import Postgres
+#   from skaal.backends.redis    import Redis
+#   from skaal.backends.dynamodb import DynamoDB
+#   from skaal.backends.firestore import Firestore
+#   from skaal.backends.s3       import S3
+#   from skaal.backends.gcs      import GCS
+#   ...
 
-```
-function,                       # was: compute / handler — the single callable primitive
-external, external_channel,     # explicit adapters for user-owned external resources
-BackendEntry, BackendCapabilities  # read-only types, exposed for `skaal backends list` consumers
+# Registry-introspection (read-only)
+BackendEntry, BackendCapabilities
+
+# Adapters for user-owned external resources
+external, external_channel
+
+# Relational helpers
+ensure_relational_schema, open_relational_session
+
+# Sync escape
+sync_run
 ```
 
 The drop list (removed from public API entirely, no deprecation alias):
@@ -730,9 +990,10 @@ Exit criterion: `grep -r "Constraint\|Latency\|Durability\|AccessPattern\|Throug
    - `fingerprint.py` — stable hash via `model_dump_json(by_alias=True)` over canonically-sorted tuples.
    - `asgi.py` — recogniser that turns `app.mount(path, asgi_app)` calls into `ASGI_SERVICE` resources without inspecting the mounted app's routes.
 2. Convert every surviving decorator (`@app.storage`, `@app.function`, `@app.schedule`, `@app.job`, `@app.external`) to populate a single `__skaal_inferred__` attribute holding an `InferredResource` instance instead of the per-decorator `__skaal_storage__` / `__skaal_compute__` / etc. dunder family.
-3. Add `tests/inference/test_fingerprint.py` asserting byte-stability across reorderings, and `tests/inference/test_pydantic.py` asserting every public inference type round-trips through `model_dump_json` / `model_validate_json`.
+3. Type the public surface per §6.13: `Store[T, B]`, `Relational[T, B]`, `BlobStore[B]`, `Channel[T, B]` with `B` defaulted via `typing_extensions.TypeVar(default=Backend)`; `@app.function` decorator with `ParamSpec`/`TypeVar` overloads returning `FunctionRef[P, R]`; `App.mount(path: str, app: ASGIApplication)`.
+4. Add `tests/inference/test_fingerprint.py` asserting byte-stability across reorderings, and `tests/inference/test_pydantic.py` asserting every public inference type round-trips through `model_dump_json` / `model_validate_json`.
 
-Exit criterion: `App.infer() -> InferredPlan` returns a complete plan for every example under `examples/`, and `InferredPlan.model_json_schema()` is published as the contract artifact.
+Exit criterion: `App.infer() -> InferredPlan` returns a complete plan for every example under `examples/`; `InferredPlan.model_json_schema()` is published as the contract artifact; `pyright --strict skaal/` is green.
 
 ### Phase 3 — Build the binding layer (1 week)
 
@@ -755,16 +1016,22 @@ Exit criterion: `bind(infer(app), env, lock)` produces a `BoundPlan` whose every
 
 Exit criterion: `skaal run` + `skaal deploy --env prod` work end-to-end against AWS for `examples/todo_api` and `examples/counter`.
 
-### Phase 5 — Typed client generation (1 week)
+### Phase 5 — Typing contract and cross-process stubs (1 week)
 
-1. New package `skaal/clients/`:
-   - `generate.py` — `InferredPlan → skaal_clients/` (Python source emission).
-   - `templates/` — Jinja2 templates for `Store[T]` / `BlobStore` / `Channel[T]` / `Relational` / `@app.function` clients. Explicitly no template for mounted ASGI apps — those keep whatever client the user's routing framework already provides.
-   - `manifest.py` — pydantic `ClientManifest` written to `skaal_clients/manifest.json`; consumed by IDE plugins.
-2. Wire generation into `skaal run` (on reload), `skaal plan` (as a side effect), `skaal build` (into the artifact).
-3. Add `.gitignore` advice for `skaal_clients/` in `skaal init` scaffolding.
+There is no in-tree generated client package — primitive classes are the typed clients (§6.6, §6.13). This phase enforces the LSP contract and ships the one cross-process tool that genuinely needs codegen.
 
-Exit criterion: in `examples/todo_api`, `from skaal_clients.todos import Todos` is typed end-to-end and works both locally (sqlite) and on AWS (dynamodb).
+1. Add `pyright --strict` to CI against `skaal/`, `examples/`, and `tests/typing/`.
+2. New package `tests/typing/`:
+   - `test_reveal_types.py` — `reveal_type` assertions for every row of the §6.13.3 table.
+   - `test_no_any_leaks.py` — fails if any public symbol resolves to `Any` from a fresh import.
+   - `test_no_string_backend.py` — `grep` gate; rejects any declaration-site string backend.
+3. New package `skaal/stubs/`:
+   - `emit.py` — walks an external Skaal app's `InferredPlan` and emits a `.pyi`-only PEP 561 `partial-stub` package with a `py.typed` marker.
+   - `manifest.py` — pydantic `StubManifest` validated on both ends.
+   - CLI verb `skaal stubs --from <src> --to <out> [--as <pkg>]`.
+4. Ship a Pyright plugin config (`pyrightconfig.json` snippet) in the docs showing consuming projects how to register the stubs directory.
+
+Exit criterion: in `examples/todo_api`, hovering over `Todos.put` in VSCode shows the typed signature without any codegen having run; `pyright --strict` is green on the whole tree; `skaal stubs` emits a `.pyi` package that, when added to a separate project's `pyrightconfig.json`, gives full LSP completion for `Todos` and every `@app.function`.
 
 ### Phase 6 — Plan diff, map, where, trace (1 week)
 
@@ -813,16 +1080,18 @@ The release ships when all of the following are simultaneously true:
 1. `skaal init && skaal run` requires zero arguments and zero config edits.
 2. `skaal plan --env prod` produces a deterministic diff that a developer can read in under 30 seconds.
 3. `skaal deploy --env prod` writes a `skaal.lock` and the next `skaal plan` is empty unless code changed.
-4. A `Store[T]` declared in one module is importable, typed, and usable from another module via `from skaal_clients...` with no manual wiring.
-5. Opening a PR posts an infra diff comment automatically.
-6. The word "constraint" appears nowhere in user-facing docs, CLI help, or decorator signatures.
-7. The `examples/todo_api` walkthrough deploys cleanly to AWS in under 5 minutes from a fresh checkout.
+4. A `Store[T]` declared in one module is importable, typed, and usable from another module via direct Python import (`from acme.users import Users`) with no codegen step and no `skaal_clients/` package in the source tree.
+5. `pyright --strict` is green on `skaal/`, `examples/`, and `tests/typing/`; `reveal_type` assertions for every row of §6.13.3 pass; hovering over any primitive method in VSCode shows the typed signature without running a build step.
+6. `class Sales(Relational[Sale, BigQuery])` plus `bq = await Sales.native()` resolves `bq` to `google.cloud.bigquery.Client` in Pylance — and the typed escape works equivalently via `BigQuery.client_for(Sales)` when the class is not type-pinned.
+7. Opening a PR posts an infra diff comment automatically.
+8. The word "constraint" appears nowhere in user-facing docs, CLI help, or decorator signatures.
+9. The `examples/todo_api` walkthrough deploys cleanly to AWS in under 5 minutes from a fresh checkout.
 
-When all seven hold, the redesign is done. The product Skaal claims to be — your code is your architecture — is finally the product Skaal is.
+When all nine hold, the redesign is done. The product Skaal claims to be — your code is your architecture, fully typed and discoverable in your IDE — is finally the product Skaal is.
 
 ## 13. The pitch (canonical)
 
 > **Skaal: your Python app is your architecture.**
-> Write classes, functions, and handlers. Skaal infers the infrastructure, generates the Pulumi, and gives you typed clients for every primitive. One codebase. One mental model. `skaal deploy` knows what to build.
+> Write classes and functions. Skaal infers the infrastructure, generates the Pulumi, and your primitive classes are the typed clients. `Pylance` follows every call site straight down to the underlying SDK. One codebase. One mental model. `skaal deploy` knows what to build.
 
 This sentence is the contract. Every API decision in this ADR exists to make it literally true.
