@@ -280,17 +280,17 @@ Properties this enforces:
 
 ### 6.3 The `BoundPlan` and the defaults table
 
-`BoundPlan = bind(InferredPlan, environment, lock)`. Every type involved is a frozen pydantic model — `BoundResource`, `BoundPlan`, `Environment`, `EnvProfile`, `LockFile`, `LockEntry`. The binding step is a pure function:
+`BoundPlan = bind(InferredPlan, environment, lock)`. Every type involved is a frozen pydantic model — `BoundResource`, `BoundPlan`, `Environment`, `Target`, `LockFile`, `LockEntry`. The binding step is a pure function:
 
 ```python
 from pydantic import BaseModel, ConfigDict
 
-class EnvProfile(StrEnum):
+class Target(StrEnum):
     LOCAL = "local"
-    CLOUD_AWS = "cloud-aws"
-    CLOUD_GCP = "cloud-gcp"
+    AWS = "aws"
+    GCP = "gcp"
 
-class EnvironmentBinding(BaseModel):
+class ResourceOverride(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     backend: str
     region: str | None = None
@@ -298,10 +298,11 @@ class EnvironmentBinding(BaseModel):
 
 class Environment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    name: str
-    profile: EnvProfile
+    name: str                            # user-chosen: "dev", "staging", "prod", "warehouse", …
+    target: Target                       # the deployment platform: local | aws | gcp
     region: str | None = None
-    bindings: dict[str, EnvironmentBinding] = {}   # resource_id -> override
+    overrides: dict[str, ResourceOverride] = {}   # resource_id -> override; un-pinned only
+    backends: dict[str, BackendConfig] = {}       # per-backend env config (project/dataset/region/emulator)
     telemetry: TelemetryConfig | None = None
     secrets: SecretsConfig | None = None
 
@@ -346,8 +347,8 @@ def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> Bo
         token = res.overrides.backend_token
         if (env.name, res.id) in lock.entries and lock.entries[(env.name, res.id)].backend != token.name:
             raise TypePinViolation(res, lock.entries[(env.name, res.id)].backend)
-        if res.id in env.bindings and env.bindings[res.id].backend != token.name:
-            raise TypePinViolation(res, env.bindings[res.id].backend)
+        if res.id in env.overrides and env.overrides[res.id].backend != token.name:
+            raise TypePinViolation(res, env.overrides[res.id].backend)
         return BoundResource(
             inferred=res,
             backend=token.name,
@@ -362,8 +363,8 @@ def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> Bo
                              backend_config=env.backends.get(e.backend))
 
     # 3. Env-level override for un-pinned resources.
-    if res.id in env.bindings:
-        b = env.bindings[res.id]
+    if res.id in env.overrides:
+        b = env.overrides[res.id]
         return BoundResource(inferred=res, backend=b.backend, region=b.region,
                              backend_config=env.backends.get(b.backend), options=b.options, pinned=False)
 
@@ -371,8 +372,8 @@ def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> Bo
     #    and it only applies to un-pinned classes.
     return BoundResource(
         inferred=res,
-        backend=DEFAULTS[res.kind][env.profile],
-        backend_config=env.backends.get(DEFAULTS[res.kind][env.profile]),
+        backend=DEFAULTS[res.kind][env.target],
+        backend_config=env.backends.get(DEFAULTS[res.kind][env.target]),
         region=env.region,
         pinned=False,
     )
@@ -380,9 +381,9 @@ def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> Bo
 
 `Environment.backends: dict[str, BackendConfig]` carries the per-backend config block (`project`, `dataset`, `region`, `emulator`, `table_prefix`, …) validated by each backend's `options_schema`. This is the mechanism that lets `env.local` point pinned BigQuery classes at `acme-dev:alice_sandbox` while leaving un-pinned `Store[User]` resources on local SQLite.
 
-The defaults table is a `Mapping[ResourceKind, Mapping[EnvProfile, str]]` literal checked into `skaal/binding/defaults.py`. Initial contents:
+The defaults table is a `Mapping[ResourceKind, Mapping[Target, str]]` literal checked into `skaal/binding/defaults.py`. Initial contents:
 
-| Resource kind | `local` | `cloud-aws` | `cloud-gcp` |
+| Resource kind | `local` | `aws` | `gcp` |
 |---|---|---|---|
 | `STORE` (KV) | `sqlite` | `dynamodb` | `firestore` |
 | `RELATIONAL` | `sqlite` | `rds-postgres` | `cloud-sql-postgres` |
@@ -491,18 +492,18 @@ Three knobs. That's the whole API for "I want something other than the default."
    async def signup(user: User) -> User: ...
    ```
 
-   When the second generic parameter is omitted (e.g. `Store[User]`), the env profile picks the backend through the defaults table. When it is supplied, the binding is **type-pinned**: the class is statically known to be a Redis-backed `Store`, every method signature on it specialises to Redis capabilities, and the `Users.native()` escape (§6.13) returns the concrete Redis client typed as `redis.asyncio.Redis`. An env override that tries to point a type-pinned class at a different backend fails at config-load time with a typed error.
+   When the second generic parameter is omitted (e.g. `Store[User]`), the env's `target` picks the backend through the defaults table. When it is supplied, the binding is **type-pinned**: the class is statically known to be a Redis-backed `Store`, every method signature on it specialises to Redis capabilities, and the `Users.native()` escape (§6.13) returns the concrete Redis client typed as `redis.asyncio.Redis`. An env override that tries to point a type-pinned class at a different backend fails at config-load time with a typed error.
 
    String forms (`backend="redis"`) are **not** accepted at declaration sites — strings are opaque to the IDE. They are accepted only inside `skaal.toml` (which is itself a string format) and validated against the registry at load time.
 
-2. **Environment override** — in `skaal.toml`:
+2. **Environment override** — in `skaal.toml` (each `[env.<name>]` block maps 1:1 to a Pulumi stack of the same name; see §6.14):
 
    ```toml
    [env.prod]
-   profile = "cloud-aws"
+   target = "aws"
    region = "eu-west-1"
 
-   [env.prod.bindings]
+   [env.prod.overrides]
    "acme.users:Users"   = "dynamodb"
    "acme.users:Avatars" = { backend = "s3", region = "us-east-1" }
    ```
@@ -561,7 +562,7 @@ bq: BQClient = await Sales.native()
 
 job = bq.query(
     f"SELECT DATE_TRUNC(occurred_at, MONTH) AS m, SUM(amount) AS revenue "
-    f"FROM `{Sales.qualified_table()}` "
+    f"FROM `{Sales.address().qualified_name}` "
     f"WHERE occurred_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY) "
     f"GROUP BY m"
 )
@@ -569,34 +570,34 @@ for row in job.result():
     ...
 ```
 
-`Sales.qualified_table()` returns the fully-qualified table name for the active environment (e.g. `acme-dev.alice_sandbox.sales` locally, `acme-prod.acme_warehouse.sales` in prod). The user writes BigQuery SQL with confidence: the dialect is real BigQuery in every environment because the table is real BigQuery in every environment.
+`Sales.address()` returns a typed `BigQueryAddress(project=..., dataset=..., table=...)` for the active environment; its `qualified_name` property is the fully-qualified BigQuery name (e.g. `acme-dev.alice_sandbox.sales` locally, `acme-prod.acme_warehouse.sales` in prod). The user writes BigQuery SQL with confidence: the dialect is real BigQuery in every environment because the table is real BigQuery in every environment. The same pattern applies across backends: `Avatars.address()` returns an `S3Address` whose `.uri` is `s3://...`; `Outbox.address()` returns an `SQSAddress` whose `.arn` is the live ARN. Each backend defines its own typed address model so cloud-specific accessors are typed and discoverable without polluting the cross-backend method surface.
 
 Configuration tells Skaal *which* BigQuery instance each environment points at:
 
 ```toml
-# skaal.toml
+# skaal.toml — each [env.<name>] is also the Pulumi stack name (§6.14).
 
 [env.local]
-profile = "local"               # un-pinned resources (Store[User], etc.) still use local defaults
+target = "local"                # un-pinned resources (Store[User], etc.) still use local defaults
 
 [env.local.backends.bigquery]   # pinned BigQuery classes talk to this real cloud instance
 project = "acme-dev"
 dataset = "alice_sandbox"
 
 [env.dev]
-profile = "cloud-gcp"
+target = "gcp"
 [env.dev.backends.bigquery]
 project = "acme-dev"
 dataset = "acme_dev_warehouse"
 
 [env.prod]
-profile = "cloud-gcp"
+target = "gcp"
 [env.prod.backends.bigquery]
 project = "acme-prod"
 dataset = "acme_warehouse"
 
 [env.test]                       # CI uses the official BigQuery emulator
-profile = "local"
+target = "local"
 [env.test.backends.bigquery]
 emulator = "http://localhost:9050"
 ```
@@ -639,14 +640,14 @@ The contract: **a type-pinned class runs on its declared backend in every enviro
 
 | Class shape | Where it runs | `.native()` available? | Substitution allowed? |
 |---|---|---|---|
-| `Relational[Sale]` (un-pinned) | Backend per env from defaults table or env override (SQLite locally, Postgres in cloud-aws, …) | No — un-pinned classes get only the portable API (`put`, `get`, `scan_page`, `query_index`) | Yes — that's the whole point of leaving the type un-pinned |
+| `Relational[Sale]` (un-pinned) | Backend per env from defaults table or env override (SQLite locally, Postgres on `aws`, …) | No — un-pinned classes get only the portable API (`put`, `get`, `scan_page`, `query_index`) | Yes — that's the whole point of leaving the type un-pinned |
 | `Relational[Sale, BigQuery]` (pinned) | Real BigQuery in every env; `env.<name>.backends.bigquery` names the project/dataset/emulator | Yes — `Sales.native()` returns `google.cloud.bigquery.Client` | **No.** Env-level override that names a different backend → `TypePinViolation` at config-load |
 
 Concrete consequences:
 
 1. **`skaal run` (local) connects to real cloud for pinned classes.** No SQLite-pretending-to-be-BigQuery. The dev experience matches production because the backend matches production.
 2. **The framework mixes per-app.** Un-pinned `Users(Store[User])` keeps using local SQLite; pinned `Sales(Relational[Sale, BigQuery])` uses real BigQuery. You pay the cloud bill exactly where you opted in.
-3. **`Sales.qualified_table()`, `Channels.topic_arn()`, `Avatars.bucket_url()`** — every pinned class exposes the active env's resource address as a method, so SQL strings, ARNs, and URIs always resolve to a real, current address. No environment variables to thread, no `os.environ.get("BQ_DATASET", "default")` patterns.
+3. **`<Resource>.address()` on every pinned class** — returns a backend-specific typed address model (`BigQueryAddress`, `S3Address`, `DynamoDBAddress`, …) with the live cloud identifier for the active environment. Convenience accessors (`.qualified_name`, `.uri`, `.arn`, `.region`) live on the address model where they're semantically meaningful, so the cross-backend surface stays uniform while the per-backend conveniences stay typed. No environment variables to thread, no `os.environ.get("BQ_DATASET", "default")` patterns.
 4. **No silent failure mode.** Pylance is statically correct; the runtime is operationally correct. The two never disagree.
 
 For workloads where you genuinely want portable storage and you'll restrict yourself to the portable API, leave the class un-pinned. The framework picks per env, but you give up `.native()` — there is nothing typed for you to escape into, because the typed surface depends on a backend commitment.
@@ -764,12 +765,16 @@ skaal plan --env prod --base=origin/main --format=github-markdown
 Format: TOML, committed. Written by `skaal deploy` after a successful provision. Reads roughly:
 
 ```toml
-[env.prod.bindings."acme.users:Users"]
+# skaal.lock — machine-written by `skaal deploy`. Mirrors LockFile.entries
+# keyed by (env_name, resource_id) per §6.3.
+version = 1
+
+[entries.prod."acme.users:Users"]
 backend = "dynamodb"
 pinned_at = "2026-05-12T14:00:00Z"
 pinned_by = "alice@acme.com"
 
-[env.prod.bindings."acme.users:Avatars"]
+[entries.prod."acme.users:Avatars"]
 backend = "s3"
 pinned_at = "2026-05-12T14:00:00Z"
 ```
@@ -801,9 +806,9 @@ Runtime logs include the same `skaal:source` field on every emitted log record, 
 
 ### 6.12 The backend registry (replaces the catalog and the plugin layer)
 
-A single Python module — `skaal/binding/registry.py` — owns the list of every backend Skaal knows. Each backend is **both a typed class token** (imported and used as the second generic parameter on `Store`/`Relational`/etc.) **and a registry entry** (a pydantic record describing kinds, profiles, capabilities, and the typed native client). The same data structure powers the binder, `skaal backends list`, the import-time validation, and the typed `.native()` escape hatch.
+A single Python module — `skaal/binding/registry.py` — owns the list of every backend Skaal knows. Each backend is **both a typed class token** (imported and used as the second generic parameter on `Store`/`Relational`/etc.) **and a registry entry** (a pydantic record describing kinds, targets, capabilities, and the typed native client). The same data structure powers the binder, `skaal backends list`, the import-time validation, and the typed `.native()` escape hatch.
 
-Pinning to a backend token (`Relational[Sale, BigQuery]`) **bypasses the defaults table entirely**: the binder ignores `DEFAULTS[ResourceKind][EnvProfile]` for that resource, refuses any env or lock entry that names a different backend (raising `TypePinViolation`), and uses `env.backends.<token-name>` only to resolve per-env config (project, dataset, region, emulator). The defaults table is the policy for un-pinned resources; pinned resources answer to the type system, not the table.
+Pinning to a backend token (`Relational[Sale, BigQuery]`) **bypasses the defaults table entirely**: the binder ignores `DEFAULTS[ResourceKind][Target]` for that resource, refuses any env or lock entry that names a different backend (raising `TypePinViolation`), and uses `env.backends.<token-name>` only to resolve per-env config (project, dataset, region, emulator). The defaults table is the policy for un-pinned resources; pinned resources answer to the type system, not the table.
 
 ```python
 # skaal/backends/_base.py
@@ -840,7 +845,7 @@ class Postgres(Backend[_PgPool]):
     NativeClient = _PgPool
 ```
 
-The registry then captures the operational metadata (profiles, capabilities, options schema) per backend:
+The registry then captures the operational metadata (targets, capabilities, options schema) per backend:
 
 ```python
 class BackendCapabilities(BaseModel):
@@ -855,17 +860,17 @@ class BackendCapabilities(BaseModel):
 class BackendEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     token: type[Backend]                 # the typed class (BigQuery, Postgres, Redis, …)
-    profiles: frozenset[EnvProfile]
+    targets: frozenset[Target]           # which deployment targets can pick it
     capabilities: BackendCapabilities
     options_schema: type[BaseModel]      # pydantic schema for backend-specific options
 
 REGISTRY: tuple[BackendEntry, ...] = (
-    BackendEntry(token=Postgres,  profiles={LOCAL, CLOUD_AWS}, …),
-    BackendEntry(token=BigQuery,  profiles={CLOUD_GCP},        …),
-    BackendEntry(token=Redis,     profiles={LOCAL, CLOUD_AWS}, …),
-    BackendEntry(token=DynamoDB,  profiles={CLOUD_AWS},        …),
-    BackendEntry(token=Firestore, profiles={CLOUD_GCP},        …),
-    BackendEntry(token=S3,        profiles={CLOUD_AWS},        …),
+    BackendEntry(token=Postgres,  targets={LOCAL, AWS}, …),
+    BackendEntry(token=BigQuery,  targets={GCP},        …),
+    BackendEntry(token=Redis,     targets={LOCAL, AWS}, …),
+    BackendEntry(token=DynamoDB,  targets={AWS},        …),
+    BackendEntry(token=Firestore, targets={GCP},        …),
+    BackendEntry(token=S3,        targets={AWS},        …),
     # …
 )
 ```
@@ -874,7 +879,7 @@ Rules the registry enforces (all at import time, all with source-located errors)
 
 1. Every typed binding (`Store[T, B]`, `Relational[T, B]`, …) requires `B` to be a registered `Backend` subclass. Unknown class → `UnknownBackendError` listing valid alternatives.
 2. The chosen entry's `token.kinds` must include every kind the inferred resource requires (§6.5.2). Otherwise → `BackendKindMismatch` with the offending source line.
-3. The entry must include the active `Environment.profile` in `profiles`. Otherwise → `BackendNotAvailableInProfile`.
+3. The entry must include the active `Environment.target` in `targets`. Otherwise → `BackendNotAvailableForTarget`.
 4. Backend-specific options (`partition_by=`, `dataset=`, …) are validated against `options_schema`. No untyped option dicts cross the binding boundary.
 5. Env-level string overrides in `skaal.toml` are looked up by `token.name` and validated against the same rules at config-load time.
 
@@ -953,7 +958,7 @@ result: User = await signup(User(...))           # Pylance shows (user: User) ->
 | Decorator preserves signatures | After `signup = app.function(signup)`, `reveal_type(signup)` is `FunctionRef[[User], User]`, and `await signup(user)` reveals `User`. |
 | Pinned class gives concrete native client | After `class Cache(Store[V, Redis])`, `reveal_type(await Cache.native())` is `redis.asyncio.Redis`. |
 | Un-pinned class has no `.native()` | After `class Plain(Store[User])`, `Plain.native` triggers Pyright `reportAttributeAccessIssue`. |
-| Pinning bypasses substitution | `class Sales(Relational[Sale, BigQuery])` plus `[env.local.bindings] "...Sales" = "postgres"` raises `TypePinViolation` at config-load (no runtime substitution path exists). |
+| Pinning bypasses substitution | `class Sales(Relational[Sale, BigQuery])` plus `[env.local.overrides] "...Sales" = "postgres"` raises `TypePinViolation` at config-load (no runtime substitution path exists). |
 | Local dev talks to real cloud for pinned classes | With `[env.local.backends.bigquery] project = "..."` set, `await Sales.native()` returns a `google.cloud.bigquery.Client` authenticated against the named project; the SQLite default for `RELATIONAL` is never reached. |
 | Kind mismatches are reported at import time | `class Sales(Relational[Sale, BigQuery])` plus a call to `Sales.update(...)` errors out at import with `BackendKindMismatch`. |
 | ASGI mount is type-checked | `app.mount("/api", 42)` fails Pyright; `app.mount("/api", FastAPI())` passes. |
@@ -971,6 +976,58 @@ Three design choices keep the above LSP-trivial and runtime-honest rather than r
 
 Together they give a framework whose entire public surface is navigable from a single `Go to Definition` chain, starting from the user's own class declaration and ending at the underlying SDK client — and where the type the IDE shows you is the type the runtime actually uses, in every environment.
 
+### 6.14 Environments map 1:1 to Pulumi stacks
+
+Skaal's user-facing term is **environment** (matching Vercel, Heroku, GitHub Actions, Encore, Modal). Pulumi's native term for an isolated deployment instance is **stack** (`pulumi stack init dev`, `Pulumi.<stack>.yaml`). The two refer to the same thing, and Skaal binds them by identity:
+
+> **Each `[env.<name>]` section in `skaal.toml` corresponds to exactly one Pulumi stack of the same name. There is no separate stack-naming step; the env name is the stack name.**
+
+Consequences and operational notes:
+
+| `skaal.toml` | Generated artifact | Result of `pulumi stack ls` |
+|---|---|---|
+| `[env.local]`  → never provisioned; ignored by Pulumi | — | not listed |
+| `[env.dev]`    | `Pulumi.dev.yaml` | `dev` |
+| `[env.staging]`| `Pulumi.staging.yaml` | `staging` |
+| `[env.prod]`   | `Pulumi.prod.yaml` | `prod` |
+
+Practical implications:
+
+1. **`skaal deploy --env prod` is equivalent to `pulumi up --stack prod`** under the hood. The CLI wraps Pulumi's Automation API; users do not invoke Pulumi directly. The stack-name argument is `--env <name>`, not `--stack`.
+2. **State storage** is whatever the user configures via standard Pulumi mechanisms (`PULUMI_BACKEND_URL`, an S3/GCS bucket, Pulumi Cloud). Skaal does not own state.
+3. **Stack outputs** (`pulumi stack output <key>`) are still available for users who want them — Skaal exports the inferred resource address per resource as `skaal.<resource_id>.address`. The same address is what `skaal where` resolves to.
+4. **`env.local`** is the only environment that does not produce a Pulumi stack — it runs in-process via `skaal run` and never invokes Pulumi.
+5. **Adding a new environment** (`[env.eu-prod]`) auto-creates the Pulumi stack `eu-prod` on first `skaal deploy --env eu-prod`. No `pulumi stack init` step. Removing requires `skaal env destroy --env <name>` which delegates to `pulumi destroy && pulumi stack rm`.
+
+The 1:1 mapping is the source of truth for Skaal/Pulumi alignment. Users who do drop down to `pulumi` directly (e.g. to inspect state during an incident) see the same names everywhere; users who never leave Skaal don't notice the wrapper at all.
+
+### 6.15 Naming conventions (canonical)
+
+To keep vocabulary consistent across the codebase, CLI, docs, and Pulumi state, the redesign commits to the following terms. Any earlier draft that diverged from this list is wrong:
+
+| Concept | Term | Notes |
+|---|---|---|
+| Isolated deployment instance | **environment** | User-facing. `[env.<name>]` in `skaal.toml`. Maps 1:1 to a Pulumi stack of the same name (§6.14). |
+| Cloud platform | **target** | `Target.LOCAL`, `Target.AWS`, `Target.GCP`. `target = "aws"` in TOML — no `cloud-` prefix. |
+| Per-resource backend choice for an un-pinned resource | **override** | `[env.prod.overrides]` in `skaal.toml`. Internally still the "binding layer" (§6.3) — the layer's name reflects what it does, the config key's name reflects what the user is expressing. |
+| Per-backend env config (project, dataset, emulator, …) | **backend config** | `[env.<name>.backends.<token>]` — keyed by the backend's token name. |
+| Address of a deployed resource | **address** | A typed pydantic model per backend (`BigQueryAddress`, `S3Address`, `DynamoDBAddress`, …). Exposed as `<Resource>.address()` on type-pinned classes. Stringly-typed `qualified_name`/`arn`/`uri` accessors live as properties on the address, not as method names on the resource — that keeps `Sales.address().qualified_name` portable across backends instead of `Sales.qualified_table()` vs `Sales.topic_arn()`. |
+| Resource kind in the inference layer | **`ResourceKind`** | `STORE`, `RELATIONAL`, `BLOB`, `CHANNEL`, `FUNCTION`, `ASGI_SERVICE`, `SCHEDULE`, `JOB`, `SECRET`. |
+| Primitive class (declared by the user) | **resource** | "The class is the resource" — a `Store[T, B]` declaration is a resource, an `@app.function` is a resource. |
+| The deployed thing that resource becomes | **deployed resource** or **artifact** | What `skaal where` and Pulumi state list. |
+| Source-to-resource printout | **map** | `skaal map` (§6.8). |
+| Code-vs-deployed diff | **plan** | `skaal plan` (§6.7). |
+| Cross-process typed stub package | **stubs** | `skaal stubs` (§6.6). |
+
+The decisions to **keep current names** in this round, despite cloud-vocabulary alternatives:
+
+- `Store[T]` not `KV[T]` or `Table[T]` — `Table` is ambiguous (DynamoDB tables are KV; SQL tables are relational); `KV` is unidiomatic in Python.
+- `Relational[T, B]` not `Table[T, B]` — same ambiguity reason; the long name disambiguates.
+- `BlobStore` not `Bucket` — `Bucket` is S3/GCS-specific in user mental models; `BlobStore` covers the local-filesystem case cleanly.
+- `Channel[T]` not `Topic[T]` or `Queue[T]` — `Channel` carries pub/sub semantics without committing to one cloud's naming.
+
+If a future ADR proposes renames, it must update both the code and §6.15 in the same patch.
+
 ## 7. The new CLI
 
 Trimmed to what fits the thesis. Each verb has one clear job.
@@ -987,7 +1044,7 @@ Trimmed to what fits the thesis. Each verb has one clear job.
 | `skaal unbind --env <name> <resource>` | Remove a pinned binding (resource is being deleted). |
 | `skaal where <resource> [--env <name>]` | Open the cloud-console URL for a deployed resource. |
 | `skaal trace <log-or-resource>` | Print the source location for a deployed resource or log line. |
-| `skaal backends list [--kind <k>] [--profile <p>]` | Print every backend the registry knows, with its `Backend` token import path, supported kinds, and profiles. Discovery surface for typed declaration-site bindings. |
+| `skaal backends list [--kind <k>] [--target <t>]` | Print every backend the registry knows, with its `Backend` token import path, supported kinds, and targets. Discovery surface for typed declaration-site bindings. |
 | `skaal stubs --from <src-app> --to <out-dir> [--as <pkg>]` | Emit a typed `.pyi`-only stub package for cross-process callers (PEP 561 `partial-stub` with `py.typed`). Idempotent; no runtime code generated. |
 | `skaal doctor` | Sanity-check toolchain (pulumi, docker, cloud credentials, pyright version). |
 
@@ -1101,12 +1158,12 @@ Exit criterion: `App.infer() -> InferredPlan` returns a complete plan for every 
 ### Phase 3 — Build the binding layer (1 week)
 
 1. New package `skaal/binding/`:
-   - `defaults.py` — the `Mapping[ResourceKind, Mapping[EnvProfile, str]]` literal from §6.3.
-   - `environment.py` — pydantic `Environment`, `EnvProfile`, `EnvironmentBinding`; `skaal.toml` loader via `Environment.model_validate(...)`.
+   - `defaults.py` — the `Mapping[ResourceKind, Mapping[Target, str]]` literal from §6.3.
+   - `environment.py` — pydantic `Environment`, `Target`, `ResourceOverride`, `BackendConfig`; `skaal.toml` loader via `Environment.model_validate(...)`.
    - `lock.py` — pydantic `LockFile`, `LockEntry`; round-trips through `model_dump(mode="json")` for stable TOML emission.
    - `bind.py` — pure `bind(InferredPlan, Environment, LockFile) -> BoundPlan` (all pydantic).
-   - `registry.py` — pydantic `BackendEntry`, `BackendCapabilities`, and the `REGISTRY` tuple from §6.12; replaces `skaal/plugins.py`. Adds kind/profile/option validation at import time.
-2. `skaal.toml` schema: one section per environment, no catalog references; validated against `Environment`.
+   - `registry.py` — pydantic `BackendEntry`, `BackendCapabilities`, and the `REGISTRY` tuple from §6.12; replaces `skaal/plugins.py`. Adds kind/target/option validation at import time.
+2. `skaal.toml` schema: one `[env.<name>]` section per environment (each mapping 1:1 to a Pulumi stack of the same name, §6.14), no catalog references; validated against `Environment`.
 
 Exit criterion: `bind(infer(app), env, lock)` produces a `BoundPlan` whose every resource has exactly one backend, deterministically, for every example, and `pytest --strict-markers tests/binding/` is green.
 
