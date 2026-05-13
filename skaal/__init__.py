@@ -1,41 +1,29 @@
-"""
-Skaal — Infrastructure as Constraints.
+"""Skaal — a Python framework where the application code is the infrastructure declaration.
 
-Write it once. Scale it with a word.
+This is the `0.4.0a0` line. The `0.3.x` constraint-solver surface (Z3, TOML
+catalogs, `Latency` / `Durability` / `AccessPattern`, `@app.handler`,
+`@app.scale`, `@app.shared`) has been removed per ADR 028. The inference
+(`skaal.inference`), binding (`skaal.binding`), typed `Backend` tokens, and
+`FunctionRef` typing contract land in Phases 2-5; until then the public
+surface is a strict subset of the eventual `__all__` in ADR 028 §8.
 """
 
-from skaal import api, types
+from skaal import types
 from skaal._logging import ensure_null_handler as _ensure_null_handler
-from skaal.agent import Agent, agent
 from skaal.app import App
 from skaal.blob import BlobStore
 from skaal.channel import Channel
-from skaal.components import (
-    APIGateway,
-    AppRef,
-    AuthConfig,
-    ExternalObservability,
-    ExternalQueue,
-    ExternalStorage,
-    Proxy,
-    Route,
-    ScheduleTrigger,
-)
+from skaal.components import ExternalQueue, ExternalStorage
 from skaal.decorators import (
-    compute,
-    handler,
-    scale,
-    shared,
+    function,
     storage,
 )
 from skaal.module import Module, ModuleExport
-from skaal.patterns import EventLog, Outbox, Projection, Saga, SagaStep
 from skaal.relational import ensure_schema as ensure_relational_schema
 from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.secrets import Secret, SecretRegistry
 from skaal.storage import Store
-from skaal.sync import run as sync_run
 from skaal.types import (
     TTL,
     BeforeInvoke,
@@ -43,7 +31,6 @@ from skaal.types import (
     Bulkhead,
     CircuitBreaker,
     Duration,
-    EngineTelemetrySnapshot,
     InvokeContext,
     JobHandle,
     JobResult,
@@ -51,28 +38,16 @@ from skaal.types import (
     JobStatus,
     Page,
     RateLimitPolicy,
-    ReadinessState,
-    RelationalMigrationOp,
-    RelationalMigrationPlan,
-    RelationalMigrationStatus,
-    RelationalMigrationStep,
-    RelationalRevision,
     Retention,
     RetryPolicy,
     SecondaryIndex,
-    TelemetryConfig,
 )
-from skaal.vector import VectorStore
 
 _ensure_null_handler()
 
 __all__ = [
     "TTL",
-    "APIGateway",
-    "Agent",
     "App",
-    "AppRef",
-    "AuthConfig",
     "BeforeInvoke",
     "BlobObject",
     "BlobStore",
@@ -81,10 +56,7 @@ __all__ = [
     "CircuitBreaker",
     "Cron",
     "Duration",
-    "EngineTelemetrySnapshot",
-    "EventLog",
     "Every",
-    "ExternalObservability",
     "ExternalQueue",
     "ExternalStorage",
     "InvokeContext",
@@ -94,42 +66,21 @@ __all__ = [
     "JobStatus",
     "Module",
     "ModuleExport",
-    "Outbox",
     "Page",
-    "Projection",
-    "Proxy",
     "RateLimitPolicy",
-    "ReadinessState",
-    "RelationalMigrationOp",
-    "RelationalMigrationPlan",
-    "RelationalMigrationStatus",
-    "RelationalMigrationStep",
-    "RelationalRevision",
     "Retention",
     "RetryPolicy",
-    "Route",
-    "Saga",
-    "SagaStep",
     "Schedule",
     "ScheduleContext",
-    "ScheduleTrigger",
     "SecondaryIndex",
     "Secret",
     "SecretRegistry",
     "Store",
-    "TelemetryConfig",
-    "VectorStore",
-    "agent",
-    "api",
-    "compute",
     "ensure_relational_schema",
-    "handler",
+    "function",
     "open_relational_session",
-    "scale",
-    "shared",
     "storage",
-    "sync_run",
     "types",
 ]
 
-__version__ = "0.3.2"
+__version__ = "0.4.0a0"

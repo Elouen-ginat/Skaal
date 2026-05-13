@@ -1,43 +1,13 @@
-"""Compute constraint types: ComputeType, Scale, Compute, and resilience policies."""
+"""Resilience policies attached to `@app.function`.
+
+`Compute`, `Scale`, `ScaleStrategy`, and `ComputeType` were part of the
+constraint-solver vocabulary and have been removed per ADR 028.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Literal
-
-from skaal.types.constraints import Latency, Throughput
-
-
-class ComputeType(StrEnum):
-    """Hardware type required by a function."""
-
-    CPU = "cpu"
-    GPU = "gpu"
-    TPU = "tpu"
-    ANY = "any"
-
-
-class ScaleStrategy(StrEnum):
-    """How requests are distributed across instances."""
-
-    ROUND_ROBIN = "round-robin"
-    PARTITION_BY_KEY = "partition-by-key"
-    BROADCAST = "broadcast"
-    RACE = "race"
-    COMPETING_CONSUMER = "competing-consumer"
-
-
-@dataclass
-class Scale:
-    """Compute scaling parameters."""
-
-    instances: int | str = "auto"
-    strategy: ScaleStrategy = ScaleStrategy.ROUND_ROBIN
-
-    def __post_init__(self) -> None:
-        if isinstance(self.strategy, str):
-            self.strategy = ScaleStrategy(self.strategy)
 
 
 @dataclass
@@ -57,7 +27,7 @@ class CircuitBreaker:
 
     failure_threshold: int = 5
     recovery_timeout_ms: int = 10_000
-    fallback: str | None = None  # name of a registered @app.function
+    fallback: str | None = None
 
 
 @dataclass
@@ -66,36 +36,12 @@ class RateLimitPolicy:
 
     requests_per_second: float
     burst: int = 1
-    scope: str = "global"  # "global" | "per-client" | "per-key:<arg_name>"
+    scope: str = "global"
 
 
 @dataclass
 class Bulkhead:
-    """Limit concurrent calls; callers block up to max_wait_ms then fail fast."""
+    """Limit concurrent calls; callers block up to `max_wait_ms` then fail fast."""
 
     max_concurrent_calls: int
     max_wait_ms: int = 0
-
-
-@dataclass
-class Compute:
-    """Full compute constraint specification attached to ``@app.function()``."""
-
-    latency: Latency | str | None = None
-    throughput: Throughput | str | None = None
-    compute_type: ComputeType = ComputeType.CPU
-    memory: str | None = None  # e.g. "~ 2GB"
-    schedule: str = "realtime"  # "realtime" | "batch" | "streaming"
-    retry: RetryPolicy | None = None
-    circuit_breaker: CircuitBreaker | None = None
-    rate_limit: RateLimitPolicy | None = None
-    bulkhead: Bulkhead | None = None
-    collocate_with: str | None = None  # qualified resource name: "auth.Sessions"
-
-    def __post_init__(self) -> None:
-        if isinstance(self.latency, str):
-            self.latency = Latency(self.latency)
-        if isinstance(self.throughput, str):
-            self.throughput = Throughput(self.throughput)
-        if isinstance(self.compute_type, str):
-            self.compute_type = ComputeType(self.compute_type)

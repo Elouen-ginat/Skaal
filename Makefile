@@ -1,6 +1,5 @@
-.PHONY: install dev lint format typecheck test test-cov test-solver test-storage \
-        test-runtime test-schema hooks audit ci build build-dev clean help \
-        docs docs-serve docs-build
+.PHONY: install dev lint format typecheck test test-cov test-storage test-schema \
+        hooks audit ci clean help docs docs-serve docs-build
 
 # ── Environment ────────────────────────────────────────────────────────────────
 PYTHON  ?= python
@@ -23,13 +22,9 @@ help:
 	@echo ""
 	@echo "  make test        run pytest"
 	@echo "  make test-cov    run pytest with coverage (terminal + html)"
-	@echo "  make test-solver|test-storage|test-runtime|test-schema  scoped suites"
+	@echo "  make test-storage|test-schema  scoped suites"
 	@echo ""
 	@echo "  make ci          full local pre-flight: lint + typecheck + hooks + tests"
-	@echo ""
-	@echo "  make build       maturin build --release"
-	@echo "  make build-dev   maturin develop"
-	@echo "  make clean       remove build artifacts and caches"
 	@echo ""
 	@echo "  make docs        alias for docs-serve"
 	@echo "  make docs-serve  serve the MkDocs site locally with live reload"
@@ -66,27 +61,14 @@ test:
 test-cov:
 	$(PYTEST) tests/ --cov=skaal --cov-report=term-missing --cov-report=html -q
 
-test-solver:
-	$(PYTEST) tests/solver/ -q
-
 test-storage:
 	$(PYTEST) tests/storage/ -q
-
-test-runtime:
-	$(PYTEST) tests/runtime/ -q
 
 test-schema:
 	$(PYTEST) tests/schema/ -q
 
 # Run the same checks CI runs, in roughly the same order.
 ci: lint typecheck hooks test
-
-# ── Build ──────────────────────────────────────────────────────────────────────
-build:
-	maturin build --release
-
-build-dev:
-	maturin develop
 
 # ── Docs ───────────────────────────────────────────────────────────────────────
 docs: docs-serve
