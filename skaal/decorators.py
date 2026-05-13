@@ -14,12 +14,24 @@ from collections.abc import Callable
 from typing import Any, Literal, TypeVar, cast
 
 from skaal.blob import validate_blob_model
+from skaal.inference.model import (
+    InferredResource,
+    ResourceKind,
+    SchemaRef,
+    SourceLocation,
+)
 from skaal.types import SecondaryIndex
 from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimitPolicy, RetryPolicy
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
 StorageKind = Literal["kv", "blob", "relational"]
+
+_STORAGE_KIND_TO_RESOURCE_KIND: dict[StorageKind, ResourceKind] = {
+    "kv": ResourceKind.STORE,
+    "blob": ResourceKind.BLOB,
+    "relational": ResourceKind.RELATIONAL,
+}
 
 
 def _apply_metadata(target: C, attribute: str, metadata: Any) -> C:
@@ -80,7 +92,7 @@ def storage(
 
     def decorator(cls: C) -> C:
         schema = _storage_schema(cls, kind=normalized_kind)
-        return _apply_metadata(
+        _apply_metadata(
             cls,
             "__skaal_storage__",
             {
@@ -89,6 +101,15 @@ def storage(
                 "schema": schema,
             },
         )
+        idx = tuple(indexes or ()) if normalized_kind == "kv" else ()
+        inferred = InferredResource(
+            id=InferredResource.id_for(cls),
+            kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
+            source=SourceLocation.from_object(cls),
+            schema_=SchemaRef.from_class(cls),
+            indexes=idx,
+        )
+        return _apply_metadata(cls, "__skaal_inferred__", inferred)
 
     return decorator
 
@@ -108,7 +129,7 @@ def function(
     """
 
     def decorator(fn: F) -> F:
-        return _apply_callable_metadata(
+        _apply_callable_metadata(
             fn,
             "__skaal_function__",
             {
@@ -118,5 +139,11 @@ def function(
                 "bulkhead": bulkhead,
             },
         )
+        inferred = InferredResource(
+            id=InferredResource.id_for(fn),
+            kind=ResourceKind.FUNCTION,
+            source=SourceLocation.from_object(fn),
+        )
+        return _apply_callable_metadata(fn, "__skaal_inferred__", inferred)
 
     return decorator
