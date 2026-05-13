@@ -112,9 +112,7 @@ class StackProfile(BaseModel):
 
     target: str | None = None
     region: str | None = None
-    catalog: Path | None = None
     gcp_project: str | None = None
-    enable_mesh: bool | None = None
     overrides: dict[str, str | int | bool] = Field(default_factory=dict)
     deletion_protection: bool | None = None
     env: dict[str, str] = Field(
@@ -187,15 +185,6 @@ class SkaalSettings(BaseSettings):
         default=Path("artifacts"),
         description="Output directory for generated artifacts.",
     )
-    catalog: Path | None = Field(
-        default=None,
-        description="Path to catalog TOML.",
-    )
-    enable_mesh: bool = Field(
-        default=False,
-        description="Include the skaal-mesh runtime dependency in generated deploy artifacts.",
-    )
-
     # ── Deploy ────────────────────────────────────────────────────────────────
     stack: str = Field(
         default="dev",

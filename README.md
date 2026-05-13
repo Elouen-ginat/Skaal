@@ -5,174 +5,123 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Elouen-ginat/Skaal/ci.yml?branch=main&label=CI)](https://github.com/Elouen-ginat/Skaal/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-2E8B57)](LICENSE)
-[![Targets](https://img.shields.io/badge/targets-local%20%7C%20AWS%20%7C%20GCP-0F766E)](#platform-features)
-[![Status](https://img.shields.io/badge/status-alpha-orange)](#project-status)
+[![Targets](https://img.shields.io/badge/targets-local%20%7C%20AWS%20%7C%20GCP-0F766E)](#what-skaal-targets)
+[![Status](https://img.shields.io/badge/status-alpha%20redesign-orange)](#status)
 
-**Infrastructure as Constraints for Python.**
+**Your Python app is your architecture.**
 
-You picked SQLite to start. Six months later you rewrote the data layer for Postgres, then again for DynamoDB when traffic moved. Each migration leaked infra concerns into business code, and your Pulumi or Terraform now duplicates what your app already declares.
+Write classes and functions. Skaal infers the infrastructure, generates the Pulumi, and your primitive classes are the typed clients. Pylance follows every call site straight down to the underlying SDK. One codebase. One mental model. `skaal deploy` knows what to build.
 
-Skaal flips the model: declare the *behavior* you need (latency, durability, throughput, residency, access pattern), and a Z3 solver picks the cheapest backend in your catalog that satisfies it — local, AWS, or GCP — from one application file.
+## Status
 
-Documentation: [https://elouen-ginat.github.io/Skaal/](https://elouen-ginat.github.io/Skaal/)
+> **Skaal is in the middle of a redesign from "Infrastructure as Constraints" to "code-first infrastructure" (`v0.3.x` → `v0.4.0`).**
+>
+> The new product is described in [ADR 028](notes/design/028-code-first-infra-redesign.md). The execution plan and live progress live in [ADR 029](notes/design/029-redesign-foundation-implementation-plan.md) and [`notes/redesign-status.md`](notes/redesign-status.md). Pre-redesign documentation pages still describe the constraint-solver model and will be replaced as Phase 7 lands.
+>
+> If you need a stable install today, pin `skaal==0.3.1`. New work happens on the `claude/plan-redesign-strategy-A5ixu` branch (the de-facto `v0.4.0-alpha` working branch), not on `main`.
 
-## Contents
-
-- [Before / After](#before--after)
-- [How It Differs](#how-it-differs)
-- [Quickstart](#quickstart)
-- [How It Works](#how-it-works)
-- [Platform Features](#platform-features)
-- [Installation](#installation)
-- [Examples](#examples)
-- [When Skaal Isn't a Fit](#when-skaal-isnt-a-fit)
-- [Project Status](#project-status)
-- [Documentation & FAQ](#documentation--faq)
-- [License](#license)
-
-## Before / After
-
-Without Skaal, a single resource pulls in a backend client, an Alembic or schema setup, and Pulumi wiring — and the choice is baked into your code:
+## What Skaal will be
 
 ```python
-# app.py — backend choice hard-coded
-import boto3
-ddb = boto3.resource("dynamodb")
-table = ddb.Table("todos")          # provisioned in pulumi/__main__.py
-def get(k): return table.get_item(Key={"id": k})["Item"]
+from skaal import App, Store, BlobStore, Channel, Cron
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: str
+    email: str
+
+class Users(Store[User]):
+    """One table. The class is the table."""
+    by_email = "email"  # declarative secondary index
+
+class Avatars(BlobStore):
+    """One bucket. The class is the bucket."""
+
+class SignupEvents(Channel[User]):
+    """One topic. The class is the topic."""
+
+app = App("acme")
+
+@app.function
+async def signup(user: User) -> User:
+    await Users.put(user.id, user)
+    await SignupEvents.publish(user)
+    return user
+
+@app.schedule(Cron("0 * * * *"))
+async def hourly_compact() -> None:
+    ...
 ```
 
-With Skaal, you declare the contract. The solver picks DynamoDB on AWS, SQLite locally, Postgres on GCP — without changing this file:
+The class **is** the typed client, importable from anywhere with no codegen step:
 
 ```python
-from skaal import App, Map
-
-app = App("todos")
-
-@app.storage(read_latency="< 10ms", durability="strong", throughput="> 100 rps")
-class Todos(Map[str, dict]):
-    pass
+from acme.users import Users
+user: User | None = await Users.get("u1")   # Pylance: user is User | None
 ```
 
-Run `skaal plan --explain` and the choice is auditable, not magic:
+When you need a backend-specific feature, you pin the type and get the real SDK client back, typed:
 
-```text
-Storage.Todos     3 candidates evaluated
-  > dynamodb      7ms p50    $0.018/wu     selected
-  - postgres     12ms p50    $0.024/wu     rejected: cost
-  - sqlite        5ms p50    $0            rejected: throughput < 100 rps
+```python
+from skaal.backends.bigquery import BigQuery
+
+class Sales(Relational[Sale, BigQuery], partition_by="occurred_at"):
+    transaction_id: str = Field(primary_key=True)
+
+bq = await Sales.native()      # google.cloud.bigquery.Client, in every environment
 ```
 
-[Back to top](#top)
-
-## How It Differs
-
-| | Skaal | Encore | SST | Wing | Pulumi alone |
-|---|---|---|---|---|---|
-| Language | Python | Go / TS | TS | Wing DSL | Any |
-| Infra model | Constraint solver picks backend | Resource primitives | AWS resource bindings | Cloud-portable DSL | Imperative IaC |
-| Backend choice | Solved per-environment from a catalog | Code-defined | Code-defined | Code-defined | Code-defined |
-| Deploy mechanism | Generated Pulumi programs | Encore platform | CDK / CloudFormation | Terraform / CDK | Pulumi |
-| Lock-in | Generated artifacts are yours; eject anytime | Platform-coupled | AWS-leaning | Compiler-coupled | None |
-| License | GPL-3.0-or-later | MPL-2.0 | MIT | MIT | Apache-2.0 |
-
-The differentiator is the **catalog + solver**. Other frameworks make you choose the backend in code; Skaal lets you describe what the backend must *do*, then re-solves when the environment (or its prices) change.
-
-[Back to top](#top)
-
-## Quickstart
+The CLI is symmetric:
 
 ```bash
-pip install "skaal[serve]"
-skaal init demo && cd demo
-pip install -e .
-skaal run
+skaal run                      # local: SQLite + filesystem + in-memory channel
+skaal plan --env prod          # diff: Users -> DynamoDB, Avatars -> S3, ...
+skaal deploy --env prod        # Pulumi up against AWS
 ```
 
-Add `runtime` if you need schedules, JWT auth, background jobs, or telemetry hooks:
+There is no constraint DSL. There is no catalog you maintain. There is no solver. The shape of the code is the deployment plan; an environment picks the backend by a fixed table the framework owns.
 
-```bash
-pip install "skaal[serve,runtime]"
+## How it works
+
+1. **Declare** classes (`Store[T]`, `BlobStore`, `Channel[T]`, `Relational[T, B]`) and functions (`@app.function`, `@app.schedule`, `@app.job`).
+2. **Infer** an environment-independent `InferredPlan` by walking the `App` graph (Phase 2 of the redesign).
+3. **Bind** the plan against an environment (`local`, `aws`, `gcp`) using a fixed defaults table (Phase 3).
+4. **Generate** Pulumi programs, Dockerfiles, and handler entrypoints from the bound plan (Phase 4).
+5. **Deploy** via Pulumi. The `skaal.lock` file pins each binding so the next plan is empty unless code changed.
+
+For full HTTP routing, mount any ASGI app (FastAPI, Starlette, Litestar) — Skaal deploys it; the framework you already know owns the routes:
+
+```python
+from fastapi import FastAPI
+api = FastAPI()
+app.mount("/api", api)
 ```
 
-For HTTP, mount FastAPI, Starlette, or Dash and invoke Skaal compute from your handlers.
+## What Skaal targets
 
-[Back to top](#top)
+- **Local** — SQLite, filesystem, in-process channels, async functions, APScheduler.
+- **AWS** — DynamoDB, S3, SQS, Lambda, EventBridge, RDS Postgres, Secrets Manager.
+- **GCP** — Firestore, GCS, Pub/Sub, Cloud Run, Cloud Scheduler, Cloud SQL, Secret Manager.
 
-## How It Works
-
-1. **Declare** constraints with decorators (`@storage`, `@compute`, `@blob`, `@scale`).
-2. **Plan** against a TOML catalog with the Z3 solver — output is `plan.skaal.lock`.
-3. **Build** target artifacts (Dockerfile, entrypoint, Pulumi program).
-4. **Deploy** to local, AWS, or GCP via the generated Pulumi stack.
-
-```bash
-skaal plan   --app myapp:app --catalog catalogs/local.toml
-skaal build  --app myapp:app --target local --catalog catalogs/local.toml
-skaal deploy --app myapp:app --target local --catalog catalogs/local.toml
-```
-
-Generated artifacts land under `artifacts/` and are checked-in friendly. You can stop using Skaal at any time and keep the Pulumi output. See [docs/faq](https://elouen-ginat.github.io/Skaal/faq/) for the eject path.
-
-[Back to top](#top)
-
-## Platform Features
-
-- **Storage tiers:** `Map[K, V]`, `Collection[T]`, `BlobStore`, relational (SQLModel + Alembic), vector.
-- **Backends:** SQLite, Postgres, Redis, DynamoDB, Firestore, S3, GCS, Chroma, pgvector.
-- **Compute & runtime:** async-first, ASGI/WSGI mounts, schedules, retries, rate limits, circuit breakers.
-- **Channels:** local, Redis Streams, SNS/SQS — with EventLog, Outbox, Saga patterns.
-- **Deployment:** generated Pulumi programs for local Docker, AWS Lambda, GCP Cloud Run.
-- **Extensibility:** entry-point plugin model for backends and channels.
-
-Full surface: [Platform Features](https://elouen-ginat.github.io/Skaal/platform-features/).
-
-[Back to top](#top)
+The `0.4.0` cut ships AWS first; GCP follows in a `0.4.x` point release.
 
 ## Installation
 
 ```bash
-pip install skaal                       # base
+pip install skaal                       # base (currently the 0.3.x constraint product)
 pip install "skaal[serve,runtime]"      # local development
 pip install "skaal[deploy,aws,runtime]" # AWS
 pip install "skaal[deploy,gcp,runtime]" # GCP
 ```
 
-Other extras: `vector`, `fastapi`, `dash`, `examples`, `mesh`, `secrets-aws`, `secrets-gcp`. Full list in [docs/installation](https://elouen-ginat.github.io/Skaal/getting-started/).
+The `0.4.0-alpha.N` releases are published to TestPyPI as each redesign phase exits. The `v0.4.0` release on PyPI lands when [`notes/redesign-status.md`](notes/redesign-status.md) reports every phase complete.
 
-[Back to top](#top)
+## Project status
 
-## Examples
+**Alpha (`0.4.0a0`).** The `0.3.x` line implemented the original constraint-solver thesis; the `0.4.x` line is rebuilding the framework around code-first infrastructure inference per [ADR 028](notes/design/028-code-first-infra-redesign.md). No backwards-compatibility shims are planned — the constraint vocabulary (`Latency`, `Durability`, `AccessPattern`, `@app.handler`, `@app.scale`, `@app.shared`, TOML catalogs) is being removed root and branch.
 
-`examples/` contains: hello world, todo API, FastAPI streaming, file upload, Dash app, mesh counter, task dashboard, team directory.
-
-[Back to top](#top)
-
-## When Skaal Isn't a Fit
-
-- You already maintain a mature Terraform / CDK monorepo and don't want a second IaC pipeline.
-- Your stack relies on backends Skaal's catalog doesn't model (Kafka, Spanner, Cosmos DB, etc. — not yet).
-- You need production-grade GCP today. Local and AWS targets are the most mature; GCP and the vector tier are still maturing.
-
-[Back to top](#top)
-
-## Project Status
-
-**Alpha (0.3.1).** The core direction is stable: constraint declaration, Z3 planning, generated deployment, local + cloud execution from one codebase. Local + AWS targets are the most exercised; GCP, vector, and the Rust `mesh/` runtime are in active development. Public APIs (decorators in `skaal.decorators`, types in `skaal.types`) follow keyword-only-additive evolution; breaking changes go through ADRs in [`docs/design/`](docs/design).
-
-Roadmap and design decisions: [ADR index](docs/design).
-
-## Documentation & FAQ
-
-- [Documentation home](https://elouen-ginat.github.io/Skaal/)
-- [Getting started](https://elouen-ginat.github.io/Skaal/getting-started/)
-- [Tutorials](https://elouen-ginat.github.io/Skaal/tutorials/)
-- [How it works](https://elouen-ginat.github.io/Skaal/how-it-works/)
-- [Catalogs](https://elouen-ginat.github.io/Skaal/catalogs/)
-- [Comparison with other tools](https://elouen-ginat.github.io/Skaal/comparison/)
-- [FAQ](https://elouen-ginat.github.io/Skaal/faq/)
-- [Python API reference](https://elouen-ginat.github.io/Skaal/reference/python-api/)
+Roadmap and design decisions: [ADR index](notes/design/).
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE) and the [FAQ entry on GPL and SaaS use](https://elouen-ginat.github.io/Skaal/faq/#license).
+GPL-3.0-or-later. See [LICENSE](LICENSE).

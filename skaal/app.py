@@ -160,6 +160,5 @@ class App(Module):
         return (
             f"App({self.name!r}, "
             f"storage={list(self._storage)}, "
-            f"agents={list(self._agents)}, "
             f"functions={list(self._functions)})"
         )

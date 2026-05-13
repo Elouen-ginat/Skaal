@@ -1,4 +1,12 @@
-"""Module — reusable, composable Skaal fragment. Base class for App."""
+"""Module — reusable, composable Skaal fragment. Base class for App.
+
+The agent / pattern surface and the constraint vocabulary
+(`Latency`, `Throughput`, `Durability`, `AccessPattern`,
+`Compute`, `Scale`, `DecommissionPolicy`) have been removed per ADR 028
+Phase 1. Decorators retain only their structural arguments; the inference
+layer (Phase 2) re-derives infrastructure shape from class shape, not
+constraints.
+"""
 
 from __future__ import annotations
 
@@ -6,29 +14,19 @@ import weakref
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-
-# TYPE_CHECKING import to avoid circular deps at runtime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, cast, overload
 
 from skaal.types import (
-    AccessPattern,
     BeforeInvoke,
     Bulkhead,
     CircuitBreaker,
-    Compute,
-    DecommissionPolicy,
-    Durability,
     Duration,
     JobHandle,
     JobSpec,
-    Latency,
     RateLimitPolicy,
-    Retention,
     RetryPolicy,
-    Scale,
     SecondaryIndex,
     SecretRef,
-    Throughput,
 )
 from skaal.types.invoke import AuthClaims
 from skaal.types.protocols import AsyncPublishTarget
@@ -40,34 +38,20 @@ if TYPE_CHECKING:
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
 ChannelT = TypeVar("ChannelT", bound="Channel[Any]")
-StorageKind = Literal["kv", "blob", "relational", "vector"]
+StorageKind = Literal["kv", "blob", "relational"]
 
 
 class ModuleExport:
-    """
-    Typed handle for symbols exported by a Module.
-
-    Returned by `module.export(...)`. Carries references to the exported
-    storage classes, agents, functions, and channels so that mounting apps
-    can use them as direct Python references.
-
-    Examples:
-
-        exports = auth.export(User, Sessions)
-        # In mounting app:
-        user = await exports.agents["User"](user_id)
-    """
+    """Typed handle for symbols exported by a `Module`."""
 
     def __init__(
         self,
         storage: dict[str, Any],
-        agents: dict[str, Any],
         functions: dict[str, Any],
         channels: dict[str, Any],
         namespace: str,
     ) -> None:
         self.storage = storage
-        self.agents = agents
         self.functions = functions
         self.channels = channels
         self.namespace = namespace
@@ -76,7 +60,6 @@ class ModuleExport:
         return (
             f"ModuleExport(namespace={self.namespace!r}, "
             f"storage={list(self.storage)}, "
-            f"agents={list(self.agents)}, "
             f"functions={list(self.functions)})"
         )
 
@@ -102,9 +85,8 @@ class _HasDunderName(Protocol):
     __name__: str
 
 
-class _ComputeMetadataFn(Protocol):
-    __skaal_compute__: Compute
-    __skaal_scale__: Scale
+class _FunctionMetadataFn(Protocol):
+    __skaal_function__: dict[str, Any]
     __skaal_secrets__: tuple[SecretRef, ...]
 
 
@@ -120,17 +102,14 @@ class _ScheduleMetadataFn(Protocol):
     __skaal_schedule__: dict[str, Any]
 
 
-def _attach_compute_metadata(
+def _attach_function_metadata(
     fn: F,
-    compute: Compute,
+    metadata: dict[str, Any],
     *,
-    scale: Scale | None,
     secrets: tuple[SecretRef, ...] | None,
 ) -> F:
-    metadata_fn = cast(_ComputeMetadataFn, fn)
-    metadata_fn.__skaal_compute__ = compute
-    if scale is not None:
-        metadata_fn.__skaal_scale__ = scale
+    metadata_fn = cast(_FunctionMetadataFn, fn)
+    metadata_fn.__skaal_function__ = metadata
     if secrets is not None:
         metadata_fn.__skaal_secrets__ = secrets
     return fn
@@ -155,44 +134,24 @@ def _attach_schedule_metadata(fn: F, metadata: dict[str, Any]) -> F:
 
 
 class Module:
-    """
-    A reusable, composable Skaal fragment.
+    """A reusable, composable Skaal fragment.
 
-    A Module can declare storage, agents, functions, channels, and patterns —
-    but it has no deploy target. Modules are mounted into Apps (or other Modules)
-    via `app.use(module)`, namespacing their resources automatically.
-
-    Modules are published as pip packages by convention as `skaal-<name>`. They
-    expose their public API via `module.export(...)`.
-
-    Examples:
-
-        auth = Module("auth")
-
-        @auth.storage(read_latency="< 5ms", durability="persistent")
-        class Sessions(skaal.Store[Session]):
-            pass
-
-        @auth.agent(persistent=True)
-        class User(Agent):
-            email: str = ""
-
-        exports = auth.export(Sessions, User)
+    A `Module` can declare storage classes, functions, jobs, channels, and
+    schedules. It has no deploy target; modules are mounted into apps (or
+    other modules) via `app.use(module)` which namespaces their resources.
     """
 
     def __init__(self, name: str) -> None:
         self.name = name
         self._storage: dict[str, Any] = {}
-        self._agents: dict[str, Any] = {}
         self._functions: dict[str, Any] = {}
         self._jobs: dict[str, Any] = {}
         self._channels: dict[str, Channel[Any]] = {}
-        self._patterns: dict[str, Any] = {}
         self._components: dict[str, Any] = {}
         self._schedules: dict[str, Any] = {}
         self._secrets: dict[str, SecretRef] = {}
         self._exports: set[str] = set()
-        self._submodules: dict[str, Module] = {}  # namespace → mounted module
+        self._submodules: dict[str, Module] = {}
         self._before_invoke: list[BeforeInvoke] = []
         self._runtime_ref: weakref.ReferenceType[Any] | None = None
 
@@ -204,19 +163,6 @@ class Module:
         cls_to_decorate: C,
         *,
         kind: StorageKind | str = ...,
-        dim: int | None = ...,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        access_pattern: AccessPattern | str | None = ...,
-        write_throughput: Throughput | str | int | float | None = ...,
-        residency: str | None = ...,
-        retention: Retention | str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
         indexes: list[SecondaryIndex] | None = ...,
     ) -> C: ...
 
@@ -226,19 +172,6 @@ class Module:
         cls_to_decorate: None = ...,
         *,
         kind: StorageKind | str = ...,
-        dim: int | None = ...,
-        metric: str = ...,
-        read_latency: Latency | str | None = ...,
-        write_latency: Latency | str | None = ...,
-        durability: Durability | str = ...,
-        size_hint: str | None = ...,
-        access_pattern: AccessPattern | str | None = ...,
-        write_throughput: Throughput | str | int | float | None = ...,
-        residency: str | None = ...,
-        retention: Retention | str | None = ...,
-        auto_optimize: bool = ...,
-        decommission_policy: DecommissionPolicy | None = ...,
-        collocate_with: str | None = ...,
         indexes: list[SecondaryIndex] | None = ...,
     ) -> Callable[[C], C]: ...
 
@@ -247,51 +180,13 @@ class Module:
         cls_to_decorate: C | None = None,
         *,
         kind: StorageKind | str = "kv",
-        dim: int | None = None,
-        metric: str = "cosine",
-        read_latency: Latency | str | None = None,
-        write_latency: Latency | str | None = None,
-        durability: Durability | str = Durability.PERSISTENT,
-        size_hint: str | None = None,
-        access_pattern: AccessPattern | str | None = None,
-        write_throughput: Throughput | str | int | float | None = None,
-        residency: str | None = None,
-        retention: Retention | str | None = None,
-        auto_optimize: bool = False,
-        decommission_policy: DecommissionPolicy | None = None,
-        collocate_with: str | None = None,
         indexes: list[SecondaryIndex] | None = None,
     ) -> C | Callable[[C], C]:
-        """Register a storage class with infrastructure constraints.
-
-        Can be used as:
-            @app.storage
-            class MyStorage: ...
-
-        Or:
-            @app.storage(read_latency="< 100ms")
-            class MyStorage: ...
-        """
+        """Register a storage class with this module."""
         from skaal.decorators import storage as _storage_dec
 
         storage_decorator = cast(Callable[..., Any], _storage_dec)
-        outer = storage_decorator(
-            kind=kind,
-            dim=dim,
-            metric=metric,
-            read_latency=read_latency,
-            write_latency=write_latency,
-            durability=durability,
-            size_hint=size_hint,
-            access_pattern=access_pattern,
-            write_throughput=write_throughput,
-            residency=residency,
-            retention=retention,
-            auto_optimize=auto_optimize,
-            decommission_policy=decommission_policy,
-            collocate_with=collocate_with,
-            indexes=indexes,
-        )
+        outer = storage_decorator(kind=kind, indexes=indexes)
 
         def decorator(cls: C) -> C:
             annotated = outer(cls)
@@ -303,44 +198,10 @@ class Module:
         return decorator(cls_to_decorate)
 
     @overload
-    def agent(self, cls_to_decorate: C, *, persistent: bool = ...) -> C: ...
-
-    @overload
-    def agent(self, cls_to_decorate: None = ..., *, persistent: bool = ...) -> Callable[[C], C]: ...
-
-    def agent(
-        self, cls_to_decorate: C | None = None, *, persistent: bool = True
-    ) -> C | Callable[[C], C]:
-        """Register an agent class.
-
-        Can be used as:
-            @app.agent
-            class MyAgent: ...
-
-        Or:
-            @app.agent(persistent=True)
-            class MyAgent: ...
-        """
-        from skaal.agent import agent as _agent_dec
-
-        outer = _agent_dec(persistent=persistent)
-
-        def decorator(cls: C) -> C:
-            annotated = outer(cls)
-            self._agents[cls.__name__] = annotated
-            return annotated
-
-        if cls_to_decorate is None:
-            return decorator
-        return decorator(cls_to_decorate)
-
-    @overload
     def function(
         self,
         fn_to_decorate: F,
         *,
-        compute: Compute | None = ...,
-        scale: Scale | None = ...,
         retry: RetryPolicy | None = ...,
         circuit_breaker: CircuitBreaker | None = ...,
         rate_limit: RateLimitPolicy | None = ...,
@@ -353,8 +214,6 @@ class Module:
         self,
         fn_to_decorate: None = ...,
         *,
-        compute: Compute | None = ...,
-        scale: Scale | None = ...,
         retry: RetryPolicy | None = ...,
         circuit_breaker: CircuitBreaker | None = ...,
         rate_limit: RateLimitPolicy | None = ...,
@@ -366,37 +225,23 @@ class Module:
         self,
         fn_to_decorate: F | None = None,
         *,
-        compute: Compute | None = None,
-        scale: Scale | None = None,
         retry: RetryPolicy | None = None,
         circuit_breaker: CircuitBreaker | None = None,
         rate_limit: RateLimitPolicy | None = None,
         bulkhead: Bulkhead | None = None,
         secrets: list[SecretRef] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a compute function with optional constraints and resilience policies.
-
-        Can be used as:
-            @app.function
-            def my_func(): ...
-
-        Or:
-            @app.function(compute=..., secrets=[Secret("DB_DSN")])
-            def my_func(): ...
-        """
+        """Register a function with optional resilience policies."""
 
         def decorator(fn: F) -> F:
-            _compute = compute or Compute()
-            if retry is not None:
-                _compute.retry = retry
-            if circuit_breaker is not None:
-                _compute.circuit_breaker = circuit_breaker
-            if rate_limit is not None:
-                _compute.rate_limit = rate_limit
-            if bulkhead is not None:
-                _compute.bulkhead = bulkhead
+            metadata = {
+                "retry": retry,
+                "circuit_breaker": circuit_breaker,
+                "rate_limit": rate_limit,
+                "bulkhead": bulkhead,
+            }
             secret_tuple = tuple(secrets) if secrets else None
-            fn = _attach_compute_metadata(fn, _compute, scale=scale, secrets=secret_tuple)
+            fn = _attach_function_metadata(fn, metadata, secrets=secret_tuple)
             if secrets:
                 for ref in secrets:
                     self.secret(ref)
@@ -465,35 +310,11 @@ class Module:
         self,
         *,
         buffer: int = 1000,
-        throughput: Throughput | str | None = None,
-        durability: Durability = Durability.PERSISTENT,
     ) -> Callable[[C], C]:
-        """
-        Register a Channel subclass as a named, constraint-bearing resource.
-
-        Examples:
-
-            @auth.channel(throughput="> 500 events/s", durability="durable")
-            class UserEvents(Channel[UserEvent]):
-                pass
-        """
-        if isinstance(throughput, str):
-            throughput = Throughput(throughput)
-        if isinstance(durability, str):
-            durability = Durability(durability)
+        """Register a `Channel` subclass as a named resource on this module."""
 
         def decorator(cls: C) -> C:
-            cls = _attach_channel_metadata(
-                cls,
-                {
-                    "buffer": buffer,
-                    "throughput": throughput,
-                    "durability": durability,
-                },
-            )
-            # Store an instance (not the class) so the runtime can wire it with
-            # wire_local / wire_redis.  The class is still returned so type
-            # annotations remain valid and the solver can resolve it by name.
+            cls = _attach_channel_metadata(cls, {"buffer": buffer})
             instance = cls(buffer=buffer)
             self._channels[cls.__name__] = instance
             return cls
@@ -501,13 +322,7 @@ class Module:
         return decorator
 
     def attach(self, component: Any) -> Any:
-        """Attach an external or provisioned component to this module.
-
-        If the component carries a `SecretRef`
-        (e.g. ``ExternalStorage(secret=...)``) the secret is auto-declared
-        so the runtime registry resolves it without a separate
-        `app.secret(...)` call.
-        """
+        """Attach an external component to this module."""
         from skaal.components import ExternalComponent
 
         self._components[component.name] = component
@@ -516,7 +331,7 @@ class Module:
         return component
 
     def get_channel(self, channel_cls: type[ChannelT]) -> ChannelT:
-        """Return the registered channel instance for a decorated Channel subclass."""
+        """Return the registered channel instance for a decorated `Channel` subclass."""
         channel = self._channels.get(channel_cls.__name__)
         if channel is None:
             raise KeyError(
@@ -524,16 +339,13 @@ class Module:
             )
         if not isinstance(channel, channel_cls):
             raise TypeError(
-                f"Registered channel {channel_cls.__name__!r} is {type(channel).__name__}, expected {channel_cls.__name__}"
+                f"Registered channel {channel_cls.__name__!r} is "
+                f"{type(channel).__name__}, expected {channel_cls.__name__}"
             )
         return channel
 
     def secret(self, ref: SecretRef) -> SecretRef:
-        """Declare a secret consumed by this module's functions and agents.
-
-        The declaration is collected into `PlanFile.secrets` at plan time and
-        resolved by the runtime `SecretRegistry` at boot.
-        """
+        """Declare a secret consumed by this module's functions."""
         existing = self._secrets.get(ref.name)
         if existing is not None and existing != ref:
             raise ValueError(
@@ -570,28 +382,7 @@ class Module:
         emit_to: AsyncPublishTarget[object] | None = None,
         timezone: str = "UTC",
     ) -> F | Callable[[F], F]:
-        """Register a background function triggered on a time-based schedule.
-
-        The appropriate cloud scheduler is provisioned automatically:
-        - AWS: EventBridge rule plus Lambda permission
-        - GCP: Cloud Scheduler job to Cloud Run
-        - Local: APScheduler `AsyncIOScheduler`
-
-        Examples:
-
-            @app.schedule(trigger=Every(interval="5m"))
-            async def cleanup(): ...
-
-            @app.schedule(trigger=Cron(expression="0 8 * * *"), timezone="US/Eastern")
-            async def daily_report(ctx: ScheduleContext) -> None:
-                print(f"Fired at {ctx.fired_at}")
-
-        Args:
-            trigger:   `Every` or `Cron` schedule definition.
-            emit_to:   Optional Channel / EventLog to publish non-``None`` results to.
-            timezone:  IANA timezone string. Defaults to `"UTC"`.
-        """
-        from skaal.components import ScheduleTrigger
+        """Register a background function triggered on a time-based schedule."""
 
         def decorator(fn: F) -> F:
             fn = _attach_schedule_metadata(
@@ -599,31 +390,11 @@ class Module:
                 {"trigger": trigger, "emit_to": emit_to, "timezone": timezone},
             )
             self._schedules[fn.__name__] = fn
-            st = ScheduleTrigger(
-                f"{fn.__name__}-schedule",
-                trigger=trigger,
-                target_function=fn.__name__,
-                timezone=timezone,
-                emit_to=_schedule_emit_target_name(emit_to),
-            )
-            self._components[st.name] = st
             return fn
 
         if fn_to_decorate is None:
             return decorator
         return decorator(fn_to_decorate)
-
-    def pattern(self, p: Any) -> Any:
-        """
-        Register a pattern (EventLog, Projection, Saga, Outbox) with this module.
-
-        Examples:
-
-            auth.pattern(UserEventLog)
-        """
-        name = _resource_registration_name(p)
-        self._patterns[name] = p
-        return p
 
     def add_before_invoke(self, hook: BeforeInvoke) -> BeforeInvoke:
         """Register a hook that runs before every resilience-wrapped invocation."""
@@ -645,24 +416,14 @@ class Module:
     # ── Export / import API ────────────────────────────────────────────────
 
     def export(self, *symbols: Any) -> ModuleExport:
-        """
-        Mark symbols as importable by mounting apps.
-
-        Symbols must be storage classes, agent classes, functions, or channels
-        already registered with this module. Raises ``ValueError`` if an
-        unregistered symbol is passed.
-
-        Returns a ``ModuleExport`` handle for cross-module references.
-        """
+        """Mark symbols as importable by mounting apps."""
         registered: dict[str, dict[str, Any]] = {
             "storage": self._storage,
-            "agents": self._agents,
             "functions": self._functions,
             "channels": self._channels,
         }
 
         exp_storage: dict[str, Any] = {}
-        exp_agents: dict[str, Any] = {}
         exp_functions: dict[str, Any] = {}
         exp_channels: dict[str, Any] = {}
 
@@ -675,8 +436,6 @@ class Module:
                     found = True
                     if bucket_name == "storage":
                         exp_storage[sym_name] = sym
-                    elif bucket_name == "agents":
-                        exp_agents[sym_name] = sym
                     elif bucket_name == "functions":
                         exp_functions[sym_name] = sym
                     elif bucket_name == "channels":
@@ -685,12 +444,11 @@ class Module:
             if not found:
                 raise ValueError(
                     f"{sym_name!r} is not registered with module {self.name!r}. "
-                    f"Register it with @{self.name}.storage / .agent / .function / .channel first."
+                    f"Register it with @{self.name}.storage / .function / .channel first."
                 )
 
         return ModuleExport(
             storage=exp_storage,
-            agents=exp_agents,
             functions=exp_functions,
             channels=exp_channels,
             namespace=self.name,
@@ -703,27 +461,7 @@ class Module:
         namespace: str | None = None,
         share_storage: list[str] | None = None,
     ) -> ModuleExport:
-        """
-        Mount a Module into this Module, namespacing its resources.
-
-        Args:
-            module:        The Module to mount.
-            namespace:     Override the module's name as prefix.
-                           Default: ``module.name``.
-                           Pass ``None`` to merge into root namespace
-                           (collision-checked).
-            share_storage: Names of storage in *module* to also register
-                           under the parent namespace. Must be in module's
-                           exports.
-
-        Returns the module's ``ModuleExport``.
-
-        Namespace behaviour::
-
-            app.use(auth)                     # → "auth.Sessions", "auth.User"
-            app.use(auth, namespace="id")     # → "id.Sessions", "id.User"
-            app.use(auth, namespace=None)     # → "Sessions", "User" (collision-checked)
-        """
+        """Mount a `Module` into this `Module`, namespacing its resources."""
         ns = namespace if namespace is not None else module.name
         if ns in self._submodules:
             raise ValueError(
@@ -733,8 +471,7 @@ class Module:
         if ns is not None:
             self._submodules[ns] = module
         else:
-            # Merge — check for collisions
-            for bucket in (self._storage, self._agents, self._functions, self._channels):
+            for bucket in (self._storage, self._functions, self._channels):
                 for key in module._exports:
                     if key in bucket:
                         raise ValueError(
@@ -743,41 +480,25 @@ class Module:
                         )
             self._submodules[""] = module
 
-        # Build exports for only the exported symbols
         exp_storage = {k: v for k, v in module._storage.items() if k in module._exports}
-        exp_agents = {k: v for k, v in module._agents.items() if k in module._exports}
         exp_functions = {k: v for k, v in module._functions.items() if k in module._exports}
         exp_channels = {k: v for k, v in module._channels.items() if k in module._exports}
 
         return ModuleExport(
             storage=exp_storage,
-            agents=exp_agents,
             functions=exp_functions,
             channels=exp_channels,
             namespace=ns or "",
         )
 
-    # ── Solver support ─────────────────────────────────────────────────────
+    # ── Inference-graph collection ─────────────────────────────────────────
 
     def _collect_all(self) -> dict[str, Any]:
-        """
-        Recursively collect all registered resources from this module and all
-        mounted submodules, applying namespace prefixes.
-
-        Returns a flat dict of ``{qualified_name: annotated_class_or_fn}``.
-        Called by the solver via ``App._collect_all()``.
-
-        Examples::
-
-            # Module "auth" with storage "Sessions" mounted under namespace "auth":
-            {"auth.Sessions": <class Sessions>, "auth.User": <class User>}
-        """
+        """Recursively collect all registered resources from this module and submodules."""
         result: dict[str, Any] = {}
         prefix = f"{self.name}." if self.name else ""
 
         for name, obj in self._storage.items():
-            result[f"{prefix}{name}"] = obj
-        for name, obj in self._agents.items():
             result[f"{prefix}{name}"] = obj
         for name, obj in self._functions.items():
             result[f"{prefix}{name}"] = obj
@@ -785,21 +506,16 @@ class Module:
             result[f"{prefix}{name}"] = obj
         for name, obj in self._channels.items():
             result[f"{prefix}{name}"] = obj
-        for name, obj in self._patterns.items():
-            result[f"{prefix}{name}"] = obj
         for name, obj in self._schedules.items():
             result[f"{prefix}{name}"] = obj
 
         for ns, sub in self._submodules.items():
             sub_prefix = f"{prefix}{ns}." if ns else prefix
             for qname, obj in sub._collect_all().items():
-                # Strip sub's own prefix and re-apply ours
                 bare = qname[len(sub.name) + 1 :] if qname.startswith(sub.name + ".") else qname
 
-                # Only include exported symbols from submodules (respect encapsulation)
                 sym_name = bare.split(".")[-1]
                 if sym_name not in sub._exports and ns:
-                    # Skip non-exported symbols when submodule is namespaced
                     continue
 
                 result[f"{sub_prefix}{bare}"] = obj
@@ -807,14 +523,7 @@ class Module:
         return result
 
     def _collect_secrets(self) -> dict[str, SecretRef]:
-        """Recursively collect declared secrets from this module and submodules.
-
-        Secrets are *not* namespaced: the runtime registry keys on the
-        logical name so callers can write ``app.secrets.get("DB_DSN")``
-        regardless of which submodule declared it.  Re-declarations with
-        identical parameters are de-duplicated; conflicting declarations
-        raise.
-        """
+        """Recursively collect declared secrets from this module and submodules."""
         out: dict[str, SecretRef] = {}
 
         def _merge(src: dict[str, SecretRef]) -> None:
@@ -833,7 +542,6 @@ class Module:
         return out
 
     def _collect_jobs(self) -> dict[str, Any]:
-        """Recursively collect background job handlers, regardless of export status."""
         result: dict[str, Any] = {}
         prefix = f"{self.name}." if self.name else ""
 
@@ -901,7 +609,7 @@ class Module:
             name: obj
             for name, obj in self._collect_all().items()
             if callable(obj)
-            and (hasattr(obj, "__skaal_compute__") or hasattr(obj, "__skaal_schedule__"))
+            and (hasattr(obj, "__skaal_function__") or hasattr(obj, "__skaal_schedule__"))
         }
 
         if isinstance(fn, str):
@@ -940,15 +648,12 @@ class Module:
     # ── Introspection ──────────────────────────────────────────────────────
 
     def describe(self) -> dict[str, Any]:
-        """Return a structured description of all registered resources."""
         return {
             "name": self.name,
             "storage": list(self._storage.keys()),
-            "agents": list(self._agents.keys()),
             "functions": list(self._functions.keys()),
             "jobs": list(self._jobs.keys()),
             "channels": list(self._channels.keys()),
-            "patterns": list(self._patterns.keys()),
             "schedules": list(self._schedules.keys()),
             "components": list(self._components.keys()),
             "secrets": list(self._secrets.keys()),
@@ -960,25 +665,8 @@ class Module:
         return (
             f"Module({self.name!r}, "
             f"storage={list(self._storage)}, "
-            f"agents={list(self._agents)}, "
             f"functions={list(self._functions)})"
         )
-
-
-def _schedule_emit_target_name(target: AsyncPublishTarget[object] | None) -> str | None:
-    if target is None:
-        return None
-    explicit_name = _explicit_name(target)
-    if explicit_name is not None:
-        return explicit_name
-    return type(target).__name__
-
-
-def _resource_registration_name(resource: object) -> str:
-    explicit_name = _explicit_name(resource)
-    if explicit_name is not None:
-        return explicit_name
-    return type(resource).__name__
 
 
 def _symbol_export_name(symbol: object) -> str:
@@ -990,10 +678,4 @@ def _symbol_export_name(symbol: object) -> str:
 def _callable_name(value: Callable[..., Any]) -> str | None:
     if hasattr(value, "__name__"):
         return cast(_HasDunderName, value).__name__
-    return None
-
-
-def _explicit_name(value: object) -> str | None:
-    if hasattr(value, "name"):
-        return cast(_HasName, value).name
     return None

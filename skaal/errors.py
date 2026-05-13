@@ -1,19 +1,15 @@
 """Skaal exception hierarchy.
 
-Every backend, plugin, or deploy path that raises an error should surface it
-as a subclass of `SkaalError` so callers can write portable `except`
-clauses regardless of which concrete backend is active.
-
-Native exceptions from underlying libraries (`aioredis.WatchError`,
-`asyncpg.UniqueViolationError`, `botocore.exceptions.ClientError`, ...)
-are wrapped at the backend boundary — never leaked through the protocol.
+The solver / catalog exception classes (`SkaalSolverError`,
+`UnsatisfiableConstraints`, `CatalogError`) have been removed per ADR 028
+along with the constraint solver itself.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from functools import wraps
-from typing import Any, ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -33,20 +29,14 @@ class SkaalBackendError(SkaalError):
 
 
 class SkaalConflict(SkaalBackendError):
-    """An optimistic-concurrency / compare-and-swap update lost the race.
-
-    Raised by ``atomic_update`` implementations when the backing store
-    reports that the value changed between the read and the write (Redis
-    ``WatchError``, DynamoDB ``ConditionalCheckFailedException``, Firestore
-    contention, Postgres serialization failure, …).  Callers may retry.
-    """
+    """An optimistic-concurrency / compare-and-swap update lost the race."""
 
 
 class SkaalUnavailable(SkaalBackendError):
     """Transient, retriable failure (network blip, pool exhausted, 5xx)."""
 
 
-# ── Deploy & plugin errors ────────────────────────────────────────────────────
+# ── Deploy errors ─────────────────────────────────────────────────────────────
 
 
 class SkaalDeployError(SkaalError):
@@ -57,10 +47,6 @@ class SkaalHookError(SkaalDeployError):
     """A pre-deploy or post-deploy hook failed."""
 
 
-class SkaalPluginError(SkaalError):
-    """A plugin registered via entry_points could not be loaded."""
-
-
 class PlanError(SkaalError):
     """Plan generation failed."""
 
@@ -69,69 +55,15 @@ class BuildError(SkaalError):
     """Artifact generation failed."""
 
 
-# ── Config / catalog / solver errors ──────────────────────────────────────────
+# ── Config errors ────────────────────────────────────────────────────────────
 
 
 class SkaalConfigError(SkaalError):
-    """Configuration (catalog, settings, pyproject) is invalid or unreadable."""
-
-
-class CatalogError(SkaalConfigError):
-    """Catalog resolution or validation failed."""
-
-
-class SkaalSolverError(SkaalError):
-    """Constraint solving failed.
-
-    Common parent of `UnsatisfiableConstraints` so the CLI can install
-    a single error-boundary branch for every solver-side problem.
-    """
-
-    exit_code: int = 2
-
-
-class UnsatisfiableConstraints(SkaalSolverError):
-    """No catalog entry satisfies the declared constraints.
-
-    Carries an optional `Diagnosis` describing
-    which candidates were considered and which constraint each one
-    violated. `diagnosis is None` corresponds to the legacy short-string
-    error path — preserved for backwards compatibility.
-    """
-
-    def __init__(
-        self,
-        resource_name: str,
-        reason: str = "",
-        *,
-        diagnosis: Any = None,
-    ) -> None:
-        self.resource_name = resource_name
-        self.reason = reason
-        self.diagnosis = diagnosis
-        super().__init__(f"Cannot satisfy constraints for {resource_name!r}. {reason}".rstrip())
-
-    @property
-    def variable_name(self) -> str:
-        """Back-compat alias for the storage-specific name used pre-ADR 021."""
-        return self.resource_name
-
-    @property
-    def function_name(self) -> str:
-        """Back-compat alias for the compute-specific name used pre-ADR 021."""
-        return self.resource_name
-
-
-# ── Optional-extra import wrapping ────────────────────────────────────────────
+    """Configuration (settings, pyproject) is invalid or unreadable."""
 
 
 class SecretMissingError(SkaalConfigError):
-    """A required secret could not be resolved at runtime warmup.
-
-    Carries the secret ``name`` and ``provider`` so the operator knows which
-    declaration to fix.  Raised by :meth:`SecretRegistry.warmup` when a
-    secret declared with ``required=True`` resolves to ``None``.
-    """
+    """A required secret could not be resolved at runtime warmup."""
 
     def __init__(self, name: str, provider: str, *, detail: str | None = None) -> None:
         self.name = name
@@ -142,13 +74,11 @@ class SecretMissingError(SkaalConfigError):
         super().__init__(message)
 
 
-class MissingExtraError(SkaalError):
-    """An optional dependency group is not installed.
+# ── Optional-extra import wrapping ────────────────────────────────────────────
 
-    Raised by :func:`require_extra` when a feature gated behind a
-    ``pip install 'skaal[<name>]'`` extra is reached without the
-    corresponding packages on ``sys.path``.
-    """
+
+class MissingExtraError(SkaalError):
+    """An optional dependency group is not installed."""
 
 
 def require_extra(
@@ -157,20 +87,7 @@ def require_extra(
     *,
     feature: str | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator that turns a missing optional dependency into `MissingExtraError`.
-
-    Args:
-        extra:    The extra name as it appears in `pip install 'skaal[X]'`.
-        modules:  Top-level modules whose presence proves the extra is installed.
-                  The first `ImportError` is converted to `MissingExtraError`.
-        feature:  Human-readable feature name for the error message. Defaults to
-                  `extra`.
-
-    Examples:
-
-        @require_extra("vector", ["langchain_core"], feature="vector storage")
-        def _build_vector_index(...): ...
-    """
+    """Decorator that turns a missing optional dependency into `MissingExtraError`."""
     feature_name = feature or extra
     module_list = list(modules)
 
@@ -194,7 +111,6 @@ def require_extra(
 
 __all__ = [
     "BuildError",
-    "CatalogError",
     "MissingExtraError",
     "PlanError",
     "SecretMissingError",
@@ -204,9 +120,6 @@ __all__ = [
     "SkaalDeployError",
     "SkaalError",
     "SkaalHookError",
-    "SkaalPluginError",
-    "SkaalSolverError",
     "SkaalUnavailable",
-    "UnsatisfiableConstraints",
     "require_extra",
 ]
