@@ -2,30 +2,30 @@
 
 This file is the canonical answer to "where are we in the redesign?" It carries state only — design decisions live in the implementation ADRs (029, 030, …). See [ADR 029](design/029-redesign-foundation-implementation-plan.md) for the update protocol.
 
-**Current alpha:** none yet (pre-`v0.4.0-alpha.0`)
-**Branch:** main (will move to `v0.4.0-alpha` once Phase 0.1 lands)
+**Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
+**Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
 **Last updated:** 2026-05-13
 
 ---
 
 ## Phase 0 — Branch, version, and rename
 
-- **Status:** in progress
+- **Status:** code work complete; pending maintainer actions for branch promotion and tag push
 - **ADR:** [029](design/029-redesign-foundation-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.0`
 
 Checklist:
 
-- [ ] 0.1 `v0.4.0-alpha` branch cut from `main` and pushed with branch protection
-- [ ] 0.2 `pyproject.toml` version bumped to `0.4.0a0` and description rewritten
-- [ ] 0.2 `CITATION.cff` version bumped to `0.4.0-alpha`
-- [ ] 0.3 `README.md` hero, tagline, and how-it-works section rewritten (no "Infrastructure as Constraints")
-- [ ] 0.3 `docs/index.md` updated to the new pitch
-- [ ] 0.3 GitHub repo description updated (manual)
-- [ ] 0.3 README `## Status` callout added pointing at this tracker
-- [ ] 0.4 `CLAUDE.md` constraint-thesis sections removed; reference to ADR 028 added
+- [ ] 0.1 `v0.4.0-alpha` branch cut from `main` and pushed with branch protection *(deferred — current work lives on `claude/plan-redesign-strategy-A5ixu`; maintainer to promote)*
+- [x] 0.2 `pyproject.toml` version bumped to `0.4.0a0` and description rewritten
+- [x] 0.2 `CITATION.cff` version bumped to `0.4.0-alpha`
+- [x] 0.3 `README.md` hero, tagline, and how-it-works section rewritten (no "Infrastructure as Constraints")
+- [x] 0.3 `docs/index.md` updated to the new pitch
+- [ ] 0.3 GitHub repo description updated *(manual maintainer action)*
+- [x] 0.3 README `## Status` callout added pointing at this tracker
+- [x] 0.4 `CLAUDE.md` constraint-thesis sections trimmed; reference to ADR 028 added
 - [x] 0.5 `notes/redesign-status.md` created (this file)
-- [ ] Tag `v0.4.0-alpha.0` pushed
+- [ ] Tag `v0.4.0-alpha.0` pushed *(maintainer action after branch promotion)*
 
 ## Phase 1 — Delete the constraint product
 

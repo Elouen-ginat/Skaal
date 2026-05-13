@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skaal"
-version = "0.3.2"
-description = "Infrastructure as Constraints — write it once, scale it with a word."
+version = "0.4.0a0"
+description = "A Python framework where the application code is the infrastructure declaration."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-keywords = ["infrastructure", "constraints", "cloud", "deployment", "z3", "solver"]
+keywords = ["infrastructure", "python", "cloud", "deployment", "pulumi", "framework"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
