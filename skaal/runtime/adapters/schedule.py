@@ -25,11 +25,11 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         raise RuntimeAdapterMissing(f"schedule/{bound.backend}")
 
-    runtime.state.setdefault("schedules", []).append((bound, target))
+    runtime.state.schedules.append((bound, target))
 
-    if "scheduler_started" in runtime.state:
+    if runtime.state.scheduler_started:
         return
-    runtime.state["scheduler_started"] = True
+    runtime.state.scheduler_started = True
 
     async def _startup() -> None:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -38,11 +38,12 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         from skaal.schedule import Cron, Every
 
-        sched = AsyncIOScheduler()
-        for resource, fn in runtime.state.get("schedules", []):
-            metadata = getattr(fn, "__skaal_schedule__", None) or {}
-            trigger = metadata.get("trigger")
-            timezone = metadata.get("timezone", "UTC")
+        sched: AsyncIOScheduler = AsyncIOScheduler()
+        for resource, fn in runtime.state.schedules:
+            metadata: dict[str, Any] = getattr(fn, "__skaal_schedule__", None) or {}
+            trigger: Any = metadata.get("trigger")
+            timezone: str = metadata.get("timezone", "UTC")
+            aps_trigger: Any
             if isinstance(trigger, Every):
                 aps_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=timezone)
             elif isinstance(trigger, Cron):
@@ -51,10 +52,10 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
                 continue
             sched.add_job(fn, trigger=aps_trigger, id=resource.inferred.id)
         sched.start()
-        runtime.state["scheduler"] = sched
+        runtime.state.scheduler = sched
 
     async def _shutdown() -> None:
-        sched = runtime.state.get("scheduler")
+        sched: Any = runtime.state.scheduler
         if sched is not None:
             sched.shutdown(wait=False)
 

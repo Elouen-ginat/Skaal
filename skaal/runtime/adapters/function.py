@@ -9,13 +9,44 @@ layer will reshape this contract once API Gateway / Lambda wiring lands.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from skaal.runtime.middleware import wrap_resilience
+from skaal.types.compute import (
+    Bulkhead,
+    CircuitBreaker,
+    RateLimitPolicy,
+    RetryPolicy,
+)
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
     from skaal.runtime.local import LocalRuntime
+
+
+@dataclass(frozen=True)
+class _ResiliencePolicies:
+    """Typed projection of the resilience kwargs stashed by `@app.function`."""
+
+    retry: RetryPolicy | None = None
+    circuit_breaker: CircuitBreaker | None = None
+    rate_limit: RateLimitPolicy | None = None
+    bulkhead: Bulkhead | None = None
+
+    @classmethod
+    def from_target(cls, target: Any) -> _ResiliencePolicies:
+        metadata: dict[str, Any] = getattr(target, "__skaal_function__", None) or {}
+        return cls(
+            retry=metadata.get("retry"),
+            circuit_breaker=metadata.get("circuit_breaker"),
+            rate_limit=metadata.get("rate_limit"),
+            bulkhead=metadata.get("bulkhead"),
+        )
 
 
 def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
@@ -25,22 +56,21 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         # is expected to invoke them through `Environment.backends[...]`.
         return
 
-    metadata = getattr(target, "__skaal_function__", None) or {}
-    handler = _coerce_async(target)
-    wrapped = wrap_resilience(
+    policies: _ResiliencePolicies = _ResiliencePolicies.from_target(target)
+    handler: Callable[..., Awaitable[Any]] = _coerce_async(target)
+    wrapped: Callable[..., Awaitable[Any]] = wrap_resilience(
         handler,
-        retry=metadata.get("retry"),
-        circuit_breaker=metadata.get("circuit_breaker"),
-        rate_limit=metadata.get("rate_limit"),
-        bulkhead=metadata.get("bulkhead"),
+        retry=policies.retry,
+        circuit_breaker=policies.circuit_breaker,
+        rate_limit=policies.rate_limit,
+        bulkhead=policies.bulkhead,
     )
 
-    bare = bound.inferred.id.split(":")[-1].split(".")[-1]
-    path = f"/{bare}"
+    bare: str = bound.inferred.id.split(":")[-1].split(".")[-1]
+    path: str = f"/{bare}"
 
-    async def endpoint(request: Any) -> Any:
-        from starlette.responses import JSONResponse
-
+    async def endpoint(request: Request) -> JSONResponse:
+        payload: Any
         try:
             payload = await request.json()
         except Exception:
@@ -48,7 +78,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         if not isinstance(payload, dict):
             payload = {"value": payload}
         try:
-            result = await wrapped(**payload)
+            result: Any = await wrapped(**payload)
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, status_code=500)
         return JSONResponse({"result": _to_jsonable(result)})
@@ -56,15 +86,15 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
     runtime.add_route(path, endpoint, method="POST")
 
 
-def _coerce_async(fn: Any) -> Any:
+def _coerce_async(fn: Any) -> Callable[..., Awaitable[Any]]:
     """Return an awaitable wrapper for ``fn`` even if it's a sync callable."""
     if inspect.iscoroutinefunction(fn):
         return fn
 
     # FunctionRef proxies through __call__ to the wrapped coroutine; check
     # the wrapped object directly rather than poking at dunders ruff flags.
-    wrapped = getattr(fn, "__wrapped__", None)
-    if wrapped is not None and inspect.iscoroutinefunction(wrapped):
+    wrapped_attr: Any = getattr(fn, "__wrapped__", None)
+    if wrapped_attr is not None and inspect.iscoroutinefunction(wrapped_attr):
         return fn
 
     async def _wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -75,6 +105,7 @@ def _coerce_async(fn: Any) -> Any:
 
 def _to_jsonable(value: Any) -> Any:
     """Best-effort JSON projection for handler return values."""
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
+    model_dump: Callable[..., Any] | None = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
     return value

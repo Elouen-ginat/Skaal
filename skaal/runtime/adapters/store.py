@@ -25,7 +25,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         # — outside Phase 4's local-runtime scope.
         return
 
-    backend = _build_backend(bound, target)
+    backend: Any = _build_backend(bound, target)
     target.wire(backend)
 
     async def _startup() -> None:
@@ -43,13 +43,13 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
 
 def _build_backend(bound: BoundResource, target: Any) -> Any:
-    name = bound.backend
-    namespace = target.__name__
+    name: str = bound.backend
+    namespace: str = target.__name__
 
     if name == "sqlite":
         from skaal.backends.sqlite_backend import SqliteBackend
 
-        path = bound.options.get("path", "skaal_local.db")
+        path: str = bound.options.get("path", "skaal_local.db")
         return SqliteBackend(path=path, namespace=namespace)
 
     if name == "redis":
@@ -61,7 +61,7 @@ def _build_backend(bound: BoundResource, target: Any) -> Any:
             raise MissingExtraError(
                 "redis adapter requires `redis>=5` — install the `redis` extra."
             ) from exc
-        url = bound.options.get("url", "redis://localhost:6379/0")
+        url: str = bound.options.get("url", "redis://localhost:6379/0")
         return RedisBackend(url=url, namespace=namespace)
 
     from skaal.errors import RuntimeAdapterMissing

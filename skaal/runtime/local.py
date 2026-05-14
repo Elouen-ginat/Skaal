@@ -12,7 +12,7 @@ The contract with adapters is intentionally narrow:
   callable / channel instance / ASGI app discovered via `_resolve`.
 - The adapter is free to call `runtime.add_route`, `runtime.add_mount`,
   `runtime.add_startup_hook`, `runtime.add_shutdown_hook`, or attach
-  state to the adapter-specific registries kept here.
+  state to the typed registries on `runtime.state`.
 - The runtime makes no assumptions about the adapter — there is no
   abstract base; adapter modules just expose a `register` callable.
 
@@ -24,35 +24,62 @@ hitting them gets a clear pointer.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
+from starlette.types import ASGIApp
 
 from skaal.binding.model import BoundPlan, BoundResource
 from skaal.errors import RuntimeResourceUnresolved
 from skaal.runtime.dispatch import dispatch_for
 
 if TYPE_CHECKING:
-    from starlette.types import ASGIApp
-
     from skaal.app import App
 
 
 StartupHook = Callable[[], Awaitable[None]]
 ShutdownHook = Callable[[], Awaitable[None]]
+JobPayload = dict[str, Any]
+ScheduleEntry = tuple[BoundResource, Callable[..., Awaitable[Any]]]
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Route:
+    """Internal record for a registered HTTP route."""
+
     method: str
     path: str
     endpoint: Callable[..., Awaitable[Any]]
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Mount:
+    """Internal record for an ASGI sub-app mount."""
+
     path: str
     app: ASGIApp
+
+
+@dataclass
+class RuntimeState:
+    """Typed adapter-side registries the runtime carries.
+
+    Each field is owned by exactly one adapter; the runtime never reads
+    them directly. They are collected here (rather than per-adapter
+    module globals) so unit tests can construct an empty runtime and
+    inspect what an adapter registered without import-order surprises.
+    """
+
+    relational_backends: dict[str, Any] = field(default_factory=dict)
+    job_queues: dict[str, asyncio.Queue[JobPayload]] = field(default_factory=dict)
+    schedules: list[ScheduleEntry] = field(default_factory=list)
+    scheduler_started: bool = False
+    scheduler: Any = None
 
 
 @dataclass
@@ -70,15 +97,17 @@ class LocalRuntime:
     mounts: list[_Mount] = field(default_factory=list)
     startup_hooks: list[StartupHook] = field(default_factory=list)
     shutdown_hooks: list[ShutdownHook] = field(default_factory=list)
-    state: dict[str, Any] = field(default_factory=dict)
+    state: RuntimeState = field(default_factory=RuntimeState)
 
     @classmethod
     def from_bound_plan(cls, bound: BoundPlan, app: App) -> LocalRuntime:
         """Build a runtime from a `BoundPlan`, registering every resource."""
-        runtime = cls(bound=bound, app=app)
+        runtime: LocalRuntime = cls(bound=bound, app=app)
         for resource in bound.resources:
-            target = runtime._resolve(resource)
-            adapter = dispatch_for(resource.inferred.kind)
+            target: Any = runtime._resolve(resource)
+            adapter: Callable[[LocalRuntime, BoundResource, Any], None] = (
+                dispatch_for(resource.inferred.kind)
+            )
             adapter(runtime, resource, target)
         return runtime
 
@@ -110,25 +139,19 @@ class LocalRuntime:
 
     def build_asgi(self) -> ASGIApp:
         """Build the Starlette ASGI app without serving it (used by tests)."""
-        from collections.abc import AsyncIterator
-        from contextlib import asynccontextmanager
-
-        from starlette.applications import Starlette
-        from starlette.routing import Mount, Route
-
-        runtime = self
+        runtime: LocalRuntime = self
 
         @asynccontextmanager
         async def _lifespan(_: Starlette) -> AsyncIterator[None]:
-            for hook in runtime.startup_hooks:
-                await hook()
+            for startup in runtime.startup_hooks:
+                await startup()
             try:
                 yield
             finally:
-                for hook in reversed(runtime.shutdown_hooks):
-                    await hook()
+                for shutdown in reversed(runtime.shutdown_hooks):
+                    await shutdown()
 
-        routes: list[Any] = [
+        routes: list[Route | Mount] = [
             Route(r.path, r.endpoint, methods=[r.method]) for r in self.routes
         ]
         # Mounts come after routes so explicit per-function routes win
@@ -150,30 +173,26 @@ class LocalRuntime:
         """Build the ASGI app and run it via uvicorn (blocking)."""
         import uvicorn
 
-        asgi = self.build_asgi()
+        asgi: ASGIApp = self.build_asgi()
         uvicorn.run(asgi, host=host, port=port, log_level="info")
 
     # ── Resource resolution ──────────────────────────────────────────────
 
     def _resolve(self, resource: BoundResource) -> Any:
         """Look up the live Python object behind a `BoundResource.id`."""
-        rid = resource.inferred.id
-        bare = rid.split(":")[-1].split(".")[-1]
+        rid: str = resource.inferred.id
+        bare: str = rid.split(":")[-1].split(".")[-1]
 
-        for name, obj in self.app._storage.items():
-            if name == bare:
-                return obj
-        for name, obj in self.app._functions.items():
-            if name == bare:
-                return obj
-        for name, obj in self.app._channels.items():
-            if name == bare:
-                return obj
-        for name, obj in self.app._jobs.items():
-            if name == bare:
-                return obj
-        for name, obj in self.app._schedules.items():
-            if name == bare:
+        registries: tuple[dict[str, Any], ...] = (
+            self.app._storage,
+            self.app._functions,
+            self.app._channels,
+            self.app._jobs,
+            self.app._schedules,
+        )
+        for registry in registries:
+            obj: Any = registry.get(bare)
+            if obj is not None:
                 return obj
 
         # ASGI mounts are keyed by path rather than name; the adapter
@@ -200,4 +219,4 @@ def serve(
     LocalRuntime.from_bound_plan(bound, app).serve(host=host, port=port)
 
 
-__all__ = ["LocalRuntime", "serve"]
+__all__ = ["LocalRuntime", "RuntimeState", "serve"]

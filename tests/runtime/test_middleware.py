@@ -71,9 +71,12 @@ async def test_circuit_breaker_opens_after_threshold() -> None:
         failing,
         circuit_breaker=CircuitBreaker(failure_threshold=2, recovery_timeout_ms=60_000),
     )
+    # First failure stays under threshold and propagates the user error;
+    # the failure that crosses the threshold (and every call after) surfaces
+    # as the breaker-open error per pybreaker's state-machine semantics.
     with pytest.raises(RuntimeError, match="boom"):
         await wrapped()
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(RuntimeError, match="circuit breaker open"):
         await wrapped()
     with pytest.raises(RuntimeError, match="circuit breaker open"):
         await wrapped()

@@ -25,10 +25,12 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         raise RuntimeAdapterMissing(f"blob/{bound.backend}")
 
+    from collections.abc import Callable
+
     from skaal.backends.file_blob_backend import FileBlobBackend
 
-    root = bound.options.get("root", "./skaal_blob")
-    backend = FileBlobBackend(root_path=root, namespace=target.__name__)
-    wire = getattr(target, "wire", None)
+    root: str = bound.options.get("root", "./skaal_blob")
+    backend: FileBlobBackend = FileBlobBackend(root_path=root, namespace=target.__name__)
+    wire: Callable[[Any], None] | None = getattr(target, "wire", None)
     if wire is not None:
         wire(backend)

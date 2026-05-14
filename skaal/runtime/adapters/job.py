@@ -10,7 +10,11 @@ budgets are deferred to the follow-up Phase 4 deploy work.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING, Any
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
@@ -26,14 +30,14 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         raise RuntimeAdapterMissing(f"job/{bound.backend}")
 
-    bare = bound.inferred.id.split(":")[-1].split(".")[-1]
+    bare: str = bound.inferred.id.split(":")[-1].split(".")[-1]
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-    runtime.state.setdefault("job_queues", {})[bare] = queue
+    runtime.state.job_queues[bare] = queue
     worker_task: asyncio.Task[None] | None = None
 
     async def _worker() -> None:
         while True:
-            payload = await queue.get()
+            payload: dict[str, Any] = await queue.get()
             try:
                 await target(**payload)
             except Exception:
@@ -48,16 +52,13 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         worker_task = asyncio.create_task(_worker(), name=f"skaal-job-{bare}")
 
     async def _shutdown() -> None:
-        import contextlib
-
         if worker_task is not None:
             worker_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await worker_task
 
-    async def endpoint(request: Any) -> Any:
-        from starlette.responses import JSONResponse
-
+    async def endpoint(request: Request) -> JSONResponse:
+        payload: Any
         try:
             payload = await request.json()
         except Exception:

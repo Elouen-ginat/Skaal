@@ -29,8 +29,8 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
     from skaal.backends.sqlite_backend import SqliteBackend
 
-    path = bound.options.get("path", "skaal_local.db")
-    backend = SqliteBackend(path=path, namespace=target.__name__)
+    path: str = bound.options.get("path", "skaal_local.db")
+    backend: SqliteBackend = SqliteBackend(path=path, namespace=target.__name__)
 
     async def _startup() -> None:
         connect = getattr(backend, "connect", None)
@@ -44,6 +44,6 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
     # The relational helpers in `skaal.relational` read the backend off
     # the runtime state when no per-class wiring exists.
-    runtime.state.setdefault("relational_backends", {})[target.__name__] = backend
+    runtime.state.relational_backends[target.__name__] = backend
     runtime.add_startup_hook(_startup)
     runtime.add_shutdown_hook(_shutdown)

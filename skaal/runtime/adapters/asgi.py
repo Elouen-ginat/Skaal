@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from starlette.types import ASGIApp
+
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
     from skaal.runtime.local import LocalRuntime
@@ -21,10 +23,10 @@ if TYPE_CHECKING:
 
 def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
     """Mount the user's ASGI app under the path declared on the resource."""
-    app = runtime.app
-    path = bound.inferred.overrides.options.get("path", "/")
+    app: Any = runtime.app
+    path: str = bound.inferred.overrides.options.get("path", "/")
 
-    asgi_app = _resolve_asgi_app(app, path)
+    asgi_app: ASGIApp | None = _resolve_asgi_app(app, path)
     if asgi_app is None:
         # Without a live ASGI app there is nothing to serve locally —
         # the deploy layer will still synthesise an API Gateway route.
@@ -33,15 +35,15 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
     runtime.add_mount(path, asgi_app)
 
 
-def _resolve_asgi_app(app: Any, path: str) -> Any:
-    mounts: dict[str, Any] = getattr(app, "_asgi_path_mounts", {}) or {}
+def _resolve_asgi_app(app: Any, path: str) -> ASGIApp | None:
+    mounts: dict[str, ASGIApp] = getattr(app, "_asgi_path_mounts", {}) or {}
     if path in mounts:
         return mounts[path]
     if path == "/":
-        asgi_app = getattr(app, "_asgi_app", None)
+        asgi_app: ASGIApp | None = getattr(app, "_asgi_app", None)
         if asgi_app is not None:
             return asgi_app
-        wsgi_app = getattr(app, "_wsgi_app", None)
+        wsgi_app: Any = getattr(app, "_wsgi_app", None)
         if wsgi_app is not None:
             from starlette.middleware.wsgi import WSGIMiddleware
 

@@ -2,8 +2,15 @@
 
 The runtime wraps every user callable in the chain ``retry →
 circuit_breaker → rate_limit → bulkhead → user_callable``. The four
-policy classes survive unchanged from `skaal.types.compute`; this module
-applies them as composable async wrappers.
+policy classes survive unchanged from `skaal.types.compute`; this
+module applies them as composable async wrappers backed by the
+established libraries already in the dependency tree:
+
+- ``tenacity`` for the retry-with-backoff loop.
+- ``pybreaker`` for the circuit-breaker state machine.
+- ``asyncio.Semaphore`` for the bulkhead.
+- A small token-bucket for the rate limiter (no obvious off-the-shelf
+  fit in the dependency set; the implementation is ~20 lines).
 
 The chain is intentionally minimal — the Phase 4 cut focuses on the
 correctness contract (each policy is honoured exactly once and in the
@@ -15,10 +22,12 @@ the deploy-time observability work in a later phase.
 from __future__ import annotations
 
 import asyncio
-import random
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
+
+import pybreaker
+import tenacity
 
 from skaal.types.compute import (
     Bulkhead,
@@ -31,30 +40,20 @@ R = TypeVar("R")
 Handler = Callable[..., Awaitable[R]]
 
 
-class _CircuitState:
-    """Mutable counter shared across calls of a single function."""
-
-    __slots__ = ("failures", "opened_at")
-
-    def __init__(self) -> None:
-        self.failures = 0
-        self.opened_at: float | None = None
-
-
 class _RateLimitBucket:
     """Token-bucket counter for a single function (no per-arg sharding here)."""
 
     __slots__ = ("burst", "last_refill", "rate", "tokens")
 
     def __init__(self, rate: float, burst: int) -> None:
-        self.tokens = float(burst)
-        self.last_refill = time.monotonic()
-        self.rate = float(rate)
-        self.burst = float(burst)
+        self.tokens: float = float(burst)
+        self.last_refill: float = time.monotonic()
+        self.rate: float = float(rate)
+        self.burst: float = float(burst)
 
     def acquire(self) -> bool:
-        now = time.monotonic()
-        elapsed = now - self.last_refill
+        now: float = time.monotonic()
+        elapsed: float = now - self.last_refill
         self.tokens = min(self.burst, self.tokens + elapsed * self.rate)
         self.last_refill = now
         if self.tokens >= 1.0:
@@ -63,17 +62,14 @@ class _RateLimitBucket:
         return False
 
 
-def _delay_seconds(policy: RetryPolicy, attempt: int) -> float:
-    base = policy.base_delay_ms / 1000.0
-    cap = policy.max_delay_ms / 1000.0
+def _tenacity_wait(policy: RetryPolicy) -> tenacity.wait.wait_base:
+    base_s: float = policy.base_delay_ms / 1000.0
+    max_s: float = policy.max_delay_ms / 1000.0
     if policy.backoff == "fixed":
-        delay = base
-    elif policy.backoff == "linear":
-        delay = base * attempt
-    else:
-        delay = base * (2 ** (attempt - 1))
-    delay = min(delay, cap)
-    return delay * (0.5 + random.random() / 2.0)
+        return tenacity.wait_fixed(base_s)
+    if policy.backoff == "linear":
+        return tenacity.wait_incrementing(start=base_s, increment=base_s, max=max_s)
+    return tenacity.wait_exponential(multiplier=base_s, max=max_s)
 
 
 def wrap_resilience(
@@ -106,8 +102,10 @@ def wrap_resilience(
 
 
 def _with_bulkhead(handler: Handler[R], policy: Bulkhead) -> Handler[R]:
-    sem = asyncio.Semaphore(policy.max_concurrent_calls)
-    timeout = policy.max_wait_ms / 1000.0 if policy.max_wait_ms > 0 else None
+    sem: asyncio.Semaphore = asyncio.Semaphore(policy.max_concurrent_calls)
+    timeout: float | None = (
+        policy.max_wait_ms / 1000.0 if policy.max_wait_ms > 0 else None
+    )
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
         if timeout is None:
@@ -126,7 +124,7 @@ def _with_bulkhead(handler: Handler[R], policy: Bulkhead) -> Handler[R]:
 
 
 def _with_rate_limit(handler: Handler[R], policy: RateLimitPolicy) -> Handler[R]:
-    bucket = _RateLimitBucket(policy.requests_per_second, policy.burst)
+    bucket: _RateLimitBucket = _RateLimitBucket(policy.requests_per_second, policy.burst)
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
         if not bucket.acquire():
@@ -137,43 +135,54 @@ def _with_rate_limit(handler: Handler[R], policy: RateLimitPolicy) -> Handler[R]
 
 
 def _with_circuit_breaker(handler: Handler[R], policy: CircuitBreaker) -> Handler[R]:
-    state = _CircuitState()
-    recovery = policy.recovery_timeout_ms / 1000.0
+    breaker: pybreaker.CircuitBreaker = pybreaker.CircuitBreaker(
+        fail_max=policy.failure_threshold,
+        reset_timeout=policy.recovery_timeout_ms / 1000.0,
+    )
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
-        if state.opened_at is not None:
-            if time.monotonic() - state.opened_at < recovery:
-                raise RuntimeError("circuit breaker open")
-            state.opened_at = None
-            state.failures = 0
+        # `pybreaker.call_async` requires Tornado in its current release;
+        # we drive the same state machine manually through the
+        # public-ish hooks (`state.before_call`, `state.on_success` /
+        # `state.on_failure`, plus the storage's counter API). The flow
+        # mirrors `CircuitBreakerState.call` for the sync entry point.
+        state: pybreaker.CircuitBreakerState = breaker.state
         try:
-            result = await handler(*args, **kwargs)
-        except Exception:
-            state.failures += 1
-            if state.failures >= policy.failure_threshold:
-                state.opened_at = time.monotonic()
+            state.before_call(handler, *args, **kwargs)
+        except pybreaker.CircuitBreakerError as exc:
+            raise RuntimeError("circuit breaker open") from exc
+
+        try:
+            result: R = await handler(*args, **kwargs)
+        except Exception as exc:
+            breaker._state_storage.increment_counter()
+            for fail_listener in breaker.listeners:
+                fail_listener.failure(breaker, exc)
+            try:
+                state.on_failure(exc)
+            except pybreaker.CircuitBreakerError as breaker_exc:
+                raise RuntimeError("circuit breaker open") from breaker_exc
             raise
-        else:
-            state.failures = 0
-            return result
+        breaker._state_storage.reset_counter()
+        for success_listener in breaker.listeners:
+            success_listener.success(breaker)
+        state.on_success()
+        return result
 
     return wrapper
 
 
 def _with_retry(handler: Handler[R], policy: RetryPolicy) -> Handler[R]:
+    retrying: tenacity.AsyncRetrying = tenacity.AsyncRetrying(
+        stop=tenacity.stop_after_attempt(policy.max_attempts),
+        wait=_tenacity_wait(policy),
+        retry=tenacity.retry_if_exception_type(Exception),
+        reraise=True,
+    )
+
     async def wrapper(*args: Any, **kwargs: Any) -> R:
-        last_exc: BaseException | None = None
-        for attempt in range(1, policy.max_attempts + 1):
-            try:
-                return await handler(*args, **kwargs)
-            except Exception as exc:
-                last_exc = exc
-                if attempt >= policy.max_attempts:
-                    raise
-                await asyncio.sleep(_delay_seconds(policy, attempt))
-        # Unreachable: the loop either returns or raises before exiting.
-        assert last_exc is not None
-        raise last_exc
+        result: R = await retrying.wraps(handler)(*args, **kwargs)
+        return result
 
     return wrapper
 
