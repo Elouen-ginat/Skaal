@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from skaal.module import Module, ModuleExport
+
+if TYPE_CHECKING:
+    from skaal.inference import InferredPlan
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -148,6 +151,19 @@ class App(Module):
             self._mounts: dict[str, str] = {}
         self._mounts[ns] = normalized
         return exports
+
+    # ── Inference ──────────────────────────────────────────────────────────
+
+    def infer(self) -> InferredPlan:
+        """Walk this app and return its `InferredPlan`.
+
+        The inference layer is the input to the binding layer (Phase 3, see
+        ADR 028 §6.2); each call walks the live module graph, so adding a
+        resource at runtime is reflected in the next `infer()` result.
+        """
+        from skaal.inference import infer as _infer
+
+        return _infer(self)
 
     # ── Introspection ──────────────────────────────────────────────────────
 

@@ -16,6 +16,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, cast, overload
 
+from skaal.inference.model import (
+    InferredResource,
+    ResourceKind,
+    SchemaRef,
+    SourceLocation,
+)
 from skaal.types import (
     BeforeInvoke,
     Bulkhead,
@@ -133,6 +139,19 @@ def _attach_schedule_metadata(fn: F, metadata: dict[str, Any]) -> F:
     return fn
 
 
+def _attach_inferred(target: Any, inferred: InferredResource) -> None:
+    """Attach the inference-layer `InferredResource` to a decorated object.
+
+    Phase 2 is additive: this runs alongside the per-decorator dunder
+    (`__skaal_storage__` / `__skaal_function__` / …) so the existing runtime
+    consumers keep working until Phase 4 rewires them on top of `BoundPlan`.
+    """
+    import contextlib
+
+    with contextlib.suppress(AttributeError, TypeError):  # slotted-but-unwritable objects
+        target.__skaal_inferred__ = inferred
+
+
 class Module:
     """A reusable, composable Skaal fragment.
 
@@ -242,6 +261,14 @@ class Module:
             }
             secret_tuple = tuple(secrets) if secrets else None
             fn = _attach_function_metadata(fn, metadata, secrets=secret_tuple)
+            _attach_inferred(
+                fn,
+                InferredResource(
+                    id=InferredResource.id_for(fn),
+                    kind=ResourceKind.FUNCTION,
+                    source=SourceLocation.from_object(fn),
+                ),
+            )
             if secrets:
                 for ref in secrets:
                     self.secret(ref)
@@ -278,6 +305,14 @@ class Module:
 
         def decorator(fn: F) -> F:
             fn = _attach_job_metadata(fn, JobSpec(name=fn.__name__, retry=retry))
+            _attach_inferred(
+                fn,
+                InferredResource(
+                    id=InferredResource.id_for(fn),
+                    kind=ResourceKind.JOB,
+                    source=SourceLocation.from_object(fn),
+                ),
+            )
             self._jobs[fn.__name__] = fn
             return fn
 
@@ -316,6 +351,14 @@ class Module:
         def decorator(cls: C) -> C:
             cls = _attach_channel_metadata(cls, {"buffer": buffer})
             instance = cls(buffer=buffer)
+            inferred = InferredResource(
+                id=InferredResource.id_for(cls),
+                kind=ResourceKind.CHANNEL,
+                source=SourceLocation.from_object(cls),
+                schema_=SchemaRef.from_class(cls),
+            )
+            _attach_inferred(cls, inferred)
+            _attach_inferred(instance, inferred)
             self._channels[cls.__name__] = instance
             return cls
 
@@ -388,6 +431,14 @@ class Module:
             fn = _attach_schedule_metadata(
                 fn,
                 {"trigger": trigger, "emit_to": emit_to, "timezone": timezone},
+            )
+            _attach_inferred(
+                fn,
+                InferredResource(
+                    id=InferredResource.id_for(fn),
+                    kind=ResourceKind.SCHEDULE,
+                    source=SourceLocation.from_object(fn),
+                ),
             )
             self._schedules[fn.__name__] = fn
             return fn

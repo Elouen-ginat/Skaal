@@ -4,7 +4,7 @@ This file is the canonical answer to "where are we in the redesign?" It carries 
 
 **Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
 **Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
-**Last updated:** 2026-05-13 — Phase 1 deletion landed on `claude/plan-redesign-strategy-A5ixu`.
+**Last updated:** 2026-05-13 — Phase 2 inference layer landed on `claude/continue-redesign-z5qEy`.
 
 ---
 
@@ -73,11 +73,28 @@ Phase 1 made several deletions beyond the table above so the remaining tree coul
 
 ## Phase 2 — Inference layer (`skaal.inference`)
 
-- **Status:** not started
-- **ADR:** planned 030
+- **Status:** initial cut landed on `claude/continue-redesign-z5qEy`; follow-ups for `App.mount(path, asgi_app)` reshape, `FunctionRef[P, R]`, `@app.external`, and `Store[T, B]` second-parameter typing are deferred to Phases 2.x / 3 / 4 as scoped in ADR 030
+- **ADR:** [030](design/030-inference-layer-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.2`
 
-Checklist: TBD when ADR 030 lands.
+Checklist:
+
+- [x] 2.1 `skaal/inference/model.py` — `InferredPlan`, `InferredResource`, `Edge`, `EdgeKind`, `SchemaRef`, `SourceLocation`, `ResourceOverrides`, `ResourceKind` (all frozen pydantic, `extra="forbid"`)
+- [x] 2.2 `skaal/inference/walk.py` — `infer(app) -> InferredPlan` walking `Module._storage` / `_functions` / `_jobs` / `_channels` / `_schedules` and submodules
+- [x] 2.3 `skaal/inference/fingerprint.py` — 16-char SHA-256 fingerprint, byte-stable across resource/edge reorderings
+- [x] 2.4 `skaal/inference/asgi.py` — recogniser that emits an `ASGI_SERVICE` resource when `App.mount_asgi` / `mount_wsgi` has been called
+- [x] 2.5 `__skaal_inferred__` populated by `@app.storage`, `@app.function`, `@app.job`, `@app.channel`, `@app.schedule` (additive — legacy dunders survive for Phase 4 rewire)
+- [x] 2.6 `App.infer() -> InferredPlan` method and `skaal.inference.infer(app)` function form
+- [x] 2.7 `skaal/__init__.py` `__all__` extended with `Edge`, `InferredPlan`, `InferredResource`, `ResourceKind`, `ResourceOverrides`, `SchemaRef`, `SourceLocation`, `infer`
+- [x] 2.8 Tests under `tests/inference/` — `test_model.py`, `test_fingerprint.py`, `test_walk.py` (26 new tests; full suite 104 pass)
+- [x] `make lint && make typecheck && make test` green
+- [ ] 2.x `App.mount(path: str, asgi_app: ASGIApplication)` signature reshape *(deferred — paired with Phase 4 runtime rewire)*
+- [ ] 2.x `FunctionRef[P, R]` typed return shape on `@app.function` *(deferred — depends on Phase 4 runtime semantics)*
+- [ ] 2.x `@app.external` decorator and `ExternalStorage` / `ExternalQueue` reshape *(deferred — needs Phase 3 binding-layer concept of user-supplied connection)*
+- [ ] 2.x `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic defaulting to `Backend` *(deferred — depends on Phase 3 `Backend` token tree)*
+- [ ] 2.x `pyright --strict skaal/` green *(deferred — Phase 5 owns the strict-typing pass; ADR 030 §"Out of scope" calls this out)*
+- [ ] 2.x Legacy `__skaal_storage__` / `__skaal_function__` / `__skaal_schedule__` / `__skaal_channel__` / `__skaal_job__` dunders deleted *(deferred to Phase 4 — they still feed `schedule.py`'s APScheduler wrapper and the `is_blob_model` / `is_relational_model` predicates)*
+- [ ] Tag `v0.4.0-alpha.2` pushed *(maintainer action after the deferred 2.x items above complete)*
 
 ## Phase 3 — Binding layer and backend registry (`skaal.binding`)
 
