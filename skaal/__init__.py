@@ -33,6 +33,8 @@ from skaal.blob import BlobStore
 from skaal.channel import Channel
 from skaal.components import ExternalQueue, ExternalStorage
 from skaal.decorators import (
+    FunctionRef,
+    external,
     function,
     storage,
 )
@@ -95,6 +97,7 @@ __all__ = [
     "Every",
     "ExternalQueue",
     "ExternalStorage",
+    "FunctionRef",
     "InferredPlan",
     "InferredResource",
     "InvokeContext",
@@ -124,6 +127,7 @@ __all__ = [
     "Target",
     "bind",
     "ensure_relational_schema",
+    "external",
     "function",
     "infer",
     "load_environment",

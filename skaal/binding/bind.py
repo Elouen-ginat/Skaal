@@ -13,9 +13,20 @@ the registry — target reachability, kind coverage — and raises a typed
 `SkaalConfigError` if anything is inconsistent. The function is pure: no
 side effects, no I/O, no globals beyond the immutable `DEFAULTS` and
 `REGISTRY` tables.
+
+Phase 4 (ADR 032 §4.3) carries ``InferredPlan.fingerprint`` through to
+``BoundPlan.app_fingerprint`` and computes a separate
+``bound_fingerprint`` over the canonical-serialised bound resources.
+``BoundResource.external`` is propagated from
+``InferredResource.overrides.external``; the type-pin branch is the only
+one a `@app.external`-marked resource can enter (un-pinned external is
+rejected at decoration time).
 """
 
 from __future__ import annotations
+
+import hashlib
+import json
 
 from skaal.binding.defaults import DEFAULTS
 from skaal.binding.model import (
@@ -43,8 +54,10 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
         lock: The pin-on-first-deploy state from `skaal.lock`.
 
     Returns:
-        A `BoundPlan` with one `BoundResource` per inferred resource and
-        the original edges carried through unchanged.
+        A `BoundPlan` with one `BoundResource` per inferred resource, the
+        original edges carried through unchanged, the inference
+        fingerprint copied into ``app_fingerprint``, and a
+        ``bound_fingerprint`` covering the post-binding choices.
 
     Raises:
         TypePinViolation: An override repointed a type-pinned resource.
@@ -53,12 +66,27 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
         UnknownBackendError: A string in the env or lock did not resolve to a token.
     """
     bound = tuple(_bind_resource(res, env, lock) for res in plan.resources)
-    return BoundPlan(
+    skeleton = BoundPlan(
         app=plan.app,
         environment=env.name,
         resources=bound,
         edges=plan.edges,
+        app_fingerprint=plan.fingerprint,
     )
+    return skeleton.model_copy(update={"bound_fingerprint": _bound_fingerprint(skeleton)})
+
+
+def _bound_fingerprint(plan: BoundPlan) -> str:
+    """Compute the 16-hex-char fingerprint of ``plan`` (excluding itself)."""
+    data = plan.model_dump(mode="json", by_alias=True, exclude={"bound_fingerprint"})
+    data["resources"] = sorted(
+        data["resources"], key=lambda r: (r["backend"], r["inferred"]["id"])
+    )
+    data["edges"] = sorted(
+        data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"])
+    )
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()[:16]
 
 
 def _bind_resource(
@@ -76,6 +104,16 @@ def _bind_resource(
         entry = lookup(pinned_backend)
         _validate(entry, res, env)
         return _build(res, entry, env, pinned=True)
+
+    if res.overrides.external:
+        # `@app.external` without a type-pin is rejected at decoration time;
+        # reaching here means the inferred resource was hand-built. Surface
+        # the same error so the binder is self-consistent.
+        raise TypePinViolation(
+            res.id,
+            "<unpinned>",
+            "external resources must declare a backend type-pin",
+        )
 
     if lock_entry is not None:
         entry = lookup(lock_entry.backend)
@@ -122,7 +160,13 @@ def _build(
     region: str | None = None,
     options: dict[str, str] | None = None,
 ) -> BoundResource:
-    backend_config: BackendConfig | None = env.backends.get(entry.token.name)
+    external = res.overrides.external
+    external_name = res.overrides.external_name
+    backend_config: BackendConfig | None
+    if external and external_name is not None:
+        backend_config = env.backends.get(external_name) or env.backends.get(entry.token.name)
+    else:
+        backend_config = env.backends.get(entry.token.name)
     return BoundResource(
         inferred=res,
         backend=entry.token.name,
@@ -130,4 +174,6 @@ def _build(
         options=dict(options or {}),
         backend_config=backend_config,
         pinned=pinned,
+        external=external,
+        external_name=external_name,
     )

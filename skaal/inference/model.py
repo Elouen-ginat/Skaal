@@ -112,9 +112,12 @@ class SchemaRef(BaseModel):
 class ResourceOverrides(BaseModel):
     """The full set of declaration-site knobs (ADR 028 §6.5).
 
-    Phase 2 only populates ``backend`` indirectly (via the second generic
-    parameter on the primitive class, when Phase 3 wires it up). The other
-    fields are placeholders the binding layer reads in Phase 3.
+    ``backend`` is populated from the second generic parameter on the
+    primitive class (`Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` /
+    `Channel[T, B]`) — see ADR 032 §4.4. ``external`` is set by
+    `@app.external` to bypass the defaults / lock / env-override branches
+    of the binder. ``options`` carries free-form declaration-site knobs
+    (currently only ``path`` for `App.mount`).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -125,6 +128,9 @@ class ResourceOverrides(BaseModel):
     timeout_s: float | None = None
     min_concurrency: int | None = None
     max_concurrency: int | None = None
+    external: bool = False
+    external_name: str | None = None
+    options: dict[str, str] = {}
 
 
 class Edge(BaseModel):

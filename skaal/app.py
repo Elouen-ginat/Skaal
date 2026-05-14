@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from skaal.module import Module, ModuleExport
 
@@ -126,27 +126,65 @@ class App(Module):
         self._asgi_app: Any | None = asgi_app
         self._asgi_attribute: str = attribute
 
-    # ── Module mounting ────────────────────────────────────────────────────
+    # ── Mounting (modules and ASGI apps) ───────────────────────────────────
 
-    def mount(self, module: Module, *, prefix: str) -> ModuleExport:
+    @overload
+    def mount(self, target: Module, *, prefix: str) -> ModuleExport: ...
+
+    @overload
+    def mount(self, target: str, asgi_app: Any) -> None: ...
+
+    def mount(
+        self,
+        target: Module | str,
+        asgi_app: Any | None = None,
+        *,
+        prefix: str | None = None,
+    ) -> ModuleExport | None:
         """
-        Embed a Module AND map its HTTP-serving functions under a URL prefix.
+        Mount either a `Module` under a URL prefix, or an ASGI app at a path.
 
-        Equivalent to `app.use(module)` but additionally registers route
-        prefix mappings so the deploy engine wires the proxy / API gateway
-        correctly.
+        Two forms are supported (dispatched on the first arg's type):
 
-        Examples:
+        - ``app.mount(module, prefix="/api")`` — embed a `Module` and map
+          its HTTP-serving functions under a URL prefix. Returns a
+          `ModuleExport`.
+        - ``app.mount("/api", asgi_app)`` — mount an ASGI application at
+          a URL path (ADR 028 §6.4.1, ADR 032 §4.6). The inference layer
+          emits one ``ASGI_SERVICE`` resource per path.
 
-            app.mount(auth, prefix="/auth")
-            # auth's functions are now accessible at /auth/*
+        The path-form is additive in Phase 4; the existing
+        ``mount_asgi`` / ``mount_wsgi`` aliases continue to work until
+        the runtime rewire deletes them.
         """
+        if isinstance(target, str):
+            if asgi_app is None:
+                raise ValueError(
+                    "app.mount(path, asgi_app) requires a non-None asgi_app; "
+                    "pass the ASGI callable positionally as the second arg."
+                )
+            if not target.startswith("/"):
+                raise ValueError(
+                    f"mount path must start with '/': {target!r}"
+                )
+            if target == "/_skaal" or target.startswith("/_skaal/"):
+                raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
+            if not hasattr(self, "_asgi_path_mounts"):
+                self._asgi_path_mounts: dict[str, Any] = {}
+            if target in self._asgi_path_mounts:
+                raise ValueError(f"path already mounted: {target!r}")
+            self._asgi_path_mounts[target] = asgi_app
+            return None
+
+        if prefix is None:
+            raise TypeError(
+                "app.mount(module, prefix=...) requires the prefix keyword arg."
+            )
         normalized = prefix if prefix.startswith("/") else f"/{prefix}"
         if normalized == "/_skaal" or normalized.startswith("/_skaal/"):
             raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
-        exports = self.use(module)
-        # Record the prefix mapping for the deploy engine
-        ns = exports.namespace or module.name
+        exports = self.use(target)
+        ns = exports.namespace or target.name
         if not hasattr(self, "_mounts"):
             self._mounts: dict[str, str] = {}
         self._mounts[ns] = normalized

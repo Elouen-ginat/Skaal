@@ -1,23 +1,32 @@
-"""`Channel[T]` — typed pub/sub primitive.
+"""`Channel[T, B]` — typed pub/sub primitive.
 
 The `wire_local` / `wire_redis` plumbing has been removed; the new runtime
-binds channels through the bound-plan pipeline (Phase 4 of ADR 028).
+binds channels through the bound-plan pipeline (Phase 4 of ADR 028). The
+optional second generic ``B`` is a `Backend` type-pin per ADR 032 §4.4 —
+``class Events(Channel[OrderEvent, RedisChannel])`` pins this resource to
+Redis Streams regardless of the active environment's defaults.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Generic, TypeVar
+from typing import Generic
+
+from typing_extensions import TypeVar
+
+from skaal.backends._base import Backend
 
 T = TypeVar("T")
+B = TypeVar("B", bound=Backend, default=Backend)
 
 
-class Channel(Generic[T]):
+class Channel(Generic[T, B]):
     """A typed, buffered channel for inter-component messaging.
 
     `Channel.send` and `Channel.receive` are placeholders until the runtime
     binds a concrete backend. The backend selection lives in the binding
-    layer (Phase 3 of ADR 028).
+    layer (Phase 3 of ADR 028); a declaration-site pin is the second
+    generic parameter ``B`` (ADR 032 §4.4).
     """
 
     def __init__(self, buffer: int = 1000) -> None:

@@ -1,31 +1,36 @@
-"""Recogniser for `app.mount_asgi(...)` / `app.mount_wsgi(...)` call-sites.
+"""Recogniser for ASGI/WSGI sub-applications mounted on an `App`.
 
-Phase 4 reshapes `App.mount` to the canonical ``(path, asgi_app)`` form
-(ADR 028 §6.4.1). Until then, the inference walker recognises the existing
-``mount_asgi`` / ``mount_wsgi`` surfaces by inspecting the attributes those
-methods set on the `App` instance.
+Two surfaces are recognised (ADR 028 §6.4.1, ADR 030 §2.4, ADR 032 §4.6):
 
-See ADR 030 §2.4 for the design.
+- The legacy ``app.mount_asgi(...)`` / ``app.mount_wsgi(...)`` aliases,
+  which set ``_asgi_app`` / ``_wsgi_app`` on the `App` instance. One
+  combined ``ASGI_SERVICE`` resource is emitted when either is set.
+- The path-form ``app.mount("/path", asgi_app)`` (ADR 028 §6.4.1) which
+  populates ``_asgi_path_mounts: dict[str, ASGIApplication]``. One
+  ``ASGI_SERVICE`` resource is emitted per mount path; the path itself
+  rides on ``InferredResource.overrides.options["path"]``.
+
+The legacy surface continues to be recognised until the runtime rewire
+deletes ``mount_asgi`` / ``mount_wsgi``.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from skaal.inference.model import InferredResource, ResourceKind, SourceLocation
+from skaal.inference.model import (
+    InferredResource,
+    ResourceKind,
+    ResourceOverrides,
+    SourceLocation,
+)
 
 if TYPE_CHECKING:
     from skaal.app import App
 
 
 def recognise_mount(app: App) -> InferredResource | None:
-    """Return an ``ASGI_SERVICE`` resource if ``app`` mounts an ASGI/WSGI app.
-
-    ``None`` is returned when neither a WSGI nor ASGI app has been mounted on
-    ``app``. WSGI apps are recognised too — the deploy layer wraps them in
-    ``WSGIMiddleware`` for serving; the inference distinction would only
-    matter at deploy time, which is Phase 4's concern.
-    """
+    """Return one combined ``ASGI_SERVICE`` resource for the legacy mounts."""
     asgi_app = getattr(app, "_asgi_app", None)
     asgi_attribute = getattr(app, "_asgi_attribute", None)
     wsgi_app = getattr(app, "_wsgi_app", None)
@@ -41,3 +46,27 @@ def recognise_mount(app: App) -> InferredResource | None:
         kind=ResourceKind.ASGI_SERVICE,
         source=SourceLocation.from_object(app.__class__),
     )
+
+
+def recognise_path_mounts(app: App) -> list[InferredResource]:
+    """Return one ``ASGI_SERVICE`` resource per ``App.mount(path, asgi_app)`` entry.
+
+    Phase 4's path-form (ADR 028 §6.4.1) is recognised independently of the
+    legacy ``mount_asgi`` / ``mount_wsgi`` aliases — both can coexist on the
+    same `App` until the legacy surface is deleted. The mount path is carried
+    on ``InferredResource.overrides.options["path"]`` so the deploy layer can
+    wire one API Gateway route per mount.
+    """
+    path_mounts: dict[str, object] = getattr(app, "_asgi_path_mounts", {}) or {}
+    resources: list[InferredResource] = []
+    for path in sorted(path_mounts):
+        resource_id = f"{app.__class__.__module__}:{app.name}.mount({path})"
+        resources.append(
+            InferredResource(
+                id=resource_id,
+                kind=ResourceKind.ASGI_SERVICE,
+                source=SourceLocation.from_object(app.__class__),
+                overrides=ResourceOverrides(options={"path": path}),
+            )
+        )
+    return resources

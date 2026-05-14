@@ -103,7 +103,13 @@ class LockFile(BaseModel):
 
 
 class BoundResource(BaseModel):
-    """An `InferredResource` bound to exactly one concrete backend."""
+    """An `InferredResource` bound to exactly one concrete backend.
+
+    ``external`` is propagated from `ResourceOverrides.external` (set by
+    `@app.external`). When ``True``, the deploy layer skips Pulumi
+    provisioning for this resource and the runtime adapter reads the
+    connection from `Environment.backends[external_name]` instead.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -113,10 +119,19 @@ class BoundResource(BaseModel):
     options: dict[str, str] = {}
     backend_config: BackendConfig | None = None
     pinned: bool
+    external: bool = False
+    external_name: str | None = None
 
 
 class BoundPlan(BaseModel):
-    """The deterministic output of ``bind(plan, env, lock)``."""
+    """The deterministic output of ``bind(plan, env, lock)``.
+
+    ``app_fingerprint`` mirrors ``InferredPlan.fingerprint`` through the
+    bind step. ``bound_fingerprint`` is the SHA-256 (first 16 hex chars)
+    of the canonical-serialised resources + edges + environment name; it
+    is what the deploy layer tags every cloud resource with so a
+    follow-up `skaal plan` can short-circuit when nothing has changed.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -124,3 +139,5 @@ class BoundPlan(BaseModel):
     environment: str
     resources: tuple[BoundResource, ...] = ()
     edges: tuple[Edge, ...] = ()
+    app_fingerprint: str = ""
+    bound_fingerprint: str = ""

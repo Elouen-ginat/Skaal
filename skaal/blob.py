@@ -20,14 +20,20 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
+from typing_extensions import TypeVar
+
+from skaal.backends._base import Backend
 from skaal.storage import _decode_cursor, _encode_cursor, _normalize_limit
 from skaal.sync import run as _sync_run
 from skaal.types import BlobObject, Page
 
 if TYPE_CHECKING:
     from skaal.backends.base import BlobBackend
+
+
+B = TypeVar("B", bound=Backend, default=Backend)
 
 
 def is_blob_model(obj: Any) -> bool:
@@ -60,12 +66,18 @@ def validate_blob_model(store_cls: type) -> None:
         raise TypeError('@app.storage(kind="blob") requires a skaal.BlobStore subclass.')
 
 
-class BlobStore:
+class BlobStore(Generic[B]):
     """Typed object storage with async and sync convenience methods.
 
     Subclass `BlobStore` to model binary assets that should be stored in a blob
     backend. The async methods map directly to the configured backend, while the
     `sync_*` helpers run the same operations through `skaal.sync.run`.
+
+    The optional generic parameter ``B`` is a `Backend` type-pin (ADR 028
+    §6.6, ADR 032 §4.4). ``class Reports(BlobStore[S3])`` pins the
+    resource to S3 regardless of environment defaults; the un-pinned
+    ``class Assets(BlobStore)`` leaves the binding open for the defaults
+    table.
 
     Examples:
         class Assets(BlobStore):
