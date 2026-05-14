@@ -4,7 +4,7 @@ This file is the canonical answer to "where are we in the redesign?" It carries 
 
 **Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
 **Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
-**Last updated:** 2026-05-14 — Phase 4 foundations landed on `claude/continue-redesign-lcaT5`: `BoundPlan` extensions, decorator second-generic rewire, `@app.external`, `FunctionRef[P, R]`, `App.mount(path, asgi_app)`, and 25 per-backend re-export modules. The runtime, deploy, and CLI rewire (plus the legacy-dunder sweep) are still pending — see the Phase 4 checklist below.
+**Last updated:** 2026-05-14 — Phase 4 runtime skeleton landed on `claude/continue-redesign-0ypyZ`: `skaal/runtime/` with `LocalRuntime`, the per-kind dispatch table, a four-policy resilience middleware chain, and adapters for `STORE` (sqlite/redis), `FUNCTION`, `ASGI_SERVICE`, `SECRET` (dotenv), `RELATIONAL` (sqlite-only), `BLOB` (filesystem-blob), `CHANNEL` (in-process), `SCHEDULE` (apscheduler), and `JOB` (asyncio). `skaal run <module:attr>` now walks `infer → bind → LocalRuntime.from_bound_plan` and serves the resulting Starlette app via uvicorn. The deploy rebuild, CLI `build`/`deploy`/`plan` rewire, legacy-dunder sweep, and examples sweep are still pending — see the Phase 4 checklist below.
 
 ---
 
@@ -125,13 +125,13 @@ Checklist:
 
 ## Phase 4 — Runtime/deploy on `BoundPlan`
 
-- **Status:** foundations landed on `claude/continue-redesign-lcaT5` (§4.3, §4.4 partial, §4.5, §4.6, §4.7). Runtime, deploy, CLI rewire, and legacy-dunder sweep are still pending and tracked below.
+- **Status:** foundations landed on `claude/continue-redesign-lcaT5` (§4.3, §4.4 partial, §4.5, §4.6, §4.7) and `claude/continue-redesign-0ypyZ` (§4.1, §4.8 partial — `skaal run`). Deploy rebuild, `build`/`deploy`/`plan` CLI rewire, legacy-dunder sweep, and examples sweep are still pending and tracked below.
 - **ADR:** [032](design/032-runtime-deploy-on-bound-plan-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.4`
 
 Checklist:
 
-- [ ] 4.1 `skaal/runtime/` rebuilt on `BoundPlan` (`LocalRuntime`, dispatch table, per-kind adapters under `skaal/runtime/adapters/`, resilience middleware chain)
+- [x] 4.1 `skaal/runtime/` rebuilt on `BoundPlan`: `LocalRuntime.from_bound_plan(bound, app).serve(host, port)`, `dispatch.LOCAL_DISPATCH` keyed by every `ResourceKind`, `wrap_resilience(...)` middleware chain, and adapters for `STORE` (sqlite/redis), `FUNCTION` (resilience-wrapped HTTP routes), `ASGI_SERVICE` (Starlette mounts), `SECRET` (dotenv hydration), `RELATIONAL` (sqlite), `BLOB` (filesystem), `CHANNEL` (in-process pass-through), `SCHEDULE` (APScheduler), and `JOB` (asyncio queue + worker)
 - [ ] 4.2 `skaal/deploy/` rebuilt: `pulumi_program_for(bound, app, env)`, `build_artefacts(...)`, per-backend AWS synth modules, `tags_for()` helper
 - [ ] 4.2 Jinja2 templates under `skaal/deploy/templates/aws/` (`Dockerfile.j2`, `handler.py.j2`, `bootstrap.py.j2`, `requirements.txt.j2`)
 - [x] 4.3 `BoundPlan.app_fingerprint` + `BoundPlan.bound_fingerprint` fields added; `BoundResource.external` flag added; `bind()` amended to populate both (Phase 3 extension landed in this phase)
@@ -140,14 +140,14 @@ Checklist:
 - [x] 4.5 Per-backend public import paths (`from skaal.backends.redis import Redis`) — 25 thin re-export modules (24 new + `RedisChannel` re-exported alongside the existing `RedisStreamChannel` impl)
 - [ ] 4.6 `App.mount(path: str, asgi_app: ASGIApplication)` *partial*: path-form overload added alongside the existing `mount_asgi` / `mount_wsgi`; inference `asgi.recognise_path_mounts` emits one `ASGI_SERVICE` per path with the path on `overrides.options["path"]`. Deleting the legacy `mount_asgi` / `mount_wsgi` aliases blocks on the runtime rewire (§4.1).
 - [x] 4.7 `FunctionRef[P, R]` typed return shape added; attribute-forwarding via `__getattr__` keeps the legacy dunder consumers working. Wiring it into `Module.function` blocks on the runtime rewire (§4.1).
-- [ ] 4.8 CLI verbs reactivated: `skaal run`, `skaal build`, `skaal deploy`, `skaal plan` (the plan-as-diff form is Phase 6)
+- [ ] 4.8 CLI verbs reactivated: `skaal run` (landed — accepts `module:attr` target, walks `infer → bind → LocalRuntime.serve`), `skaal build`, `skaal deploy`, `skaal plan` (the plan-as-diff form is Phase 6)
 - [ ] 4.9 Legacy dunder deletion: `__skaal_storage__`, `__skaal_function__`, `__skaal_schedule__`, `__skaal_channel__`, `__skaal_job__` removed from every `skaal/` module that still reads or writes them
-- [x] 4.10 Tests for the Phase 4 foundations: `tests/decorators/test_backend_pin.py`, `tests/decorators/test_external.py`, `tests/decorators/test_function_ref.py`, `tests/inference/test_mount.py`, `tests/binding/test_phase4_extensions.py`, `tests/backends/test_token_reexports.py` (77 new tests; full suite 228 pass)
+- [x] 4.10 Tests for the Phase 4 foundations: `tests/decorators/test_backend_pin.py`, `tests/decorators/test_external.py`, `tests/decorators/test_function_ref.py`, `tests/inference/test_mount.py`, `tests/binding/test_phase4_extensions.py`, `tests/backends/test_token_reexports.py`, `tests/runtime/test_dispatch.py`, `tests/runtime/test_local_runtime.py`, `tests/runtime/test_middleware.py` (90 new tests; full suite 241 pass)
 - [ ] 4.11 Examples updated to the new `app.mount` surface and one type-pinned `Store[T, Redis]` example added
 - [ ] Exit-criterion grep gate: `grep -r "__skaal_storage__\|__skaal_function__\|__skaal_schedule__\|__skaal_channel__\|__skaal_job__" skaal/` returns zero hits
 - [ ] `skaal run` boots `examples/todo_api` against a `local` environment and serves HTTP on `localhost:8000`
 - [ ] `skaal deploy --env prod` (target `aws`) provisions resources for `examples/todo_api` and `examples/counter` with `skaal:*` tags
-- [x] `uv run ruff check && uv run mypy skaal && uv run pytest` green (228 tests; mypy clean on 101 source files; ruff clean)
+- [x] `uv run ruff check && uv run mypy skaal && uv run pytest` green (241 tests; mypy clean on 115 source files; ruff clean)
 - [ ] Tag `v0.4.0-alpha.4` pushed *(maintainer action)*
 
 ## Phase 5 — Typing contract and `skaal stubs`

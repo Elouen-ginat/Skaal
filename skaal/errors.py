@@ -137,6 +137,44 @@ class MissingExtraError(SkaalError):
     """An optional dependency group is not installed."""
 
 
+# ── Runtime errors ───────────────────────────────────────────────────────────
+
+
+class RuntimeAdapterMissing(SkaalError):
+    """The local runtime has no adapter wired for a resource kind.
+
+    Raised when the dispatch table in `skaal.runtime.dispatch` is asked
+    for a kind that has not been hooked up yet. Phase 4 ships first-class
+    adapters for the kinds the local defaults table emits; remaining
+    kinds raise this until their adapter lands.
+    """
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+        super().__init__(
+            f"No local runtime adapter is wired for resource kind {kind!r}. "
+            "This kind will be supported in a follow-up Phase 4 PR."
+        )
+
+
+class RuntimeResourceUnresolved(SkaalError):
+    """A `BoundResource.id` could not be resolved back to a live Python object.
+
+    The runtime walks the user's `App` graph to find the live `Store`
+    subclass / `@app.function` callable / channel instance behind every
+    `BoundResource`. This is raised when the addressing scheme falls out
+    of sync — typically because the user constructed a `BoundPlan` from
+    a different `App` than the one passed to `LocalRuntime`.
+    """
+
+    def __init__(self, resource_id: str) -> None:
+        self.resource_id = resource_id
+        super().__init__(
+            f"Cannot resolve resource {resource_id!r} to a live object on the App. "
+            "The BoundPlan and App must come from the same inference run."
+        )
+
+
 def require_extra(
     extra: str,
     modules: Iterable[str],
@@ -169,6 +207,8 @@ __all__ = [
     "BuildError",
     "MissingExtraError",
     "PlanError",
+    "RuntimeAdapterMissing",
+    "RuntimeResourceUnresolved",
     "SecretMissingError",
     "SkaalBackendError",
     "SkaalConfigError",
