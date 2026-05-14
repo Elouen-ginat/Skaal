@@ -4,7 +4,7 @@ This file is the canonical answer to "where are we in the redesign?" It carries 
 
 **Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
 **Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
-**Last updated:** 2026-05-14 — Phase 3 binding layer landed on `claude/continue-theme-redesign-v16Gc`.
+**Last updated:** 2026-05-14 — ADR 032 (Phase 4 implementation plan) drafted on `claude/continue-redesign-lcaT5`; Phase 3 binding layer landed on `claude/continue-theme-redesign-v16Gc`.
 
 ---
 
@@ -125,11 +125,30 @@ Checklist:
 
 ## Phase 4 — Runtime/deploy on `BoundPlan`
 
-- **Status:** not started
-- **ADR:** planned 032
+- **Status:** plan drafted; implementation not started
+- **ADR:** [032](design/032-runtime-deploy-on-bound-plan-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.4`
 
-Checklist: TBD when ADR 032 lands.
+Checklist:
+
+- [ ] 4.1 `skaal/runtime/` rebuilt on `BoundPlan` (`LocalRuntime`, dispatch table, per-kind adapters under `skaal/runtime/adapters/`, resilience middleware chain)
+- [ ] 4.2 `skaal/deploy/` rebuilt: `pulumi_program_for(bound, app, env)`, `build_artefacts(...)`, per-backend AWS synth modules, `tags_for()` helper
+- [ ] 4.2 Jinja2 templates under `skaal/deploy/templates/aws/` (`Dockerfile.j2`, `handler.py.j2`, `bootstrap.py.j2`, `requirements.txt.j2`)
+- [ ] 4.3 `BoundPlan.app_fingerprint` + `BoundPlan.bound_fingerprint` fields added; `BoundResource.external` flag added; `bind()` amended to populate both (Phase 3 extension landed in this phase)
+- [ ] 4.4 Decorator rewire: `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic flows into `ResourceOverrides.backend`
+- [ ] 4.4 `@app.external(name=...)` decorator added, requiring a type-pinned second generic
+- [ ] 4.5 Per-backend public import paths (`from skaal.backends.redis import Redis`) — 25 thin re-export modules
+- [ ] 4.6 `App.mount(path: str, asgi_app: ASGIApplication)` lands; `mount_asgi` / `mount_wsgi` deleted; inference `asgi.py` recogniser walks `app._mounts`
+- [ ] 4.7 `FunctionRef[P, R]` typed return on `@app.function`; cross-module call-site typing works without `getattr` indirection
+- [ ] 4.8 CLI verbs reactivated: `skaal run`, `skaal build`, `skaal deploy`, `skaal plan` (the plan-as-diff form is Phase 6)
+- [ ] 4.9 Legacy dunder deletion: `__skaal_storage__`, `__skaal_function__`, `__skaal_schedule__`, `__skaal_channel__`, `__skaal_job__` removed from every `skaal/` module that still reads or writes them
+- [ ] 4.10 Tests under `tests/runtime/`, `tests/deploy/`, `tests/decorators/`, `tests/inference/test_mount.py`, `tests/typing/test_legacy_dunders_gone.py`
+- [ ] 4.11 Examples updated to the new `app.mount` surface and one type-pinned `Store[T, Redis]` example added
+- [ ] Exit-criterion grep gate: `grep -r "__skaal_storage__\|__skaal_function__\|__skaal_schedule__\|__skaal_channel__\|__skaal_job__" skaal/` returns zero hits
+- [ ] `skaal run` boots `examples/todo_api` against a `local` environment and serves HTTP on `localhost:8000`
+- [ ] `skaal deploy --env prod` (target `aws`) provisions resources for `examples/todo_api` and `examples/counter` with `skaal:*` tags
+- [ ] `make lint && make typecheck && make test` green
+- [ ] Tag `v0.4.0-alpha.4` pushed *(maintainer action)*
 
 ## Phase 5 — Typing contract and `skaal stubs`
 
