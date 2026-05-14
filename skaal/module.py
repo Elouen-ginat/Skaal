@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, cast, overloa
 from skaal.inference.model import (
     InferredResource,
     ResourceKind,
+    ResourceOverrides,
     SchemaRef,
     SourceLocation,
 )
@@ -216,6 +217,30 @@ class Module:
             return decorator
         return decorator(cls_to_decorate)
 
+    def external(
+        self,
+        *,
+        name: str,
+        kind: StorageKind | str = "kv",
+    ) -> Callable[[C], C]:
+        """Register an externally-provisioned, type-pinned storage class.
+
+        See `skaal.decorators.external` for the contract: the decorated
+        class must declare a `Backend` type-pin via its second generic
+        parameter; ``name`` indexes into ``[env.<name>.backends]`` in
+        `skaal.toml` for the connection string.
+        """
+        from skaal.decorators import external as _external_dec
+
+        outer = _external_dec(name=name, kind=kind)
+
+        def decorator(cls: C) -> C:
+            annotated = outer(cls)
+            self._storage[cls.__name__] = annotated
+            return annotated
+
+        return decorator
+
     @overload
     def function(
         self,
@@ -349,13 +374,22 @@ class Module:
         """Register a `Channel` subclass as a named resource on this module."""
 
         def decorator(cls: C) -> C:
+            from skaal.decorators import _extract_backend_pin
+
             cls = _attach_channel_metadata(cls, {"buffer": buffer})
             instance = cls(buffer=buffer)
+            pinned_token = _extract_backend_pin(cls)
+            overrides = (
+                ResourceOverrides(backend=pinned_token.name)
+                if pinned_token is not None
+                else ResourceOverrides()
+            )
             inferred = InferredResource(
                 id=InferredResource.id_for(cls),
                 kind=ResourceKind.CHANNEL,
                 source=SourceLocation.from_object(cls),
                 schema_=SchemaRef.from_class(cls),
+                overrides=overrides,
             )
             _attach_inferred(cls, inferred)
             _attach_inferred(instance, inferred)

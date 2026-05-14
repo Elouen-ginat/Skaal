@@ -1,9 +1,18 @@
 """Skaal storage backends.
 
-Each backend exists as a concrete implementation under `skaal.backends.*`.
-The typed `Backend` token tree and the binding registry (ADR 028 §6.12)
-land in Phase 3 — until then the only canonical lookup path is the lazy
-`__getattr__` shim below.
+Two surfaces coexist in this package:
+
+- **Backend tokens** (`Sqlite`, `Postgres`, `Redis`, …): typed class
+  tokens consumed as the second generic parameter on the primitive
+  classes (`Store[T, Redis]`). The canonical class lives in
+  `skaal.backends._tokens`; each token is also re-exported from a thin
+  module named after the token (`from skaal.backends.redis import
+  Redis`) per ADR 032 §4.5.
+- **Backend implementations** (`RedisBackend`, `PostgresBackend`, …):
+  the concrete I/O classes the runtime adapters use. These continue to
+  live in `<name>_backend.py` modules and are loaded lazily via the
+  `__getattr__` shim below to avoid pulling in optional-extra SDKs at
+  package import time.
 """
 
 from __future__ import annotations

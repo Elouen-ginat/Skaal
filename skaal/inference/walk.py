@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from skaal.inference.asgi import recognise_mount
+from skaal.inference.asgi import recognise_mount, recognise_path_mounts
 from skaal.inference.fingerprint import fingerprint_plan
 from skaal.inference.model import InferredPlan, InferredResource
 
@@ -45,7 +45,14 @@ def infer(app: App) -> InferredPlan:
     if asgi_resource is not None:
         seen[id(app)] = asgi_resource
 
-    resources = tuple(sorted(seen.values(), key=lambda r: (r.kind.value, r.id)))
+    extra: list[InferredResource] = list(recognise_path_mounts(app))
+
+    resources = tuple(
+        sorted(
+            [*seen.values(), *extra],
+            key=lambda r: (r.kind.value, r.id),
+        )
+    )
     plan = InferredPlan(app=app.name, resources=resources, edges=())
     return plan.with_fingerprint(fingerprint_plan(plan))
 

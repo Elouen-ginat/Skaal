@@ -26,6 +26,10 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from skaal.backends._tokens import RedisChannel  # public re-export (ADR 032 §4.5)
+
+__all__ = ["RedisChannel", "RedisStreamChannel"]
+
 
 class RedisStreamChannel:
     """

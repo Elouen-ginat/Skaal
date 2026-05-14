@@ -49,15 +49,17 @@ from typing import (
     Any,
     ClassVar,
     Generic,
-    TypeVar,
     get_args,
     get_origin,
     overload,
 )
 
+from typing_extensions import TypeVar
+
 if TYPE_CHECKING:
     from skaal.backends.base import StorageBackend
 
+from skaal.backends._base import Backend
 from skaal.serialization import deserialize_value as _deserialize
 from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
@@ -65,6 +67,7 @@ from skaal.types import TTL
 from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 T = TypeVar("T")
+B = TypeVar("B", bound=Backend, default=Backend)
 _PAGE_DRAIN_LIMIT = 1000
 
 
@@ -301,7 +304,7 @@ def _query_index_from_entries(
 _List = list
 
 
-class Store(Generic[T]):
+class Store(Generic[T, B]):
     """
     Typed key-value storage with optional model-centric helpers.
 
@@ -311,6 +314,12 @@ class Store(Generic[T]):
     For model-centric usage, ``add()`` infers the key from ``id``, ``pk``,
     ``key``, or the model's first field. ``update()`` accepts either a full
     replacement value or an atomic transform function.
+
+    The second generic parameter ``B`` is an optional `Backend` type-pin
+    (ADR 028 §6.6, ADR 032 §4.4). ``class Cache(Store[Session, Redis])``
+    pins the resource to the registered `redis` backend regardless of
+    environment defaults; ``class Sessions(Store[Session])`` leaves the
+    binding open for the defaults table to fill in.
     """
 
     __skaal_key_type__: ClassVar[type] = str
