@@ -4,7 +4,7 @@ This file is the canonical answer to "where are we in the redesign?" It carries 
 
 **Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
 **Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
-**Last updated:** 2026-05-13 — Phase 2 inference layer landed on `claude/continue-redesign-z5qEy`.
+**Last updated:** 2026-05-14 — Phase 3 binding layer landed on `claude/continue-theme-redesign-v16Gc`.
 
 ---
 
@@ -98,11 +98,30 @@ Checklist:
 
 ## Phase 3 — Binding layer and backend registry (`skaal.binding`)
 
-- **Status:** not started
-- **ADR:** planned 031
+- **Status:** initial cut landed on `claude/continue-theme-redesign-v16Gc`; follow-ups for `Store[T, B]` second generic, `@app.external`, and `relational-oltp`/`relational-analytics` kind refinement are deferred to Phases 3.x / 4 / 6
+- **ADR:** [031](design/031-binding-layer-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.3`
 
-Checklist: TBD when ADR 031 lands.
+Checklist:
+
+- [x] 3.1 `skaal/backends/_base.py` — `Backend[NativeClientT]` base class with `name` / `kinds` / `NativeClient` class vars
+- [x] 3.2 `skaal/backends/_tokens.py` — 25 `Backend` subclasses (`Sqlite`, `Postgres`, `Redis`, `DynamoDB`, `Firestore`, `S3`, `Gcs`, `FilesystemBlob`, `InProcessChannel`, `RedisChannel`, `Sqs`, `Pubsub`, `Asyncio`, `Lambda`, `CloudRun`, `Uvicorn`, `ApigwLambda`, `Apscheduler`, `EventBridgeLambda`, `CloudSchedulerCloudRun`, `SqsLambdaWorker`, `CloudTasksCloudRun`, `DotenvSecret`, `AwsSecretsManager`, `GcpSecretManager`) plus an `ALL_TOKENS` tuple for registry consistency checks
+- [x] 3.3 `skaal/binding/model.py` — `Target`, `BackendConfig`, `ResourceOverride`, `Environment`, `LockEntry`, `LockFile`, `BoundResource`, `BoundPlan` (all frozen pydantic, `extra="forbid"`)
+- [x] 3.4 `skaal/binding/registry.py` — `BackendCapabilities`, `BackendOptions` (permissive Phase 3 base schema), `BackendEntry`, `REGISTRY` tuple, plus `lookup`, `lookup_token`, `tokens_for` accessors and the import-time `_registry_consistency_check`
+- [x] 3.5 `skaal/binding/defaults.py` — `DEFAULTS` `Mapping[ResourceKind, Mapping[Target, type[Backend]]]` wrapped in `MappingProxyType`
+- [x] 3.6 `skaal/binding/environment.py` — `load_environments`, `load_environment` reading `skaal.toml`; absent file yields `{"local": Environment(name="local", target=LOCAL)}`
+- [x] 3.7 `skaal/binding/lock.py` — `load_lock`, `write_lock` round-tripping the nested `[entries.<env>."<resource_id>"]` TOML form
+- [x] 3.8 `skaal/binding/bind.py` — pure `bind(plan, env, lock) -> BoundPlan` with the four-branch type-pin / lock / env-override / defaults priority order, plus the `_validate` target+kind check
+- [x] 3.9 `skaal.errors` — `TypePinViolation`, `BackendKindMismatch`, `BackendNotAvailableForTarget`, `UnknownBackendError` added as `SkaalConfigError` subclasses
+- [x] 3.10 `skaal/__init__.py` `__all__` extended with `Backend`, `BackendCapabilities`, `BackendConfig`, `BackendEntry`, `BoundPlan`, `BoundResource`, `Environment`, `LockEntry`, `LockFile`, `ResourceOverride`, `Target`, `bind`, `load_environment`, `load_environments`, `load_lock`, `write_lock`
+- [x] 3.11 Tests under `tests/binding/` — `test_model.py`, `test_defaults.py`, `test_registry.py`, `test_bind.py`, `test_environment.py`, `test_lock.py` (47 new tests; full suite 151 pass)
+- [x] `make lint && uv run mypy skaal && pytest` green (151 tests; mypy clean on 77 source files; ruff clean)
+- [ ] 3.x `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic populating `ResourceOverrides.backend` *(deferred — Phase 4 owns the decorator rewire that bridges the generic parameter to the binder's pinned-backend branch)*
+- [ ] 3.x `@app.external` decorator using `Environment.backends` for user-supplied connections *(deferred — Phase 4)*
+- [ ] 3.x `relational-oltp` / `relational-analytics` kind refinement *(deferred — Phase 6 owns the bytecode walker that emits the refinement)*
+- [ ] 3.x `pyright --strict skaal/binding/` green *(deferred — Phase 5 owns the global strict-typing pass)*
+- [ ] 3.x Per-backend public import paths (`from skaal.backends.redis import Redis`) re-exporting from `_tokens.py` *(deferred — Phase 4, alongside the decorator rewire that consumes them)*
+- [ ] Tag `v0.4.0-alpha.3` pushed *(maintainer action after the deferred 3.x items above complete)*
 
 ## Phase 4 — Runtime/deploy on `BoundPlan`
 

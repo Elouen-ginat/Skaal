@@ -62,6 +62,62 @@ class SkaalConfigError(SkaalError):
     """Configuration (settings, pyproject) is invalid or unreadable."""
 
 
+class TypePinViolation(SkaalConfigError):
+    """An env override or lock entry tried to repoint a type-pinned resource.
+
+    Type-pinning a class (``Relational[Sale, BigQuery]``) is a commitment —
+    the binder refuses any override that names a different backend for the
+    same resource, raising at config-load time per ADR 028 §6.5.3.
+    """
+
+    def __init__(self, resource_id: str, declared: str, requested: str) -> None:
+        self.resource_id = resource_id
+        self.declared = declared
+        self.requested = requested
+        super().__init__(
+            f"Resource {resource_id!r} is type-pinned to backend {declared!r}; "
+            f"override names {requested!r}. Pinning is a commitment — either "
+            f"drop the second generic parameter at the declaration site or "
+            f"remove the conflicting override."
+        )
+
+
+class BackendKindMismatch(SkaalConfigError):
+    """The chosen backend cannot host the resource's required kind."""
+
+    def __init__(self, resource_id: str, backend: str, required_kind: str) -> None:
+        self.resource_id = resource_id
+        self.backend = backend
+        self.required_kind = required_kind
+        super().__init__(
+            f"Backend {backend!r} does not support kind {required_kind!r} "
+            f"required by {resource_id!r}."
+        )
+
+
+class BackendNotAvailableForTarget(SkaalConfigError):
+    """The chosen backend is not deployable on the active environment's target."""
+
+    def __init__(self, backend: str, target: str) -> None:
+        self.backend = backend
+        self.target = target
+        super().__init__(
+            f"Backend {backend!r} is not available on target {target!r}."
+        )
+
+
+class UnknownBackendError(SkaalConfigError):
+    """A backend name was used that the registry does not know."""
+
+    def __init__(self, name: str, valid: tuple[str, ...]) -> None:
+        self.name = name
+        self.valid = valid
+        super().__init__(
+            f"Unknown backend {name!r}. Registered backends: "
+            f"{', '.join(valid) if valid else '(none)'}."
+        )
+
+
 class SecretMissingError(SkaalConfigError):
     """A required secret could not be resolved at runtime warmup."""
 

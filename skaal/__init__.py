@@ -11,6 +11,24 @@ surface is a strict subset of the eventual `__all__` in ADR 028 §8.
 from skaal import types
 from skaal._logging import ensure_null_handler as _ensure_null_handler
 from skaal.app import App
+from skaal.backends._base import Backend
+from skaal.binding import (
+    BackendCapabilities,
+    BackendConfig,
+    BackendEntry,
+    BoundPlan,
+    BoundResource,
+    Environment,
+    LockEntry,
+    LockFile,
+    ResourceOverride,
+    Target,
+    bind,
+    load_environment,
+    load_environments,
+    load_lock,
+    write_lock,
+)
 from skaal.blob import BlobStore
 from skaal.channel import Channel
 from skaal.components import ExternalQueue, ExternalStorage
@@ -58,15 +76,22 @@ _ensure_null_handler()
 __all__ = [
     "TTL",
     "App",
+    "Backend",
+    "BackendCapabilities",
+    "BackendConfig",
+    "BackendEntry",
     "BeforeInvoke",
     "BlobObject",
     "BlobStore",
+    "BoundPlan",
+    "BoundResource",
     "Bulkhead",
     "Channel",
     "CircuitBreaker",
     "Cron",
     "Duration",
     "Edge",
+    "Environment",
     "Every",
     "ExternalQueue",
     "ExternalStorage",
@@ -77,11 +102,14 @@ __all__ = [
     "JobResult",
     "JobSpec",
     "JobStatus",
+    "LockEntry",
+    "LockFile",
     "Module",
     "ModuleExport",
     "Page",
     "RateLimitPolicy",
     "ResourceKind",
+    "ResourceOverride",
     "ResourceOverrides",
     "Retention",
     "RetryPolicy",
@@ -93,12 +121,18 @@ __all__ = [
     "SecretRegistry",
     "SourceLocation",
     "Store",
+    "Target",
+    "bind",
     "ensure_relational_schema",
     "function",
     "infer",
+    "load_environment",
+    "load_environments",
+    "load_lock",
     "open_relational_session",
     "storage",
     "types",
+    "write_lock",
 ]
 
 __version__ = "0.4.0a0"
