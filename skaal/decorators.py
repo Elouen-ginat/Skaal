@@ -34,9 +34,14 @@ from skaal.inference.model import (
     SchemaRef,
     SourceLocation,
 )
-from skaal.inference.runtime_meta import encode_resilience
 from skaal.types import SecondaryIndex
-from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimitPolicy, RetryPolicy
+from skaal.types.compute import (
+    Bulkhead,
+    CircuitBreaker,
+    RateLimitPolicy,
+    ResiliencePolicies,
+    RetryPolicy,
+)
 
 C = TypeVar("C", bound=type)
 P = ParamSpec("P")
@@ -254,7 +259,7 @@ def function(
         import contextlib
 
         overrides = ResourceOverrides(
-            resilience=encode_resilience(
+            resilience=_resilience(
                 retry=retry,
                 circuit_breaker=circuit_breaker,
                 rate_limit=rate_limit,
@@ -272,3 +277,25 @@ def function(
         return FunctionRef(fn, id=inferred.id, overrides=overrides, inferred=inferred)
 
     return decorator
+
+
+def _resilience(
+    *,
+    retry: RetryPolicy | None,
+    circuit_breaker: CircuitBreaker | None,
+    rate_limit: RateLimitPolicy | None,
+    bulkhead: Bulkhead | None,
+) -> ResiliencePolicies | None:
+    """Build a `ResiliencePolicies` from the four kwarg policies, or `None`.
+
+    Collapsing the empty-envelope case to ``None`` keeps the `BoundPlan`
+    fingerprint stable for resources that declare zero policies — the
+    common case in examples and tests.
+    """
+    policies = ResiliencePolicies(
+        retry=retry,
+        circuit_breaker=circuit_breaker,
+        rate_limit=rate_limit,
+        bulkhead=bulkhead,
+    )
+    return None if policies.is_empty else policies

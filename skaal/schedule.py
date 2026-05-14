@@ -23,9 +23,9 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, TypeAlias, cast
+from typing import Annotated, Any, Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from skaal.types import AsyncPublishTarget
 
@@ -92,6 +92,9 @@ class Every(BaseModel):
         `Cron`: Use cron syntax for calendar-based schedules.
     """
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["every"] = "every"
     interval: str
 
     @field_validator("interval")
@@ -175,6 +178,9 @@ class Cron(BaseModel):
         `Every`: Use interval syntax for fixed-rate schedules.
     """
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["cron"] = "cron"
     expression: str
 
     @field_validator("expression")
@@ -211,8 +217,9 @@ class ScheduleContext(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-# Union alias for type annotations
-Schedule: TypeAlias = Every | Cron
+# Discriminated union used by `ResourceOverrides.trigger` so pydantic
+# can re-validate either shape from the canonical JSON form.
+Schedule: TypeAlias = Annotated[Every | Cron, Field(discriminator="kind")]
 
 
 def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:

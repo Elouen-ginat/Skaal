@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from skaal.inference.runtime_meta import decode_resilience
 from skaal.runtime.middleware import wrap_resilience
+from skaal.types.compute import ResiliencePolicies
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
@@ -30,14 +30,16 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         # is expected to invoke them through `Environment.backends[...]`.
         return
 
-    policies = decode_resilience(bound.inferred.overrides.resilience)
+    policies: ResiliencePolicies = (
+        bound.inferred.overrides.resilience or ResiliencePolicies()
+    )
     handler: Callable[..., Awaitable[Any]] = _coerce_async(target)
     wrapped: Callable[..., Awaitable[Any]] = wrap_resilience(
         handler,
-        retry=policies.get("retry"),
-        circuit_breaker=policies.get("circuit_breaker"),
-        rate_limit=policies.get("rate_limit"),
-        bulkhead=policies.get("bulkhead"),
+        retry=policies.retry,
+        circuit_breaker=policies.circuit_breaker,
+        rate_limit=policies.rate_limit,
+        bulkhead=policies.bulkhead,
     )
 
     bare: str = bound.inferred.id.split(":")[-1].split(".")[-1]

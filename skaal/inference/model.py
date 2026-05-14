@@ -18,6 +18,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from skaal.schedule import Schedule
+from skaal.types.compute import ResiliencePolicies
 from skaal.types.storage import SecondaryIndex
 
 
@@ -119,11 +121,12 @@ class ResourceOverrides(BaseModel):
     of the binder. ``options`` carries free-form declaration-site knobs
     (currently only ``path`` for `App.mount`).
 
-    ``resilience`` and ``trigger`` are JSON-shaped dicts populated by
-    `@app.function` and `@app.schedule`; the runtime adapters reconstruct
-    `RetryPolicy` / `Cron` / `Every` from them. They live here (rather than
-    on a side-band attribute) so the bound plan carries every piece of
-    runtime config a deploy synth function needs.
+    ``resilience``, ``trigger``, ``schedule_timezone``, and
+    ``channel_buffer`` are populated by `@app.function`, `@app.schedule`,
+    and `@app.channel`; the runtime adapters read these typed fields
+    directly. They live here (rather than on a side-band attribute) so
+    the bound plan carries every piece of runtime config a deploy synth
+    function needs.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -137,8 +140,8 @@ class ResourceOverrides(BaseModel):
     external: bool = False
     external_name: str | None = None
     options: dict[str, str] = {}
-    resilience: dict[str, Any] | None = None
-    trigger: dict[str, Any] | None = None
+    resilience: ResiliencePolicies | None = None
+    trigger: Schedule | None = None
     schedule_timezone: str | None = None
     channel_buffer: int | None = None
 

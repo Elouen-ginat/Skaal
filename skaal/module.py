@@ -27,7 +27,6 @@ from skaal.inference.model import (
     SchemaRef,
     SourceLocation,
 )
-from skaal.inference.runtime_meta import encode_resilience, encode_trigger
 from skaal.types import (
     BeforeInvoke,
     Bulkhead,
@@ -235,31 +234,28 @@ class Module:
         bulkhead: Bulkhead | None = None,
         secrets: list[SecretRef] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a function with optional resilience policies."""
+        """Register a function with optional resilience policies.
+
+        Delegates the inference-side work to `skaal.decorators.function`
+        so the module form and the bare decorator form construct the
+        same `FunctionRef` and the same `InferredResource`.
+        """
+        from skaal.decorators import function as _function_dec
+
+        outer = _function_dec(
+            retry=retry,
+            circuit_breaker=circuit_breaker,
+            rate_limit=rate_limit,
+            bulkhead=bulkhead,
+        )
 
         def decorator(fn: F) -> F:
-            overrides = ResourceOverrides(
-                resilience=encode_resilience(
-                    retry=retry,
-                    circuit_breaker=circuit_breaker,
-                    rate_limit=rate_limit,
-                    bulkhead=bulkhead,
-                ),
-            )
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.FUNCTION,
-                    source=SourceLocation.from_object(fn),
-                    overrides=overrides,
-                ),
-            )
+            ref = outer(fn)
             if secrets:
-                for ref in secrets:
-                    self.secret(ref)
-            self._functions[fn.__name__] = fn
-            return fn
+                for ref_obj in secrets:
+                    self.secret(ref_obj)
+            self._functions[fn.__name__] = ref
+            return cast(F, ref)
 
         if fn_to_decorate is None:
             return decorator
@@ -288,25 +284,23 @@ class Module:
         retry: RetryPolicy | None = None,
     ) -> F | Callable[[F], F]:
         """Register a background job handler executed by the runtime worker."""
+        from skaal.decorators import _resilience as _build_resilience
 
         def decorator(fn: F) -> F:
-            overrides = ResourceOverrides(
-                resilience=encode_resilience(
-                    retry=retry,
-                    circuit_breaker=None,
-                    rate_limit=None,
-                    bulkhead=None,
+            inferred = InferredResource(
+                id=InferredResource.id_for(fn),
+                kind=ResourceKind.JOB,
+                source=SourceLocation.from_object(fn),
+                overrides=ResourceOverrides(
+                    resilience=_build_resilience(
+                        retry=retry,
+                        circuit_breaker=None,
+                        rate_limit=None,
+                        bulkhead=None,
+                    ),
                 ),
             )
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.JOB,
-                    source=SourceLocation.from_object(fn),
-                    overrides=overrides,
-                ),
-            )
+            _attach_inferred(fn, inferred)
             self._jobs[fn.__name__] = fn
             return fn
 
@@ -429,19 +423,16 @@ class Module:
         """Register a background function triggered on a time-based schedule."""
 
         def decorator(fn: F) -> F:
-            overrides = ResourceOverrides(
-                trigger=encode_trigger(trigger),
-                schedule_timezone=timezone,
-            )
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.SCHEDULE,
-                    source=SourceLocation.from_object(fn),
-                    overrides=overrides,
+            inferred = InferredResource(
+                id=InferredResource.id_for(fn),
+                kind=ResourceKind.SCHEDULE,
+                source=SourceLocation.from_object(fn),
+                overrides=ResourceOverrides(
+                    trigger=trigger,
+                    schedule_timezone=timezone,
                 ),
             )
+            _attach_inferred(fn, inferred)
             self._schedules[fn.__name__] = fn
             # `emit_to` is accepted but not yet honoured by the new
             # local-runtime SCHEDULE adapter; it will be wired in alongside

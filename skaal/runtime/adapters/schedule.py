@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from skaal.inference.runtime_meta import decode_trigger
-
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
     from skaal.runtime.local import LocalRuntime
@@ -44,7 +42,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         sched: AsyncIOScheduler = AsyncIOScheduler()
         for resource, fn in runtime.state.schedules:
             overrides = resource.inferred.overrides
-            trigger = decode_trigger(overrides.trigger)
+            trigger = overrides.trigger
             timezone: str = overrides.schedule_timezone or "UTC"
             aps_trigger: Any
             if isinstance(trigger, Every):
