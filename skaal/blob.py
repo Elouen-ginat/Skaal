@@ -46,11 +46,12 @@ def is_blob_model(obj: Any) -> bool:
         `True` when `obj` is a class registered through
         `@app.storage(kind="blob")`.
     """
-    return (
-        isinstance(obj, type)
-        and hasattr(obj, "__skaal_storage__")
-        and getattr(obj, "__skaal_storage__", {}).get("kind") == "blob"
-    )
+    from skaal.inference.model import InferredResource, ResourceKind
+
+    if not isinstance(obj, type):
+        return False
+    inferred = getattr(obj, "__skaal_inferred__", None)
+    return isinstance(inferred, InferredResource) and inferred.kind == ResourceKind.BLOB
 
 
 def validate_blob_model(store_cls: type) -> None:

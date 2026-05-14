@@ -21,12 +21,11 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator
-from typing_extensions import TypedDict
 
 from skaal.types import AsyncPublishTarget
 
@@ -216,12 +215,6 @@ class ScheduleContext(BaseModel):
 Schedule: TypeAlias = Every | Cron
 
 
-class ScheduleFunctionMetadata(TypedDict):
-    trigger: Schedule
-    emit_to: object | None
-    timezone: str
-
-
 def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
     """Build an APScheduler trigger from Skaal schedule metadata.
 
@@ -288,49 +281,6 @@ def build_scheduled_job(
     return _job
 
 
-def create_async_scheduler(
-    scheduled: Mapping[str, Any],
-    *,
-    event_loop: Any | None = None,
-    logger: Any | None = None,
-    log_lifecycle: bool = False,
-) -> Any:
-    """Create an `AsyncIOScheduler` for the registered scheduled callables.
-
-    Args:
-        scheduled: Mapping of job names to decorated scheduled functions.
-        event_loop: Optional event loop to bind into the scheduler.
-        logger: Logger used for scheduled job lifecycle messages.
-        log_lifecycle: Whether to emit start and completion log messages.
-
-    Returns:
-        Configured APScheduler `AsyncIOScheduler` instance.
-
-    See Also:
-        `build_scheduled_job`: Wrap each callable with Skaal runtime behavior.
-    """
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-    scheduler = (
-        AsyncIOScheduler(event_loop=event_loop) if event_loop is not None else AsyncIOScheduler()
-    )
-
-    for name, fn in scheduled.items():
-        meta = cast(ScheduleFunctionMetadata, fn.__skaal_schedule__)
-        scheduler.add_job(
-            build_scheduled_job(
-                fn,
-                name=name,
-                emit_to=cast(AsyncPublishTarget[object] | None, meta.get("emit_to")),
-                logger=logger,
-                log_lifecycle=log_lifecycle,
-            ),
-            build_apscheduler_trigger(meta["trigger"], timezone=meta.get("timezone", "UTC")),
-        )
-
-    return scheduler
-
-
 async def _publish_schedule_result(target: AsyncPublishTarget[object], payload: object) -> None:
     send = cast(Callable[[object], Awaitable[None]] | None, getattr(target, "send", None))
     if callable(send):
@@ -352,5 +302,4 @@ __all__ = [
     "ScheduleContext",
     "build_apscheduler_trigger",
     "build_scheduled_job",
-    "create_async_scheduler",
 ]

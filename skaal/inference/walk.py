@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from skaal.inference.asgi import recognise_mount, recognise_path_mounts
+from skaal.inference.asgi import recognise_path_mounts
 from skaal.inference.fingerprint import fingerprint_plan
 from skaal.inference.model import InferredPlan, InferredResource
 
@@ -28,10 +28,10 @@ def infer(app: App) -> InferredPlan:
     """Walk ``app`` and return its `InferredPlan`.
 
     Resources are collected from the module's storage / functions / jobs /
-    channels / schedules buckets, plus an optional ``ASGI_SERVICE`` resource
-    if the app has mounted a WSGI or ASGI sub-application. Edges are not
-    emitted in Phase 2 (`InferredPlan.edges` is always empty); the bytecode
-    call-graph walker that fills them lands in Phase 6.
+    channels / schedules buckets, plus one ``ASGI_SERVICE`` resource per
+    `App.mount(path, asgi_app)` entry. Edges are not emitted in Phase 2
+    (`InferredPlan.edges` is always empty); the bytecode call-graph walker
+    that fills them lands in Phase 6.
     """
     seen: dict[int, InferredResource] = {}
 
@@ -40,10 +40,6 @@ def infer(app: App) -> InferredPlan:
         if resource is None or not isinstance(resource, InferredResource):
             continue
         seen.setdefault(id(obj), resource)
-
-    asgi_resource = recognise_mount(app)
-    if asgi_resource is not None:
-        seen[id(app)] = asgi_resource
 
     extra: list[InferredResource] = list(recognise_path_mounts(app))
 

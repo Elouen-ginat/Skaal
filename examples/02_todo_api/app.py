@@ -338,4 +338,4 @@ async def http_search_todos(q: str, k: int = 3, done: bool | None = Query(defaul
     return await app.invoke(search_todos, query=q, k=k, done=done)
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)

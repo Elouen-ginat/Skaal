@@ -1,7 +1,7 @@
 """Dash app that demonstrates Skaal's KV, relational, and vector storage tiers.
 
 Demonstrates:
-    - app.mount_wsgi() to register a WSGI app for deploy
+    - app.mount("/", WSGIMiddleware(wsgi_app)) to register a WSGI app
     - Store[UserState] for scalable per-user session state
     - @app.storage(kind="relational", ...) for persistent note history
     - @app.storage(kind="vector", ...) for semantic search over those notes
@@ -406,14 +406,14 @@ def search_notes(_, session_id, query):
 
 # dash_app.server is the Flask app behind the Dash frontend.
 #
-# - wsgi_app=... gives LocalRuntime the real callable for `skaal run`
-#   (serves via uvicorn + WSGIMiddleware so the Dash UI loads in the browser).
-# - attribute=... gives deploy generators the Python path to use in the
-#   generated main.py / handler.py entry-point files.
-skaal_app.mount_wsgi(
-    dash_app.server if dash_app is not None else None,
-    attribute="dash_app.server",
-)
+# Dash exposes a Flask WSGI server as ``dash_app.server``. We wrap it
+# with Starlette's `WSGIMiddleware` so it can be mounted as an ASGI app
+# under the root path. The mount call no-ops when Dash is not installed
+# (rendered as an `ASGI_SERVICE` resource only when the wrapper exists).
+if dash_app is not None:
+    from starlette.middleware.wsgi import WSGIMiddleware
+
+    skaal_app.mount("/", WSGIMiddleware(dash_app.server))
 
 
 # ── Local dev entry point ─────────────────────────────────────────────────────

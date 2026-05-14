@@ -2219,7 +2219,9 @@ def handle_comments(add_clicks, list_clicks, task_id, author, body, list_task_id
 
 # ── Wire Dash into Skaal ──────────────────────────────────────────────────────
 
-skaal_app.mount_wsgi(dash_app.server, attribute="dash_app.server")
+from starlette.middleware.wsgi import WSGIMiddleware  # noqa: E402
+
+skaal_app.mount("/", WSGIMiddleware(dash_app.server))
 
 
 # ── Local dev entry point ─────────────────────────────────────────────────────

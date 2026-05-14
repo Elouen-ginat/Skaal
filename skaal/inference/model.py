@@ -118,6 +118,12 @@ class ResourceOverrides(BaseModel):
     `@app.external` to bypass the defaults / lock / env-override branches
     of the binder. ``options`` carries free-form declaration-site knobs
     (currently only ``path`` for `App.mount`).
+
+    ``resilience`` and ``trigger`` are JSON-shaped dicts populated by
+    `@app.function` and `@app.schedule`; the runtime adapters reconstruct
+    `RetryPolicy` / `Cron` / `Every` from them. They live here (rather than
+    on a side-band attribute) so the bound plan carries every piece of
+    runtime config a deploy synth function needs.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -131,6 +137,10 @@ class ResourceOverrides(BaseModel):
     external: bool = False
     external_name: str | None = None
     options: dict[str, str] = {}
+    resilience: dict[str, Any] | None = None
+    trigger: dict[str, Any] | None = None
+    schedule_timezone: str | None = None
+    channel_buffer: int | None = None
 
 
 class Edge(BaseModel):
