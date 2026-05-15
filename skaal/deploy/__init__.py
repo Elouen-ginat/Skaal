@@ -35,6 +35,7 @@ from skaal.deploy.models import (
     ManifestResourceEntry,
     SkaalTags,
 )
+from skaal.deploy.program import PulumiProgram, pulumi_program_for
 from skaal.deploy.tags import tags_for
 
 __all__ = [
@@ -43,7 +44,9 @@ __all__ = [
     "BuildManifest",
     "BuildPyProject",
     "ManifestResourceEntry",
+    "PulumiProgram",
     "SkaalTags",
     "build_artefacts",
+    "pulumi_program_for",
     "tags_for",
 ]
