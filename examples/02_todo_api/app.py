@@ -1,38 +1,30 @@
 """
-Todo API — FastAPI mounted over Skaal compute, KV, relational, and vector storage.
-
-For semantic search, install the vector extra first:
-
-    pip install "skaal[vector]"
+Todo API — FastAPI mounted over Skaal compute, KV, and relational storage.
 
 Run locally:
 
-    pip install "skaal[examples,vector]"
+    uv sync --extra runtime --extra deploy --extra serve --extra examples
     skaal run examples.todo_api:app
-
-With persistent SQLite:
-
-    skaal run examples.todo_api:app --persist
 
 Deploy to AWS Lambda + DynamoDB:
 
-    skaal plan --target aws-lambda examples.todo_api:app
-    skaal deploy --target aws examples.todo_api:app
+    skaal plan examples.todo_api:app --env prod
+    skaal build examples.todo_api:app --env prod
+    skaal deploy examples.todo_api:app --env prod
 
 Try it:
 
-    curl -s localhost:8000/todos \
-        -X POST \
-        -H "Content-Type: application/json" \
+    curl -s localhost:8000/todos \\
+        -X POST \\
+        -H "Content-Type: application/json" \\
         -d '{"id":"t1","title":"Buy groceries","description":"Milk eggs bread","tags":["home","errands"]}' | jq
 
     curl -s localhost:8000/todos | jq
     curl -s localhost:8000/todos/t1 | jq
-    curl -s localhost:8000/todos/t1/comments \
-        -X POST \
-        -H "Content-Type: application/json" \
+    curl -s localhost:8000/todos/t1/comments \\
+        -X POST \\
+        -H "Content-Type: application/json" \\
         -d '{"author":"alex","body":"Remember oat milk too"}' | jq
-    curl -s 'localhost:8000/todos/search?q=grocery%20list' | jq
     curl -s localhost:8000/todos/t1 -X DELETE | jq
 """
 
@@ -43,9 +35,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
-from sqlmodel import Field, SQLModel, select
+from sqlmodel import Field, select
 
-from skaal import App, Store, VectorStore, open_relational_session
+from skaal import App, Relational, Store, open_relational_session
 
 # ── Domain models ──────────────────────────────────────────────────────────────
 
@@ -65,13 +57,6 @@ class Todo(BaseModel):
     attachments: list[Attachment] = PydanticField(default_factory=list)
     created_at: str = PydanticField(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: str | None = None
-
-
-class TodoSearchDocument(BaseModel):
-    id: str
-    title: str
-    content: str
-    done: bool = False
 
 
 Todo.model_rebuild()
@@ -96,24 +81,13 @@ app = App("todos")
 api = FastAPI(title="Skaal Todo API")
 
 
-@app.storage(
-    read_latency="< 10ms",
-    durability="persistent",
-    access_pattern="random-read",
-)
+@app.storage
 class Todos(Store[Todo]):
-    """
-    Persistent todo items.
-
-    Solver selects:
-      - DynamoDB on aws-lambda target (serverless, no VPC)
-      - ElastiCache Redis on generic target (< 10ms, persistent)
-      - SQLite locally with --persist flag
-    """
+    """Persistent todo items keyed by id."""
 
 
-@app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
-class Comments(SQLModel, table=True):
+@app.storage(kind="relational")
+class Comments(Relational, table=True):
     """Structured todo comments stored in the relational tier."""
 
     __tablename__ = "todo_comments"
@@ -123,40 +97,6 @@ class Comments(SQLModel, table=True):
     author: str
     body: str
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
-
-@app.storage(
-    kind="vector",
-    dim=64,
-    metric="cosine",
-    read_latency="< 30ms",
-    durability="persistent",
-)
-class TodoSearchIndex(VectorStore[TodoSearchDocument]):
-    """Semantic search index over todo titles, descriptions, tags, and attachments."""
-
-    __skaal_vector_text_fields__ = ("title", "content")
-
-
-def _todo_to_search_doc(todo: Todo) -> TodoSearchDocument:
-    attachment_names = " ".join(attachment.name for attachment in todo.attachments)
-    content_parts = [
-        todo.description,
-        " ".join(todo.tags),
-        attachment_names,
-        "done" if todo.done else "open",
-    ]
-    return TodoSearchDocument(
-        id=todo.id,
-        title=todo.title,
-        content="\n".join(part for part in content_parts if part),
-        done=todo.done,
-    )
-
-
-async def _sync_todo_search(todo: Todo) -> None:
-    await TodoSearchIndex.delete([todo.id])
-    await TodoSearchIndex.add([_todo_to_search_doc(todo)])
 
 
 async def _comment_rows(todo_id: str) -> list[Comments]:
@@ -189,7 +129,6 @@ async def create_todo(
         attachments=[Attachment(**a) for a in (attachments or [])],
     )
     await Todos.set(id, todo)
-    await _sync_todo_search(todo)
     return todo.model_dump()
 
 
@@ -209,7 +148,6 @@ async def complete_todo(id: str) -> dict:
     todo.done = True
     todo.completed_at = datetime.now(timezone.utc).isoformat()
     await Todos.set(id, todo)
-    await _sync_todo_search(todo)
     return todo.model_dump()
 
 
@@ -223,7 +161,6 @@ async def add_attachment(
         return {"error": f"Todo {id!r} not found"}
     todo.attachments.append(Attachment(url=url, name=name, mime_type=mime_type))
     await Todos.set(id, todo)
-    await _sync_todo_search(todo)
     return todo.model_dump()
 
 
@@ -249,27 +186,6 @@ async def list_comments(todo_id: str) -> dict:
 
 
 @app.function()
-async def search_todos(query: str, k: int = 3, done: bool | None = None) -> dict:
-    """Semantic todo lookup backed by the vector store."""
-    results = await TodoSearchIndex.similarity_search(
-        query,
-        k=k,
-        filter={"done": done} if done is not None else None,
-    )
-    todos: list[dict] = []
-    seen: set[str] = set()
-    for result in results:
-        if result.id in seen:
-            continue
-        todo = await Todos.get(result.id)
-        if todo is None:
-            continue
-        seen.add(result.id)
-        todos.append(todo.model_dump())
-    return {"todos": todos, "count": len(todos)}
-
-
-@app.function()
 async def list_todos(done: bool | None = None) -> dict:
     """List all todos, optionally filtered by done status."""
     entries = await Todos.list()
@@ -283,7 +199,6 @@ async def list_todos(done: bool | None = None) -> dict:
 async def delete_todo(id: str) -> dict:
     """Delete a todo by id."""
     await Todos.delete(id)
-    await TodoSearchIndex.delete([id])
     return {"ok": True, "deleted": id}
 
 
@@ -299,43 +214,35 @@ def _raise_for_error(result: dict, *, not_found: bool = False, conflict: bool = 
 
 @api.get("/todos")
 async def http_list_todos(done: bool | None = Query(default=None)) -> dict:
-    return await app.invoke(list_todos, done=done)
+    return await list_todos(done=done)
 
 
 @api.get("/todos/{todo_id}")
 async def http_get_todo(todo_id: str) -> dict:
-    result = await app.invoke(get_todo, id=todo_id)
+    result = await get_todo(id=todo_id)
     return _raise_for_error(result, not_found=True)
 
 
 @api.post("/todos", status_code=status.HTTP_201_CREATED)
 async def http_create_todo(payload: CreateTodoRequest) -> dict:
-    result = await app.invoke(
-        create_todo,
-        **payload.model_dump(mode="json"),
-    )
+    result = await create_todo(**payload.model_dump(mode="json"))
     return _raise_for_error(result, conflict=True)
 
 
 @api.delete("/todos/{todo_id}")
 async def http_delete_todo(todo_id: str) -> dict:
-    return await app.invoke(delete_todo, id=todo_id)
+    return await delete_todo(id=todo_id)
 
 
 @api.post("/todos/{todo_id}/comments", status_code=status.HTTP_201_CREATED)
 async def http_add_comment(todo_id: str, payload: CommentRequest) -> dict:
-    result = await app.invoke(add_comment, todo_id=todo_id, **payload.model_dump())
+    result = await add_comment(todo_id=todo_id, **payload.model_dump())
     return _raise_for_error(result, not_found=True)
 
 
 @api.get("/todos/{todo_id}/comments")
 async def http_list_comments(todo_id: str) -> dict:
-    return await app.invoke(list_comments, todo_id=todo_id)
-
-
-@api.get("/todos/search")
-async def http_search_todos(q: str, k: int = 3, done: bool | None = Query(default=None)) -> dict:
-    return await app.invoke(search_todos, query=q, k=k, done=done)
+    return await list_comments(todo_id=todo_id)
 
 
 app.mount("/", api)
