@@ -1,26 +1,23 @@
 """Cloud-resource tagging helper (ADR 028 §6.11, ADR 032 §Decision 5).
 
 Every Pulumi resource that `skaal.deploy.<target>` emits is tagged through
-this one helper. Centralising the schema here means a single ADR-driven
-change touches every backend synth function at once.
+this one helper. The result is a typed `SkaalTags` pydantic model; call
+`tags.as_mapping()` to get the prefixed ``{"skaal:app": ...}`` form
+Pulumi resource constructors expect.
 
-The tag set is intentionally short and stable; tags are budget-constrained
-on most cloud providers, and changing tag keys after the fact orphans the
+Centralising the schema in `SkaalTags` means a single ADR-driven change
+touches every backend synth function at once; tags are budget-constrained
+on most cloud providers, and changing keys after the fact orphans the
 resources that carried the old keys.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from skaal.binding.model import BoundResource, Environment
+from skaal.deploy.models import SkaalTags
 
 
-def tags_for(
-    resource: BoundResource,
-    env: Environment,
-    fingerprint: str,
-) -> Mapping[str, str]:
+def tags_for(resource: BoundResource, env: Environment, fingerprint: str) -> SkaalTags:
     """Return the canonical Skaal tag set for one cloud resource.
 
     The ``fingerprint`` argument is `BoundPlan.app_fingerprint` (or
@@ -35,19 +32,10 @@ def tags_for(
         fingerprint: The plan fingerprint to embed in ``skaal:fingerprint``.
 
     Returns:
-        A mapping of tag keys to string values. The mapping is fresh per
-        call so callers can mutate / extend without aliasing.
+        A typed `SkaalTags` instance. Use ``tags.as_mapping()`` for the
+        Pulumi-shape dict.
     """
-    inferred = resource.inferred
-    return {
-        "skaal:app": inferred.source.top_package,
-        "skaal:resource_id": inferred.id,
-        "skaal:kind": inferred.kind.value,
-        "skaal:env": env.name,
-        "skaal:target": env.target.value,
-        "skaal:backend": resource.backend,
-        "skaal:fingerprint": fingerprint,
-    }
+    return SkaalTags.for_resource(resource, env, fingerprint)
 
 
 __all__ = ["tags_for"]

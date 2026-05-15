@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -10,8 +9,9 @@ import pytest
 from skaal import App, Store
 from skaal.binding import bind
 from skaal.binding.model import Environment, LockFile, Target
-from skaal.deploy import AppSpec, build_artefacts
+from skaal.deploy import AppSpec, BuildManifest, build_artefacts
 from skaal.errors import BuildError
+from skaal.inference.model import ResourceKind
 
 
 def _bound_for(app: App, *, env: Environment | None = None):
@@ -23,7 +23,13 @@ def _spec_for(app: App) -> AppSpec:
     return AppSpec.for_app(app)
 
 
-def test_build_artefacts_writes_dockerfile_handler_bootstrap_requirements(
+def _read_manifest(out_dir: Path) -> BuildManifest:
+    return BuildManifest.model_validate_json(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+
+
+def test_build_artefacts_writes_dockerfile_handler_bootstrap_pyproject(
     tmp_path: Path,
 ) -> None:
     app = App("svc")
@@ -35,12 +41,11 @@ def test_build_artefacts_writes_dockerfile_handler_bootstrap_requirements(
     bound, env = _bound_for(app)
     out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
-    # One directory per non-external Lambda-shaped resource.
     subdirs = [p for p in out.iterdir() if p.is_dir()]
     assert len(subdirs) == 1
     resource_dir = subdirs[0]
 
-    for name in ("Dockerfile", "handler.py", "bootstrap.py", "requirements.txt"):
+    for name in ("Dockerfile", "handler.py", "bootstrap.py", "pyproject.toml"):
         rendered = resource_dir / name
         assert rendered.exists(), f"missing {name}"
         body = rendered.read_text(encoding="utf-8")
@@ -48,10 +53,11 @@ def test_build_artefacts_writes_dockerfile_handler_bootstrap_requirements(
 
     dockerfile = (resource_dir / "Dockerfile").read_text(encoding="utf-8")
     assert "python:3.11" in dockerfile
+    assert "uv pip install" in dockerfile
     assert "SKAAL_APP=svc" in dockerfile
 
 
-def test_build_artefacts_emits_manifest_with_resource_ids(tmp_path: Path) -> None:
+def test_build_artefacts_round_trips_manifest_through_pydantic(tmp_path: Path) -> None:
     app = App("svc")
 
     @app.function()
@@ -61,18 +67,18 @@ def test_build_artefacts_emits_manifest_with_resource_ids(tmp_path: Path) -> Non
     bound, env = _bound_for(app)
     out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
-    manifest_path = out / "manifest.json"
-    assert manifest_path.exists()
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["app"] == "svc"
-    assert manifest["environment"] == "prod"
-    assert manifest["target"] == "aws"
-    assert manifest["bound_fingerprint"] == bound.bound_fingerprint
-    assert len(manifest["resources"]) == 1
-    entry = manifest["resources"][0]
-    assert entry["kind"] == "function"
-    assert "predict" in entry["id"]
-    assert entry["external"] is False
+    manifest = _read_manifest(out)
+    assert manifest.app == "svc"
+    assert manifest.environment == "prod"
+    assert manifest.target is Target.AWS
+    assert manifest.bound_fingerprint == bound.bound_fingerprint
+    assert manifest.app_fingerprint == bound.app_fingerprint
+    assert len(manifest.resources) == 1
+    entry = manifest.resources[0]
+    assert entry.kind is ResourceKind.FUNCTION
+    assert "predict" in entry.id
+    assert entry.external is False
+    assert entry.slug.startswith("predict-")
 
 
 def test_build_artefacts_skips_storage_resources(tmp_path: Path) -> None:
@@ -90,12 +96,10 @@ def test_build_artefacts_skips_storage_resources(tmp_path: Path) -> None:
     bound, env = _bound_for(app)
     out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
-    subdirs = sorted(p.name for p in out.iterdir() if p.is_dir())
-    # Cache (STORE → DynamoDB on AWS) does not get an artefact dir; only
-    # the FUNCTION does.
+    subdirs = [p for p in out.iterdir() if p.is_dir()]
     assert len(subdirs) == 1
-    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-    assert {r["kind"] for r in manifest["resources"]} == {"function"}
+    manifest = _read_manifest(out)
+    assert {entry.kind for entry in manifest.resources} == {ResourceKind.FUNCTION}
 
 
 def test_build_artefacts_rejects_non_aws_target(tmp_path: Path) -> None:
@@ -119,7 +123,8 @@ def test_build_artefacts_rejects_empty_app(tmp_path: Path) -> None:
         build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
 
-def test_build_artefacts_renders_requirements_lines(tmp_path: Path) -> None:
+def test_build_artefacts_renders_dependencies_into_pyproject(tmp_path: Path) -> None:
+    """Custom `requirements` flow into `[project].dependencies` in `pyproject.toml`."""
     app = App("svc")
 
     @app.function()
@@ -135,15 +140,19 @@ def test_build_artefacts_renders_requirements_lines(tmp_path: Path) -> None:
         requirements=["skaal[runtime,aws]", "skaal[secrets-aws]"],
     )
     resource_dir = next(p for p in out.iterdir() if p.is_dir())
-    req = (resource_dir / "requirements.txt").read_text(encoding="utf-8")
-    assert "skaal[runtime,aws]" in req
-    assert "skaal[secrets-aws]" in req
+    pyproject = (resource_dir / "pyproject.toml").read_text(encoding="utf-8")
+    assert "[project]" in pyproject
+    assert "skaal[runtime,aws]" in pyproject
+    assert "skaal[secrets-aws]" in pyproject
+    assert 'requires-python = ">=3.11"' in pyproject
 
 
 def test_build_artefacts_default_requirements_use_only_skaal_extras(
     tmp_path: Path,
 ) -> None:
-    """No bare third-party deps appear in the default requirements.txt."""
+    """No bare third-party deps appear in the default `pyproject.toml`."""
+    import tomllib
+
     app = App("svc")
 
     @app.function()
@@ -153,12 +162,9 @@ def test_build_artefacts_default_requirements_use_only_skaal_extras(
     bound, env = _bound_for(app)
     out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
     resource_dir = next(p for p in out.iterdir() if p.is_dir())
-    req_lines = [
-        line.strip()
-        for line in (resource_dir / "requirements.txt").read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
-    assert req_lines == ["skaal[runtime,aws]"]
+    pyproject = tomllib.loads((resource_dir / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["dependencies"] == ["skaal[runtime,aws]"]
+    assert pyproject["project"]["requires-python"] == ">=3.11"
 
 
 def test_build_artefacts_renders_app_target_into_bootstrap(tmp_path: Path) -> None:
@@ -210,7 +216,6 @@ def test_build_artefacts_resource_slug_is_filesystem_safe(tmp_path: Path) -> Non
     out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
     subdirs = [p.name for p in out.iterdir() if p.is_dir()]
     slug = subdirs[0]
-    # Slug starts with the bare function name and ends with an 8-hex hash.
     assert slug.startswith("greet-")
     suffix = slug.rsplit("-", 1)[-1]
     assert len(suffix) == 8

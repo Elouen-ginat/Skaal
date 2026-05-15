@@ -1,45 +1,66 @@
-"""`build_artefacts(bound, app, env)` — render Jinja2 templates to disk.
+"""`build_artefacts(bound, env, app_spec)` — render templates to disk.
 
-`skaal build` produces the per-Lambda Dockerfile, handler entry point,
-boot-time setup, and requirements lockfile for each `BoundResource` whose
+`skaal build` produces the per-Lambda `Dockerfile`, `handler.py`,
+`bootstrap.py`, and `pyproject.toml` for each `BoundResource` whose
 backend needs a deploy artefact. The output tree mirrors the bound plan:
 
 ```
 ./.skaal/build/<env_name>/
-├── manifest.json                 # build_fingerprint, env, resource ids
-└── <resource_id_slug>/
+├── manifest.json                 # `BuildManifest` (pydantic) on disk
+└── <slug>/
     ├── Dockerfile
     ├── handler.py
     ├── bootstrap.py
-    └── requirements.txt
+    └── pyproject.toml
 ```
 
 The templating step is pure: no Pulumi import, no AWS API access, no
 network. `skaal deploy` consumes the rendered tree.
 
-The function is target-agnostic at the entry point — it dispatches on
-`Environment.target` to pick the right template subdirectory. Phase 4
-ships AWS templates only; the GCP tree lands in a 0.4.x point release
-(ADR 032 §"Out of scope").
+Every data structure that flows through this module is a pydantic model
+from `skaal.deploy.models` (`BuildContext`, `BuildManifest`,
+`ManifestResourceEntry`). The function is target-agnostic at the entry
+point — it dispatches on `Environment.target` to pick the right template
+subdirectory. Phase 4 ships AWS templates only; the GCP tree lands in a
+0.4.x point release (ADR 032 §"Out of scope").
 """
 
 from __future__ import annotations
 
 import hashlib
 import importlib.resources as resources
-import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
+from skaal.deploy.models import (
+    BuildContext,
+    BuildManifest,
+    ManifestResourceEntry,
+)
 from skaal.errors import BuildError, MissingExtraError
+from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
     from skaal.cli._load import AppSpec
 
 
-_LAMBDA_KINDS = frozenset({"function", "asgi_service", "schedule", "job"})
+_LAMBDA_KINDS: frozenset[ResourceKind] = frozenset(
+    {
+        ResourceKind.FUNCTION,
+        ResourceKind.ASGI_SERVICE,
+        ResourceKind.SCHEDULE,
+        ResourceKind.JOB,
+    }
+)
+
+_TEMPLATE_OUTPUTS: tuple[tuple[str, str], ...] = (
+    ("Dockerfile.j2", "Dockerfile"),
+    ("handler.py.j2", "handler.py"),
+    ("bootstrap.py.j2", "bootstrap.py"),
+    ("pyproject.toml.j2", "pyproject.toml"),
+)
 
 
 def build_artefacts(
@@ -59,17 +80,17 @@ def build_artefacts(
         env: The active environment. ``env.target`` picks the template
             subdirectory.
         app_spec: The parsed ``module:attribute`` reference for the live
-            `App`. The Dockerfile uses ``app_spec.top_package`` to know
-            which directory to copy into the build context; the generated
-            ``bootstrap.py`` imports the app via ``app_spec.reference``.
+            `App`. ``app_spec.top_package`` is the directory the
+            Dockerfile copies into the build context; ``app_spec.reference``
+            is the import string the generated `bootstrap.py` uses.
         out_dir: Destination directory. Defaults to
             ``./.skaal/build/<env.name>``.
-        requirements: Extra pip requirements rendered into
-            ``requirements.txt``. Defaults to ``skaal[runtime,aws]`` —
-            every transitive third-party dep (mangum, asyncpg, …) is
-            pulled in through skaal's extras, not pinned in this code.
+        requirements: Extra ``[project].dependencies`` rendered into
+            ``pyproject.toml``. Defaults to ``("skaal[runtime,aws]",)`` —
+            every transitive third-party dep flows through skaal's
+            optional-dependency table in ``pyproject.toml``.
         python_version: Python minor version embedded in the Dockerfile
-            base image (e.g. ``"3.11"``).
+            base image and the rendered ``requires-python`` marker.
 
     Returns:
         The directory the artefacts were written to (the resolved
@@ -100,82 +121,76 @@ def build_artefacts(
             "to the app."
         )
 
-    resolved_requirements = (
-        list(requirements) if requirements is not None else _default_requirements()
+    resolved_requirements: tuple[str, ...] = (
+        tuple(requirements) if requirements is not None else _default_requirements()
     )
 
-    manifest_resources: list[dict[str, Any]] = []
-    manifest: dict[str, Any] = {
-        "version": 1,
-        "app": bound.app,
-        "environment": env.name,
-        "target": env.target.value,
-        "app_fingerprint": bound.app_fingerprint,
-        "bound_fingerprint": bound.bound_fingerprint,
-        "resources": manifest_resources,
-    }
-
+    entries: list[ManifestResourceEntry] = []
     for resource in target_resources:
         slug = _slug_for(resource)
         resource_dir = resolved_out / slug
         resource_dir.mkdir(parents=True, exist_ok=True)
-        context: dict[str, Any] = {
-            "app_name": bound.app,
-            "env_name": env.name,
-            "target": env.target.value,
-            "user_package": app_spec.top_package,
-            "app_target": app_spec.reference,
-            "python_version": python_version,
-            "resource_id": resource.inferred.id,
-            "resource_kind": resource.inferred.kind.value,
-            "resource_bare_name": resource.inferred.source.bare_name,
-            "backend": resource.backend,
-            "bound_fingerprint": bound.bound_fingerprint,
-            "app_fingerprint": bound.app_fingerprint,
-            "requirements": resolved_requirements,
-        }
-        for template_name, output_name in (
-            ("Dockerfile.j2", "Dockerfile"),
-            ("handler.py.j2", "handler.py"),
-            ("bootstrap.py.j2", "bootstrap.py"),
-            ("requirements.txt.j2", "requirements.txt"),
-        ):
-            template = template_env.get_template(template_name)
-            rendered = template.render(**context)
-            (resource_dir / output_name).write_text(rendered, encoding="utf-8")
-
-        manifest_resources.append(
-            {
-                "id": resource.inferred.id,
-                "kind": resource.inferred.kind.value,
-                "backend": resource.backend,
-                "slug": slug,
-                "external": resource.external,
-            }
+        context = BuildContext(
+            app_name=bound.app,
+            env_name=env.name,
+            target=env.target,
+            user_package=app_spec.top_package,
+            app_target=app_spec.reference,
+            python_version=python_version,
+            resource_id=resource.inferred.id,
+            resource_kind=resource.inferred.kind,
+            resource_bare_name=resource.inferred.source.bare_name,
+            backend=resource.backend,
+            bound_fingerprint=bound.bound_fingerprint,
+            app_fingerprint=bound.app_fingerprint,
+            requirements=resolved_requirements,
         )
+        _render_resource(template_env, context, resource_dir)
+        entries.append(ManifestResourceEntry.for_resource(resource, slug=slug))
 
-    (resolved_out / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    manifest = BuildManifest(
+        app=bound.app,
+        environment=env.name,
+        target=env.target,
+        app_fingerprint=bound.app_fingerprint,
+        bound_fingerprint=bound.bound_fingerprint,
+        resources=tuple(entries),
     )
+    (resolved_out / "manifest.json").write_text(manifest.to_json(), encoding="utf-8")
 
     return resolved_out
 
 
+def _render_resource(
+    template_env: _Jinja2, context: BuildContext, resource_dir: Path
+) -> None:
+    """Render each template in `_TEMPLATE_OUTPUTS` into ``resource_dir``."""
+    render_kwargs: dict[str, Any] = context.model_dump(mode="json")
+    for template_name, output_name in _TEMPLATE_OUTPUTS:
+        rendered = template_env.get_template(template_name).render(**render_kwargs)
+        (resource_dir / output_name).write_text(rendered, encoding="utf-8")
+
+
 def _lambda_resources(resources_in: Iterable[BoundResource]) -> Iterable[BoundResource]:
+    """Yield the resources that need per-Lambda artefacts.
+
+    Externals are skipped (their connections come from
+    `Environment.backends[...]` at runtime); storage / channel / secret
+    resources do not get their own Lambda image.
+    """
     for resource in resources_in:
         if resource.external:
             continue
-        if resource.inferred.kind.value in _LAMBDA_KINDS:
+        if resource.inferred.kind in _LAMBDA_KINDS:
             yield resource
 
 
 def _slug_for(resource: BoundResource) -> str:
     """Return a filesystem-safe slug for a bound resource.
 
-    The slug keeps the bare class/function name (from the typed
-    `SourceLocation.bare_name`) plus a short hash of the full id so two
-    same-named resources in different modules do not collide on disk.
+    Combines the typed `SourceLocation.bare_name` with a short hash of
+    the full id so two same-named resources in different modules do not
+    collide on disk.
     """
     bare = resource.inferred.source.bare_name or "resource"
     digest = hashlib.sha256(resource.inferred.id.encode("utf-8")).hexdigest()[:8]
@@ -183,8 +198,8 @@ def _slug_for(resource: BoundResource) -> str:
     return f"{safe}-{digest}"
 
 
-def _default_requirements() -> list[str]:
-    """Default `requirements.txt` contents.
+def _default_requirements() -> tuple[str, ...]:
+    """Default `[project].dependencies` for the rendered `pyproject.toml`.
 
     Returns only `skaal[...]` extras — every transitive third-party
     dependency (mangum for ASGI-on-Lambda, asyncpg for Postgres,
@@ -192,7 +207,7 @@ def _default_requirements() -> list[str]:
     optional-dependency table in ``pyproject.toml``. Pinning bare
     package names here would split the dependency source-of-truth.
     """
-    return ["skaal[runtime,aws]"]
+    return ("skaal[runtime,aws]",)
 
 
 def _template_root(target: Target) -> Path:
@@ -217,27 +232,22 @@ def _template_root(target: Target) -> Path:
 
 
 class _Jinja2:
-    """Thin wrapper around `jinja2.Environment` that surfaces a clean error.
-
-    ``jinja2`` is a tiny pure-Python dependency, but until it lands in the
-    core requirements the import is wrapped so users get a `MissingExtraError`
-    instead of an opaque `ImportError`.
-    """
+    """Thin wrapper around `jinja2.Environment` that surfaces a clean error."""
 
     def __init__(self, template_root: Path) -> None:
         try:
             from jinja2 import Environment, FileSystemLoader, StrictUndefined
         except ImportError as exc:  # pragma: no cover - exercised in CI matrix
             raise MissingExtraError(
-                "`skaal build` requires jinja2. Install it with "
-                "`pip install jinja2` (or via the `skaal[deploy]` extra)."
+                "`skaal build` requires jinja2. Install it via the "
+                "`skaal[deploy]` extra."
             ) from exc
         # Autoescape is intentionally disabled: the templates render
-        # Dockerfiles, Python source, and requirements.txt entries — not
-        # HTML. Escaping would corrupt the output (e.g. mangling `>=` in a
-        # pip constraint). Template inputs are fully framework-controlled
-        # (resource IDs, fingerprints, the bound plan); no user-supplied
-        # request data flows through this rendering path.
+        # Dockerfiles, Python source, and TOML — not HTML. Escaping would
+        # corrupt the output (e.g. mangling `>=` in a dep constraint).
+        # Template inputs are fully framework-controlled (the
+        # `BuildContext` pydantic model); no user-supplied request data
+        # flows through this rendering path.
         self._env: Any = Environment(  # nosec B701
             loader=FileSystemLoader(str(template_root)),
             undefined=StrictUndefined,

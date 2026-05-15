@@ -4,8 +4,14 @@ FROM public.ecr.aws/lambda/python:{{ python_version }}
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir --target ${LAMBDA_TASK_ROOT} -r requirements.txt
+# `uv` resolves the dependency tree from the generated `pyproject.toml`;
+# every transitive dep flows through skaal's optional-dependency table,
+# so the lambda image gets exactly what `[project].dependencies` (and the
+# extras it references) declares — no bare pins live in this Dockerfile.
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml ./
+RUN uv pip install --no-cache --system --target ${LAMBDA_TASK_ROOT} -r pyproject.toml
 
 COPY {{ user_package }} ./{{ user_package }}
 COPY bootstrap.py handler.py ./
