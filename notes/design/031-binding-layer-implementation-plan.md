@@ -28,7 +28,7 @@ In scope:
 
 Out of scope (each lands in its own phase/ADR):
 
-- The `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic parameter. Phase 3 ships the `Backend` token tree the second parameter binds against, but the primitive classes keep their existing single-parameter generics until Phase 4 wires the generics through the runtime. The `__skaal_inferred__` attribute already carries `ResourceOverrides`, but the `backend_token` field on it stays `None` until Phase 4 introduces the syntax.
+- The `Store[T, B]` / `Relational[B]` / `BlobStore[B]` / `Channel[T, B]` backend generic parameter. Phase 3 ships the `Backend` token tree the parameter binds against, but the primitive classes keep their existing single-parameter generics until Phase 4 wires the generics through the runtime. The `__skaal_inferred__` attribute already carries `ResourceOverrides`, but the `backend_token` field on it stays `None` until Phase 4 introduces the syntax.
 - `@app.external` decorator — Phase 3 leaves it parked. The binding layer's `Environment.backends: dict[str, BackendConfig]` is the mechanism `@app.external` will use in Phase 4 to attach a user-supplied connection.
 - Kind-aware refinement of `Relational` (`relational-oltp` vs. `relational-analytics`) from ADR 028 §6.5.2. The Phase 3 walker emits a single `RELATIONAL` `ResourceKind`; the inference of *which* kind requires the bytecode-level call-graph walker scheduled for Phase 6. `BackendKindMismatch` is implemented at the binder but only fires for explicit declarations.
 - Pulumi codegen against the `BoundPlan`. Phase 4 owns this.
@@ -347,7 +347,7 @@ The `Backend` base class joins the public surface so user code can write `from s
 
 ## Non-goals
 
-1. `Store[T, B]` / `Relational[T, B]` second-generic syntax. Phase 4 owns the decorator rewire that populates `overrides.backend` from the second generic parameter.
+1. `Store[T, B]` / `Relational[B]` backend-generic syntax. Phase 4 owns the decorator rewire that populates `overrides.backend` from the backend generic parameter (the second on `Store` / `BlobStore` / `Channel`; the only one on `Relational`).
 2. Pulumi codegen against the `BoundPlan`. Phase 4 owns this.
 3. `@app.external` decorator. Phase 4 owns it.
 4. `pyright --strict skaal/`. Phase 5 owns the global strict pass.

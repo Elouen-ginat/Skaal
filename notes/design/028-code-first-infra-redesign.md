@@ -161,7 +161,7 @@ app.mount("/api", api)        # Skaal owns the deploy (API Gateway / Cloud Run);
 6. **PR-level infra diffs** — a GitHub Action that runs `skaal plan --env prod` against the merge base and posts the rendered diff as a sticky PR comment.
 7. **Explicit pin-on-first-deploy.** Once a primitive is bound to a backend in an environment, the binding is persisted in `skaal.lock` and held until the user changes it. No silent re-architecting.
 8. **Bidirectional traceability** between source and deployed resources via embedded resource tags (`skaal:source=<module>:<lineno>`) and a `skaal where <resource>` / `skaal trace <log-line>` CLI.
-9. **A single override vocabulary** — typed backend class tokens (`Store[User, Redis]`, `Relational[Sale, BigQuery]`) at declaration sites; the same names as strings only inside `skaal.toml` env overrides. Same words for local override, env-specific override, and global override; LSP follows the class token straight to the backend SDK.
+9. **A single override vocabulary** — typed backend class tokens (`Store[User, Redis]`, `Relational[BigQuery]`) at declaration sites; the same names as strings only inside `skaal.toml` env overrides. Same words for local override, env-specific override, and global override; LSP follows the class token straight to the backend SDK.
 
 ## 5. Reference designs and what we steal from each
 
@@ -339,7 +339,7 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
     return BoundPlan(app=plan.app, environment=env.name, resources=bound, edges=plan.edges)
 
 def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> BoundResource:
-    # 1. Type-pinning (declaration-site `Relational[Sale, BigQuery]`) is absolute.
+    # 1. Type-pinning (declaration-site `Relational[BigQuery]`) is absolute.
     #    Lock entries and env overrides may NOT name a different backend; that is
     #    a `TypePinViolation` raised at config-load time. The env still supplies
     #    per-backend config (project, dataset, region, emulator) via env.backends.
@@ -485,7 +485,7 @@ Three knobs. That's the whole API for "I want something other than the default."
    class Users(Store[User, Redis]):                    # second generic param == backend
        ...
 
-   class Sales(Relational[Sale, BigQuery]):
+   class Sales(Relational[BigQuery]):
        transaction_id: str = Field(primary_key=True)
 
    @app.function(memory_mb=1024, timeout_s=30)
@@ -519,7 +519,7 @@ Three knobs. That's the whole API for "I want something other than the default."
    Pinned classes accept *only* an instance of the pinned backend (typically an emulator client). The type system enforces this; the framework refuses anything else at bind time.
 
    ```python
-   from acme.sales import Sales                    # Relational[Sale, BigQuery] — pinned
+   from acme.sales import Sales                    # Relational[BigQuery] — pinned
    from skaal.testing.bigquery import emulator_client
    await Sales.bind(emulator_client("http://localhost:9050")).put("t1", sale)  # OK
    await Sales.bind(in_memory())                                                # TypePinViolation
@@ -529,7 +529,7 @@ Three knobs. That's the whole API for "I want something other than the default."
 
 Anything beyond these three knobs is a sign the user is trying to express a constraint, which is the product we just deleted. The defaults table absorbs the rest.
 
-#### 6.5.1 Worked example — `Relational[Sale, BigQuery]` (and how local dev talks to real BigQuery)
+#### 6.5.1 Worked example — `Relational[BigQuery]` (and how local dev talks to real BigQuery)
 
 The concrete question: "My code is BigQuery-specific. I use native BigQuery SQL, partitioning, and the `bigquery.Client` directly. I want to run locally and have local talk to the deployed dev BigQuery dataset. I do **not** want the framework to substitute SQLite for BigQuery anywhere."
 
@@ -540,21 +540,25 @@ Answer: type-pin the class. **Pinning is a commitment — Skaal will not substit
 from datetime import datetime
 from decimal import Decimal
 from google.cloud.bigquery import Client as BQClient
-from pydantic import BaseModel
 from sqlmodel import Field
 from skaal import Relational
 from skaal.backends.bigquery import BigQuery        # the typed backend token
 
-class Sale(BaseModel):
-    transaction_id: str
-    amount: Decimal
-    occurred_at: datetime
-
-class Sales(Relational[Sale, BigQuery], partition_by="occurred_at"):
+class Sales(Relational[BigQuery], table=True, partition_by="occurred_at"):
     transaction_id: str = Field(primary_key=True)
     amount: Decimal
     occurred_at: datetime
 ```
+
+> **Note on shape.** Earlier drafts of this ADR carried a second generic
+> for the row DTO — `Relational[BigQuery]` with a separate
+> `Sale(BaseModel)` companion class. The Phase 4 implementation
+> dropped the row DTO: the class body *is* the schema (the SQLModel
+> approach), and `Relational[B]` carries only the backend pin. The DTO
+> generic added no runtime information the binder used and forced every
+> field to be declared twice. Users who genuinely want an API-DTO
+> distinct from the DB row can still declare a separate `BaseModel`
+> and convert at the boundary; the framework no longer requires it.
 
 ```python
 # Anywhere in the codebase — local, dev, prod — this returns a real BigQuery Client.
@@ -607,7 +611,7 @@ What this gets you:
 - `skaal run` (uses `env.local`) connects to real BigQuery in `acme-dev:alice_sandbox`. `Sales.native()` returns a `BQClient` already authenticated and pointed at the sandbox. `Users(Store[User])` (un-pinned) keeps using local SQLite — Skaal does not pull every un-pinned resource into the cloud just because one resource is cloud-pinned.
 - `skaal deploy --env prod` provisions in `acme-prod:acme_warehouse`. Same code, same SQL, same client. No dialect surprises.
 - `pytest` (with `SKAAL_ENV=test`) routes the BigQuery client at the local emulator — the user is responsible for running the emulator (docker compose, fixture). No mocks; no test-only fakes the framework has to ship.
-- An attempt to override `Sales` to a different backend in `skaal.toml` (`"acme.sales:Sales" = "postgres"`) fails at config-load with `TypePinViolation` pointing at the source line where `Relational[Sale, BigQuery]` is declared.
+- An attempt to override `Sales` to a different backend in `skaal.toml` (`"acme.sales:Sales" = "postgres"`) fails at config-load with `TypePinViolation` pointing at the source line where `Relational[BigQuery]` is declared.
 
 Hover `bq` in VSCode → `(variable) bq: Client`. Autocomplete on `bq.` shows every BigQuery SDK method. No `cast()`, no `Any`, no stringly-typed indirection, no substituted backend.
 
@@ -623,7 +627,7 @@ Hover `bq` in VSCode → `(variable) bq: Client`. Autocomplete on `bq.` shows ev
 | `bigquery` | `relational-analytics` |
 | `redshift` (future) | `relational-analytics` |
 
-A `Relational` class infers its required kinds from its declaration: a `primary_key` plus calls to `.update(...)` or `.delete(...)` in the codebase mark it as `relational-oltp`; append-only with `partition_by=...` and `@app.function` query patterns mark it `relational-analytics`. If the user writes `Relational[Sale, BigQuery]` on a class the inference flagged as OLTP-shaped, import fails with:
+A `Relational` class infers its required kinds from its declaration: a `primary_key` plus calls to `.update(...)` or `.delete(...)` in the codebase mark it as `relational-oltp`; append-only with `partition_by=...` and `@app.function` query patterns mark it `relational-analytics`. If the user writes `Relational[BigQuery]` on a class the inference flagged as OLTP-shaped, import fails with:
 
 ```
 RelationalKindMismatch: acme.sales:Sales is bound to 'bigquery' which supports
@@ -640,13 +644,13 @@ The contract: **a type-pinned class runs on its declared backend in every enviro
 
 | Class shape | Where it runs | `.native()` available? | Substitution allowed? |
 |---|---|---|---|
-| `Relational[Sale]` (un-pinned) | Backend per env from defaults table or env override (SQLite locally, Postgres on `aws`, …) | No — un-pinned classes get only the portable API (`put`, `get`, `scan_page`, `query_index`) | Yes — that's the whole point of leaving the type un-pinned |
-| `Relational[Sale, BigQuery]` (pinned) | Real BigQuery in every env; `env.<name>.backends.bigquery` names the project/dataset/emulator | Yes — `Sales.native()` returns `google.cloud.bigquery.Client` | **No.** Env-level override that names a different backend → `TypePinViolation` at config-load |
+| `Relational` (un-pinned) | Backend per env from defaults table or env override (SQLite locally, Postgres on `aws`, …) | No — un-pinned classes get only the portable API (`put`, `get`, `scan_page`, `query_index`) | Yes — that's the whole point of leaving the type un-pinned |
+| `Relational[BigQuery]` (pinned) | Real BigQuery in every env; `env.<name>.backends.bigquery` names the project/dataset/emulator | Yes — `Sales.native()` returns `google.cloud.bigquery.Client` | **No.** Env-level override that names a different backend → `TypePinViolation` at config-load |
 
 Concrete consequences:
 
 1. **`skaal run` (local) connects to real cloud for pinned classes.** No SQLite-pretending-to-be-BigQuery. The dev experience matches production because the backend matches production.
-2. **The framework mixes per-app.** Un-pinned `Users(Store[User])` keeps using local SQLite; pinned `Sales(Relational[Sale, BigQuery])` uses real BigQuery. You pay the cloud bill exactly where you opted in.
+2. **The framework mixes per-app.** Un-pinned `Users(Store[User])` keeps using local SQLite; pinned `Sales(Relational[BigQuery])` uses real BigQuery. You pay the cloud bill exactly where you opted in.
 3. **`<Resource>.address()` on every pinned class** — returns a backend-specific typed address model (`BigQueryAddress`, `S3Address`, `DynamoDBAddress`, …) with the live cloud identifier for the active environment. Convenience accessors (`.qualified_name`, `.uri`, `.arn`, `.region`) live on the address model where they're semantically meaningful, so the cross-backend surface stays uniform while the per-backend conveniences stay typed. No environment variables to thread, no `os.environ.get("BQ_DATASET", "default")` patterns.
 4. **No silent failure mode.** Pylance is statically correct; the runtime is operationally correct. The two never disagree.
 
@@ -701,9 +705,9 @@ The redesigned model: **every primitive class is itself the typed client.** No g
 
 | Surface | What the user imports | Why it's already typed |
 |---|---|---|
-| `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` | The user's own class directly: `from acme.users import Users` | The class is `Generic[T, BackendT]`; method signatures specialise on `T` and `B`. Pylance resolves with zero codegen. |
+| `Store[T, B]` / `Relational[B]` / `BlobStore[B]` / `Channel[T, B]` | The user's own class directly: `from acme.users import Users` | Each primitive is `Generic` over its parameters; method signatures specialise on the row/value type (where present) and on the backend `B`. `Relational[B]` skips the row generic — the class body *is* the schema. Pylance resolves with zero codegen. |
 | `@app.function` callables | The decorated symbol: `from acme.signup import signup` | The decorator returns `FunctionRef[P, R]` typed via `ParamSpec` (§6.4.2); call-site shows the original signature. |
-| Backend-native escape (type-pinned classes only) | `await Sales.native()` on `class Sales(Relational[Sale, BigQuery])` | Concrete return type per backend (`google.cloud.bigquery.Client`, `redis.asyncio.Redis`, `asyncpg.Pool`, …). The escape is only defined on pinned classes — un-pinned classes get no `.native()` because there is no statically-known SDK to return. |
+| Backend-native escape (type-pinned classes only) | `await Sales.native()` on `class Sales(Relational[BigQuery])` | Concrete return type per backend (`google.cloud.bigquery.Client`, `redis.asyncio.Redis`, `asyncpg.Pool`, …). The escape is only defined on pinned classes — un-pinned classes get no `.native()` because there is no statically-known SDK to return. |
 | Mounted ASGI services | The user's own FastAPI / Starlette / Litestar app | Skaal does not own this surface. Users keep the client tooling that ships with their routing framework (FastAPI's OpenAPI client gen, etc.). |
 
 What happens at runtime is that `skaal run` and `skaal deploy` wire each declared class to a concrete backend through the binding layer — but at *typing* time, none of that matters: the class hierarchy is fully visible to Pylance from the moment the user finishes typing it.
@@ -808,7 +812,7 @@ Runtime logs include the same `skaal:source` field on every emitted log record, 
 
 A single Python module — `skaal/binding/registry.py` — owns the list of every backend Skaal knows. Each backend is **both a typed class token** (imported and used as the second generic parameter on `Store`/`Relational`/etc.) **and a registry entry** (a pydantic record describing kinds, targets, capabilities, and the typed native client). The same data structure powers the binder, `skaal backends list`, the import-time validation, and the typed `.native()` escape hatch.
 
-Pinning to a backend token (`Relational[Sale, BigQuery]`) **bypasses the defaults table entirely**: the binder ignores `DEFAULTS[ResourceKind][Target]` for that resource, refuses any env or lock entry that names a different backend (raising `TypePinViolation`), and uses `env.backends.<token-name>` only to resolve per-env config (project, dataset, region, emulator). The defaults table is the policy for un-pinned resources; pinned resources answer to the type system, not the table.
+Pinning to a backend token (`Relational[BigQuery]`) **bypasses the defaults table entirely**: the binder ignores `DEFAULTS[ResourceKind][Target]` for that resource, refuses any env or lock entry that names a different backend (raising `TypePinViolation`), and uses `env.backends.<token-name>` only to resolve per-env config (project, dataset, region, emulator). The defaults table is the policy for un-pinned resources; pinned resources answer to the type system, not the table.
 
 ```python
 # skaal/backends/_base.py
@@ -877,7 +881,7 @@ REGISTRY: tuple[BackendEntry, ...] = (
 
 Rules the registry enforces (all at import time, all with source-located errors):
 
-1. Every typed binding (`Store[T, B]`, `Relational[T, B]`, …) requires `B` to be a registered `Backend` subclass. Unknown class → `UnknownBackendError` listing valid alternatives.
+1. Every typed binding (`Store[T, B]`, `Relational[B]`, …) requires `B` to be a registered `Backend` subclass. Unknown class → `UnknownBackendError` listing valid alternatives.
 2. The chosen entry's `token.kinds` must include every kind the inferred resource requires (§6.5.2). Otherwise → `BackendKindMismatch` with the offending source line.
 3. The entry must include the active `Environment.target` in `targets`. Otherwise → `BackendNotAvailableForTarget`.
 4. Backend-specific options (`partition_by=`, `dataset=`, …) are validated against `options_schema`. No untyped option dicts cross the binding boundary.
@@ -922,7 +926,7 @@ Resulting Pylance experience:
 | `await Users.put("u1", x)` | requires `x: User`; passing a `dict` errors |
 | `await Users.native()` | `redis.asyncio.Redis` |
 | `class Avatars(BlobStore[S3]): ...` then `await Avatars.native()` | `aioboto3.S3.Client` |
-| `class Sales(Relational[Sale, BigQuery]): ...` then `await Sales.native()` | `google.cloud.bigquery.Client` |
+| `class Sales(Relational[BigQuery]): ...` then `await Sales.native()` | `google.cloud.bigquery.Client` |
 | `class Plain(Store[User]): ...` then `Plain.native` | **does not exist** — un-pinned class has no `.native()` member. Pylance reports `Cannot access member "native"`. To get a native client you must pin the type. |
 
 #### 6.13.2 The three idiomatic patterns
@@ -939,7 +943,7 @@ user = await Users.get("u1")                     # Pylance: User | None
 #    (local talks to a real cloud instance per env.<name>.backends.<token> config).
 #    Use this for backend-specific code (BigQuery SQL, Redis Lua, DynamoDB PartiQL).
 from skaal.backends.bigquery import BigQuery
-class Sales(Relational[Sale, BigQuery], partition_by="occurred_at"):
+class Sales(Relational[BigQuery], partition_by="occurred_at"):
     ...
 bq: bigquery.Client = await Sales.native()       # real BigQuery client in every env
 
@@ -958,9 +962,9 @@ result: User = await signup(User(...))           # Pylance shows (user: User) ->
 | Decorator preserves signatures | After `signup = app.function(signup)`, `reveal_type(signup)` is `FunctionRef[[User], User]`, and `await signup(user)` reveals `User`. |
 | Pinned class gives concrete native client | After `class Cache(Store[V, Redis])`, `reveal_type(await Cache.native())` is `redis.asyncio.Redis`. |
 | Un-pinned class has no `.native()` | After `class Plain(Store[User])`, `Plain.native` triggers Pyright `reportAttributeAccessIssue`. |
-| Pinning bypasses substitution | `class Sales(Relational[Sale, BigQuery])` plus `[env.local.overrides] "...Sales" = "postgres"` raises `TypePinViolation` at config-load (no runtime substitution path exists). |
+| Pinning bypasses substitution | `class Sales(Relational[BigQuery])` plus `[env.local.overrides] "...Sales" = "postgres"` raises `TypePinViolation` at config-load (no runtime substitution path exists). |
 | Local dev talks to real cloud for pinned classes | With `[env.local.backends.bigquery] project = "..."` set, `await Sales.native()` returns a `google.cloud.bigquery.Client` authenticated against the named project; the SQLite default for `RELATIONAL` is never reached. |
-| Kind mismatches are reported at import time | `class Sales(Relational[Sale, BigQuery])` plus a call to `Sales.update(...)` errors out at import with `BackendKindMismatch`. |
+| Kind mismatches are reported at import time | `class Sales(Relational[BigQuery])` plus a call to `Sales.update(...)` errors out at import with `BackendKindMismatch`. |
 | ASGI mount is type-checked | `app.mount("/api", 42)` fails Pyright; `app.mount("/api", FastAPI())` passes. |
 | Pydantic surfaces round-trip through `model_validate_json` | `InferredPlan.model_validate_json(plan.model_dump_json()) == plan` in tests. |
 | No string-typed backend at declaration sites | `grep -RE 'backend\s*=\s*"' skaal/ examples/` returns zero hits. Strings appear only in `skaal.toml`. |
@@ -1022,7 +1026,7 @@ To keep vocabulary consistent across the codebase, CLI, docs, and Pulumi state, 
 The decisions to **keep current names** in this round, despite cloud-vocabulary alternatives:
 
 - `Store[T]` not `KV[T]` or `Table[T]` — `Table` is ambiguous (DynamoDB tables are KV; SQL tables are relational); `KV` is unidiomatic in Python.
-- `Relational[T, B]` not `Table[T, B]` — same ambiguity reason; the long name disambiguates.
+- `Relational[B]` not `Table[B]` — same ambiguity reason; the long name disambiguates.
 - `BlobStore` not `Bucket` — `Bucket` is S3/GCS-specific in user mental models; `BlobStore` covers the local-filesystem case cleanly.
 - `Channel[T]` not `Topic[T]` or `Queue[T]` — `Channel` carries pub/sub semantics without committing to one cloud's naming.
 
@@ -1058,8 +1062,8 @@ Removed verbs: `skaal catalog *`, `skaal solver *`, `skaal explain` (folded into
 # Composition
 App, Module, ModuleExport
 
-# Typed primitives (all Generic, second param is the Backend token)
-Store[T, B = Backend], Relational[T, B = Backend],
+# Typed primitives (all Generic over their Backend token)
+Store[T, B = Backend], Relational[B = Backend],
 BlobStore[B = Backend], Channel[T, B = Backend]
 
 # Typed callable
@@ -1150,7 +1154,7 @@ Exit criterion: `grep -r "Constraint\|Latency\|Durability\|AccessPattern\|Throug
    - `fingerprint.py` — stable hash via `model_dump_json(by_alias=True)` over canonically-sorted tuples.
    - `asgi.py` — recogniser that turns `app.mount(path, asgi_app)` calls into `ASGI_SERVICE` resources without inspecting the mounted app's routes.
 2. Convert every surviving decorator (`@app.storage`, `@app.function`, `@app.schedule`, `@app.job`, `@app.external`) to populate a single `__skaal_inferred__` attribute holding an `InferredResource` instance instead of the per-decorator `__skaal_storage__` / `__skaal_compute__` / etc. dunder family.
-3. Type the public surface per §6.13: `Store[T, B]`, `Relational[T, B]`, `BlobStore[B]`, `Channel[T, B]` with `B` defaulted via `typing_extensions.TypeVar(default=Backend)`; `@app.function` decorator with `ParamSpec`/`TypeVar` overloads returning `FunctionRef[P, R]`; `App.mount(path: str, app: ASGIApplication)`.
+3. Type the public surface per §6.13: `Store[T, B]`, `Relational[B]`, `BlobStore[B]`, `Channel[T, B]` with `B` defaulted via `typing_extensions.TypeVar(default=Backend)`; `@app.function` decorator with `ParamSpec`/`TypeVar` overloads returning `FunctionRef[P, R]`; `App.mount(path: str, app: ASGIApplication)`.
 4. Add `tests/inference/test_fingerprint.py` asserting byte-stability across reorderings, and `tests/inference/test_pydantic.py` asserting every public inference type round-trips through `model_dump_json` / `model_validate_json`.
 
 Exit criterion: `App.infer() -> InferredPlan` returns a complete plan for every example under `examples/`; `InferredPlan.model_json_schema()` is published as the contract artifact; `pyright --strict skaal/` is green.
@@ -1229,7 +1233,7 @@ Explicitly out of scope, to prevent scope creep during implementation:
 
 1. Cost optimization, cost reporting, cost-aware binding. Cost is not the friction.
 2. A constraint DSL of any flavor — including "soft" hints. The defaults table absorbs the surface.
-3. **Backend substitution for type-pinned classes.** A class declared `Relational[Sale, BigQuery]` runs on BigQuery in every environment, including `local`. Skaal will not ship a "local fallback" that runs the same code on SQLite, nor an abstraction layer that pretends one backend's API is another's. Pinning is the user's explicit opt-out from the substitution model; the framework respects it without exception. If a developer wants portable storage, they use the un-pinned form (`Relational[Sale]`) and accept the corresponding loss of `.native()`.
+3. **Backend substitution for type-pinned classes.** A class declared `Relational[BigQuery]` runs on BigQuery in every environment, including `local`. Skaal will not ship a "local fallback" that runs the same code on SQLite, nor an abstraction layer that pretends one backend's API is another's. Pinning is the user's explicit opt-out from the substitution model; the framework respects it without exception. If a developer wants portable storage, they use the un-pinned form (`Relational`) and accept the corresponding loss of `.native()`.
 4. **Cross-backend portability shims.** No "BigQuery dialect translator" for Postgres, no DynamoDB-to-Firestore adapter, no `.update()` polyfill on append-only stores. The portable API on un-pinned classes is intentionally a narrow common-denominator surface; native semantics are only available through pinning.
 5. A web UI. CLI + IDE plugins first. The web UI is a Phase 8+ deliverable, post-v1.
 6. Multi-cloud single-app deployments. One environment, one cloud. Per-environment cloud choice is supported (prod=aws, staging=gcp) but the binding within an environment is single-cloud.
@@ -1244,7 +1248,7 @@ The release ships when all of the following are simultaneously true:
 3. `skaal deploy --env prod` writes a `skaal.lock` and the next `skaal plan` is empty unless code changed.
 4. A `Store[T]` declared in one module is importable, typed, and usable from another module via direct Python import (`from acme.users import Users`) with no codegen step and no `skaal_clients/` package in the source tree.
 5. `pyright --strict` is green on `skaal/`, `examples/`, and `tests/typing/`; `reveal_type` assertions for every row of §6.13.3 pass; hovering over any primitive method in VSCode shows the typed signature without running a build step.
-6. `class Sales(Relational[Sale, BigQuery])` plus `bq = await Sales.native()` resolves `bq` to `google.cloud.bigquery.Client` in Pylance; `skaal run` against `[env.local.backends.bigquery] project = "acme-dev"` connects to that real cloud dataset (no substitution); attempting to override `Sales` to a different backend via `skaal.toml` fails at config-load with `TypePinViolation`.
+6. `class Sales(Relational[BigQuery])` plus `bq = await Sales.native()` resolves `bq` to `google.cloud.bigquery.Client` in Pylance; `skaal run` against `[env.local.backends.bigquery] project = "acme-dev"` connects to that real cloud dataset (no substitution); attempting to override `Sales` to a different backend via `skaal.toml` fails at config-load with `TypePinViolation`.
 7. Opening a PR posts an infra diff comment automatically.
 8. The word "constraint" appears nowhere in user-facing docs, CLI help, or decorator signatures.
 9. The `examples/todo_api` walkthrough deploys cleanly to AWS in under 5 minutes from a fresh checkout.

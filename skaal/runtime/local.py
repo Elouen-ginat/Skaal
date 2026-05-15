@@ -80,6 +80,10 @@ class RuntimeState:
     schedules: list[ScheduleEntry] = field(default_factory=list)
     scheduler_started: bool = False
     scheduler: Any = None
+    invokables: dict[str, Callable[..., Awaitable[Any]]] = field(default_factory=dict)
+    invokable_streams: dict[str, Callable[..., AsyncIterator[Any]]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass
@@ -143,13 +147,22 @@ class LocalRuntime:
 
         @asynccontextmanager
         async def _lifespan(_: Starlette) -> AsyncIterator[None]:
-            for startup in runtime.startup_hooks:
-                await startup()
+            # The runtime binds itself to the app for the duration of
+            # the serve loop so `Module.invoke(...)` / `Module.invoke_stream(...)`
+            # can dispatch through `runtime.invoke{,_stream}`. The bind
+            # happens before startup hooks so hooks themselves can call
+            # `app.invoke(...)` if they need to.
+            runtime.app._bind_runtime(runtime)
             try:
-                yield
+                for startup in runtime.startup_hooks:
+                    await startup()
+                try:
+                    yield
+                finally:
+                    for shutdown in reversed(runtime.shutdown_hooks):
+                        await shutdown()
             finally:
-                for shutdown in reversed(runtime.shutdown_hooks):
-                    await shutdown()
+                runtime.app._unbind_runtime(runtime)
 
         routes: list[Route | Mount] = [
             Route(r.path, r.endpoint, methods=[r.method]) for r in self.routes
@@ -159,6 +172,42 @@ class LocalRuntime:
         # `@app.function` at "/predict").
         routes.extend(Mount(m.path, app=m.app) for m in self.mounts)
         return Starlette(routes=routes, lifespan=_lifespan)
+
+    # ── In-process invocation surface ────────────────────────────────────
+
+    async def invoke(self, function_name: str, kwargs: dict[str, Any]) -> Any:
+        """Dispatch a registered `@app.function` callable in-process.
+
+        Used by `Module.invoke(...)` so users can call functions through
+        the same resilience chain that the HTTP route uses, without
+        round-tripping through HTTP. Async-generator-shaped functions
+        are not invokable through this entry point — use
+        `invoke_stream(...)` instead.
+        """
+        fn: Callable[..., Awaitable[Any]] | None = self.state.invokables.get(function_name)
+        if fn is None:
+            raise KeyError(f"No invokable function named {function_name!r}")
+        return await fn(**kwargs)
+
+    def invoke_stream(
+        self,
+        function_name: str,
+        kwargs: dict[str, Any],
+    ) -> AsyncIterator[Any]:
+        """Dispatch a registered async-generator `@app.function` in-process.
+
+        Returns the underlying `AsyncIterator` directly; the caller is
+        expected to ``async for`` over it (e.g. inside a Starlette
+        `StreamingResponse`). Streams skip the resilience chain — retry
+        semantics on a partially-consumed stream are ill-defined and
+        deferred to a richer streaming policy in a later phase.
+        """
+        fn: Callable[..., AsyncIterator[Any]] | None = self.state.invokable_streams.get(
+            function_name
+        )
+        if fn is None:
+            raise KeyError(f"No invokable stream named {function_name!r}")
+        return fn(**kwargs)
 
     async def shutdown(self) -> None:
         """Run every registered shutdown hook in LIFO order.

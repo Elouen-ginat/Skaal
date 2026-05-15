@@ -20,9 +20,9 @@ from skaal import App, Store
 app = App("counter")
 
 
-@app.storage(read_latency="< 5ms", durability="ephemeral")
+@app.storage
 class Counts(Store[int]):
-    """Named integer counters. Backed by LocalMap in local mode."""
+    """Named integer counters. Backed by SQLite locally."""
 
 
 @app.function()

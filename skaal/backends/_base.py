@@ -1,8 +1,8 @@
 """Typed `Backend` token base class (ADR 028 §6.12, ADR 031 §3.1).
 
 Each concrete backend in the registry is represented by a `Backend` subclass —
-a real Python class that user code can import and pass as the second generic
-parameter to `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]`
+a real Python class that user code can import and pass as the backend generic
+parameter to `Store[T, B]` / `Relational[B]` / `BlobStore[B]` / `Channel[T, B]`
 once Phase 4 wires that syntax.
 
 The token carries:

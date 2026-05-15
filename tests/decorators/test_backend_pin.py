@@ -1,11 +1,12 @@
-"""Tests for the Phase 4 second-generic `Backend` type-pin (ADR 032 §4.4)."""
+"""Tests for the Phase 4 generic-parameter `Backend` type-pin (ADR 032 §4.4)."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel
+from sqlmodel import Field
 
-from skaal import App, BlobStore, Channel, Store
-from skaal.backends._tokens import S3, Redis, RedisChannel, Sqlite
+from skaal import App, BlobStore, Channel, Relational, Store
+from skaal.backends._tokens import S3, Postgres, Redis, RedisChannel, Sqlite
 from skaal.decorators import _extract_backend_pin
 
 
@@ -95,3 +96,65 @@ def test_extract_backend_pin_helper_direct() -> None:
 
     assert _extract_backend_pin(Pinned) is Redis
     assert _extract_backend_pin(UnPinned) is None
+
+
+def test_relational_pinned_populates_overrides_backend() -> None:
+    app = App("test-relational-pin")
+
+    @app.storage(kind="relational")
+    class Comments(Relational[Postgres], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    assert Comments.__skaal_inferred__.overrides.backend == "postgres"
+    assert Comments.__skaal_backend_pin__ is Postgres
+
+
+def test_relational_un_pinned_has_no_backend_override() -> None:
+    app = App("test-relational-no-pin")
+
+    @app.storage(kind="relational")
+    class Notes(Relational, table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    assert Notes.__skaal_inferred__.overrides.backend is None
+    assert Notes.__skaal_backend_pin__ is None
+
+
+def test_relational_two_distinct_pins_do_not_alias() -> None:
+    """Two parametrisations of `Relational` must not share state.
+
+    `Relational[Postgres]` and `Relational[Sqlite]` create two distinct
+    intermediate classes; the pin captured on one must not leak into
+    the other.
+    """
+
+    app_a = App("test-relational-distinct-a")
+    app_b = App("test-relational-distinct-b")
+
+    @app_a.storage(kind="relational")
+    class CommentsA(Relational[Postgres], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    @app_b.storage(kind="relational")
+    class CommentsB(Relational[Sqlite], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    assert CommentsA.__skaal_inferred__.overrides.backend == "postgres"
+    assert CommentsB.__skaal_inferred__.overrides.backend == "sqlite"
+
+
+def test_extract_backend_pin_helper_on_relational() -> None:
+    class PinnedRelational(Relational[Postgres], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    class UnPinnedRelational(Relational, table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    assert _extract_backend_pin(PinnedRelational) is Postgres
+    assert _extract_backend_pin(UnPinnedRelational) is None

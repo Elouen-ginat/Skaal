@@ -65,7 +65,7 @@ class SkaalConfigError(SkaalError):
 class TypePinViolation(SkaalConfigError):
     """An env override or lock entry tried to repoint a type-pinned resource.
 
-    Type-pinning a class (``Relational[Sale, BigQuery]``) is a commitment —
+    Type-pinning a class (``Relational[BigQuery]``) is a commitment —
     the binder refuses any override that names a different backend for the
     same resource, raising at config-load time per ADR 028 §6.5.3.
     """

@@ -34,7 +34,7 @@ In scope:
 - A new `skaal.runtime` package, rebuilt from scratch on `BoundPlan`. Local execution of every `ResourceKind` against the backends a `local` `Environment` binds to (`Sqlite`, `Redis`, `FilesystemBlob`, `InProcessChannel`, `Uvicorn`, `Apscheduler`, `Asyncio`, `DotenvSecret`).
 - A new `skaal.deploy` package generating Pulumi programs from a `BoundPlan`. AWS-first per ADR 028 §10.3; GCP scheduled for a 0.4.x point release.
 - The Jinja2 template tree under `skaal/deploy/templates/{aws,local}/` covering one file per Pulumi resource the AWS-first matrix needs.
-- Decorator rewire: `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic parameter populating `ResourceOverrides.backend` on `__skaal_inferred__`.
+- Decorator rewire: `Store[T, B]` / `Relational[B]` / `BlobStore[B]` / `Channel[T, B]` backend generic parameter populating `ResourceOverrides.backend` on `__skaal_inferred__` — the second generic on `Store` / `BlobStore` / `Channel`, the only generic on `Relational`.
 - `@app.external` decorator using `Environment.backends[name]` as the "user-supplied connection" handle.
 - `App.mount(path: str, asgi_app: ASGIApplication)` signature reshape; deletion of `mount_asgi` / `mount_wsgi` aliases.
 - `FunctionRef[P, R]` typed return shape on `@app.function` so call-site invocations type-check across module boundaries.
@@ -73,7 +73,7 @@ This is what justifies the legacy-dunder deletion: once `BoundPlan.resources` is
 
 ## Decision 2 — `Backend` tokens flow into user code via a class-level marker
 
-The `Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic parameter is wired by the decorator, not by the metaclass. ADR 028 §6.6 spelled out the intent; the mechanism is:
+The backend generic parameter on each primitive (`Store[T, B]` / `Relational[B]` / `BlobStore[B]` / `Channel[T, B]`) is wired by the decorator, not by the metaclass. ADR 028 §6.6 spelled out the intent; the mechanism is:
 
 ```python
 # Phase 4 — skaal/storage.py
@@ -189,8 +189,9 @@ Why a helper not a decorator: Pulumi resource constructors take `tags` as a kwar
 
 ```python
 @app.external(name="legacy_db")
-class LegacyDb(Relational[LegacyRow, Postgres]):
-    pass
+class LegacyDb(Relational[Postgres], table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    body: str
 ```
 
 The decorator marks the resource as external on `__skaal_inferred__.overrides.external = True`. The binder (Phase 3) already treats `overrides.backend` as a type-pin; the new `external` flag tells the deploy layer "do not provision; skip codegen for this resource and read the connection from `env.backends[name]` at runtime". The runtime adapter reads `env.backends["legacy_db"].options` for the connection string.
@@ -455,7 +456,7 @@ Per-example regression test (`tests/examples/test_examples_boot.py`) imports eac
 1. `skaal run` boots `examples/todo_api` against a `local` environment and serves HTTP on `localhost:8000`; every route returns the expected response.
 2. `skaal deploy --env prod` (where `prod.target = aws`) provisions the AWS resources for `examples/todo_api` and `examples/counter`, with the `skaal:*` tag set on every Pulumi resource. The deploy run writes `skaal.lock` and a follow-up `skaal plan --env prod` reports zero changes unless code changed.
 3. `class Cache(Store[Session, Redis])` resolves the second generic via Pylance, the binder pins it to `redis` (per Phase 3), and the runtime adapter connects to the configured Redis URL.
-4. `class LegacyDb(Relational[LegacyRow, Postgres])` decorated with `@app.external(name="legacy_db")` reads the connection from `env.backends["legacy_db"]` at runtime, and the deploy layer emits zero Pulumi resources for `LegacyDb`.
+4. `class LegacyDb(Relational[Postgres], table=True)` decorated with `@app.external(name="legacy_db")` reads the connection from `env.backends["legacy_db"]` at runtime, and the deploy layer emits zero Pulumi resources for `LegacyDb`.
 5. `grep -r "__skaal_storage__\|__skaal_function__\|__skaal_schedule__\|__skaal_channel__\|__skaal_job__" skaal/ tests/runtime tests/deploy` returns zero hits.
 6. `make lint && make typecheck && make test` are green. `skaal/runtime/` and `skaal/deploy/` are included in the mypy default scope (not relaxed).
 7. `notes/redesign-status.md` Phase 4 section is filled in and ticks every checkpoint below.
@@ -468,7 +469,7 @@ Per-example regression test (`tests/examples/test_examples_boot.py`) imports eac
 | AWS-first scope balloons into AWS+GCP because counter/todo_api have aspirational GCP examples. | The deploy layer's `skaal/deploy/aws/` is the only synth implementation in this phase; `skaal/deploy/gcp/` is a `NotImplementedError` placeholder per Decision 4. The exit criterion mentions AWS only. |
 | Local runtime cannot start when an optional extra is missing (e.g. `redis.asyncio`). | Each adapter `register()` defers the optional import to its own scope; the runtime fails fast with `MissingExtraError` listing the install command (`pip install skaal[aws]`, etc.) only when the adapter is invoked. |
 | `PEP 696` defaults are unstable across `typing_extensions` versions. | Pin `typing_extensions>=4.12` (introduced `Default` in early 2025). The 3.11 floor in `pyproject.toml` already requires `typing_extensions` as a transitive dep through pydantic. |
-| Reading `cls.__orig_bases__` to extract the second generic misses inheritance chains. | The decorator walks `cls.__mro__` looking for the first parameterised base (`Store[T, B]`, `Relational[T, B]`, …) and reads its args. A unit test covers a two-level inheritance chain (`class Cache2(Cache[Session, Redis])`). |
+| Reading `cls.__orig_bases__` to extract the backend generic misses inheritance chains, and `SQLModelMetaclass` strips it from subclasses entirely. | `Store[T, B]` / `BlobStore[B]` / `Channel[T, B]` keep `__orig_bases__`, so the decorator walks it directly. `Relational[B]` flows through `SQLModelMetaclass`; its `__class_getitem__` stashes `__skaal_backend_pin__` on the parametrised class, and the decorator reads that attribute (MRO-inherited) ahead of the `__orig_bases__` walk. A unit test covers a two-level inheritance chain (`class Cache2(Cache[Session, Redis])`). |
 | Deleting the legacy dunders breaks downstream `0.3.x`-shaped consumers we missed. | The Phase 1 grep gate already passes on `Latency`/`AccessPattern`/etc.; the Phase 4 grep gate extends to legacy dunders. The CI matrix runs every example's `app.infer()` after the deletion, which catches any indirect consumer. |
 | `FunctionRef` breaks `inspect.signature(some_function)` callers in the test suite. | `FunctionRef.__signature__` proxies to `inspect.signature(self.__wrapped__)`. The signature passthrough is covered in `tests/decorators/test_function_ref.py`. |
 | Pulumi Automation API requires an authenticated Pulumi backend; CI cannot run `skaal deploy` end-to-end. | The deploy tests use `pulumi.runtime.set_mocks` (the official testing API) — they exercise the program callable without a real Pulumi backend. The end-to-end AWS run is documented but not gated in CI; the alpha-tag procedure runs it manually. |

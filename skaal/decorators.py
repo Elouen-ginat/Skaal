@@ -97,14 +97,25 @@ class FunctionRef(Generic[P, R]):
 def _extract_backend_pin(cls: type) -> type[Backend] | None:
     """Return the `Backend` subclass pinned via the class's parameterised base.
 
-    Walks ``cls.__orig_bases__`` (and the MRO of `Generic` bases) looking
-    for a parameterised base whose generic args include a concrete
-    ``Backend`` subclass. ``Backend`` itself — the default value of the
-    ``B`` `TypeVar` on every primitive — is ignored so un-pinned
-    declarations (``Store[User]``) report no pin.
+    Two capture paths share the same return contract:
 
-    Returns ``None`` when no pin is present.
+    * `Store[T, B]` / `BlobStore[B]` / `Channel[T, B]` keep the
+      parametrisation visible on ``__orig_bases__``; the walk below
+      picks the `Backend` subclass out of the generic args directly.
+    * `Relational[B]` flows through `SQLModelMetaclass`, which
+      overwrites ``__orig_bases__`` on subclasses. The token is stashed
+      on ``__skaal_backend_pin__`` by `Relational.__class_getitem__`
+      instead; subclasses inherit it via the normal MRO.
+
+    ``Backend`` itself — the default value of the ``B`` `TypeVar` on
+    every primitive — is ignored so un-pinned declarations
+    (``Store[User]``) report no pin. Returns ``None`` when no pin is
+    present.
     """
+    pinned = getattr(cls, "__skaal_backend_pin__", None)
+    if isinstance(pinned, type) and issubclass(pinned, Backend) and pinned is not Backend:
+        return pinned
+
     bases: tuple[Any, ...] = getattr(cls, "__orig_bases__", ())
     for base in bases:
         args = get_args(base)
@@ -118,6 +129,7 @@ def _extract_backend_pin(cls: type) -> type[Backend] | None:
             ):
                 return candidate
     return None
+
 
 _STORAGE_KIND_TO_RESOURCE_KIND: dict[StorageKind, ResourceKind] = {
     "kv": ResourceKind.STORE,
@@ -217,7 +229,7 @@ def external(
         if pinned_token is None:
             raise SkaalConfigError(
                 f"@external requires a Backend type-pin on {cls.__name__!r}; "
-                "declare e.g. `class LegacyDb(Relational[Row, Postgres])`."
+                "declare e.g. `class LegacyDb(Relational[Postgres])`."
             )
         _validate_storage_class(cls, kind=normalized_kind)
         overrides = ResourceOverrides(
