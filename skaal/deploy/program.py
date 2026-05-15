@@ -9,9 +9,10 @@ The closure does *not* hardcode any cloud target. It asks the registry
 for the `DeployTarget` matching `env.target` and dispatches through that
 target's `lookup_synth(...)` method. A new target plugs in by:
 
-1. Creating `skaal/deploy/<target>/` with one synth module per backend
-2. Constructing a `BaseDeployTarget` subclass and calling
-   `register_target(...)` at module import time
+1. Creating `skaal/deploy/<target>/` with one `SynthModule` subclass per
+   backend (Lambda-shaped synths inherit from `LambdaSynth`)
+2. Constructing a `BaseDeployTarget` subclass via `from_classes(...)`
+   and calling `register_target(...)` at module import time
 3. Importing the new target package so registration runs
 
 The `pulumi` / `pulumi_aws` / `pulumi_docker` imports are deferred until

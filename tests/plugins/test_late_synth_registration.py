@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -27,6 +27,7 @@ from skaal.deploy import (  # noqa: E402
     PluginRegistry,
     SkaalPlugin,
     SynthContext,
+    SynthModule,
     SynthResult,
     SynthSpec,
     synthesize_stack,
@@ -40,33 +41,26 @@ class _MyDatabase(Backend[object]):
     kinds = frozenset({"store"})
 
 
-SPEC = SynthSpec(
-    backends=("my-database",),
-    kinds=frozenset({ResourceKind.STORE}),
-    description="Fake KV store for the plugin loader test.",
-)
+class _MyDatabaseSynth(SynthModule[AwsConfig]):
+    """Fake KV store synth (re-uses DynamoDB under the hood as a stand-in)."""
 
-
-def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
-    import pulumi_aws as aws
-
-    # Re-use DynamoDB as a stand-in so the synth produces a real Pulumi
-    # resource against the mocked runtime.
-    table = aws.dynamodb.Table(
-        ctx.pulumi_name,
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="pk",
-        attributes=[aws.dynamodb.TableAttributeArgs(name="pk", type="S")],
-        tags=ctx.tags,
+    SPEC: ClassVar[SynthSpec] = SynthSpec(
+        backends=("my-database",),
+        kinds=frozenset({ResourceKind.STORE}),
+        description="Fake KV store for the plugin loader test.",
     )
-    return SynthResult(resource_id=ctx.resource_id, primary=table)
 
+    def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:
+        import pulumi_aws as aws
 
-class _ThisModule:
-    """Hand-rolled module-like adapter (SPEC + synthesize)."""
-
-    SPEC = SPEC
-    synthesize = staticmethod(synthesize)
+        table = aws.dynamodb.Table(
+            ctx.pulumi_name,
+            billing_mode="PAY_PER_REQUEST",
+            hash_key="pk",
+            attributes=[aws.dynamodb.TableAttributeArgs(name="pk", type="S")],
+            tags=ctx.tags,
+        )
+        return SynthResult(resource_id=ctx.resource_id, primary=table)
 
 
 class _MyDatabasePlugin(SkaalPlugin):
@@ -76,7 +70,7 @@ class _MyDatabasePlugin(SkaalPlugin):
         registry.add_backend(
             BackendEntry(token=_MyDatabase, targets=frozenset({Target.AWS}))
         )
-        registry.add_synth(Target.AWS, _ThisModule)
+        registry.add_synth(Target.AWS, _MyDatabaseSynth)
 
 
 class _FakeEntryPoint:
@@ -121,11 +115,14 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
 
     monkeypatch.setattr("importlib.metadata.entry_points", fake_entry_points)
     yield
-    # Drop any extra synths we registered during the test.
+    # Drop any extra synths we registered during the test (both halves
+    # of the dispatch — `_synth` keyed by backend name and
+    # `_synth_instances` keyed by the live instance).
     with target._synth_lock:
         for backend in list(target._synth):
             if backend not in builtin:
                 del target._synth[backend]
+                target._synth_instances.pop(backend, None)
     reset_plugins()
     reset_binding()
 

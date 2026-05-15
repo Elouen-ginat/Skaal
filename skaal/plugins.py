@@ -28,18 +28,22 @@ aurora = "skaal_aws_aurora:AuroraPlugin"
 
 ```python
 # skaal_aws_aurora/__init__.py
+from typing import ClassVar
 from skaal import Backend, Target
 from skaal.binding.registry import BackendEntry
-from skaal.deploy import SynthContext, SynthResult, SynthSpec
+from skaal.deploy import SynthContext, SynthModule, SynthResult, SynthSpec
 from skaal.plugins import PluginRegistry, SkaalPlugin
 
 class Aurora(Backend[object]):
     name = "aurora"
     kinds = frozenset({"relational"})
 
-SPEC = SynthSpec(backends=("aurora",), kinds=frozenset({ResourceKind.RELATIONAL}))
-
-def synthesize(ctx: SynthContext) -> SynthResult: ...
+class AuroraSynth(SynthModule[AwsConfig]):
+    SPEC: ClassVar[SynthSpec] = SynthSpec(
+        backends=("aurora",),
+        kinds=frozenset({ResourceKind.RELATIONAL}),
+    )
+    def synthesize(self, ctx: SynthContext) -> SynthResult: ...
 
 class AuroraPlugin(SkaalPlugin):
     name = "aurora"
@@ -47,8 +51,7 @@ class AuroraPlugin(SkaalPlugin):
         registry.add_backend(
             BackendEntry(token=Aurora, targets=frozenset({Target.AWS}))
         )
-        # Hand any object exposing `SPEC: SynthSpec` + `synthesize: SynthFn`.
-        registry.add_synth(Target.AWS, __import__(__name__))
+        registry.add_synth(Target.AWS, AuroraSynth)
 ```
 """
 
@@ -121,31 +124,49 @@ class PluginRegistry:
         )
         register_target(target)
 
-    def add_synth(self, target: Target, module: Any) -> None:
-        """Add a synth module (must expose `SPEC` + `synthesize`) to a target.
+    def add_synth(self, target: Target, synth: type | object) -> None:
+        """Add a `SynthModule` subclass (or instance) to a target.
+
+        Accepts either a `SynthModule` subclass — the registry will
+        instantiate it with no arguments — or an already-instantiated
+        synth. Either form must satisfy the `SynthModule` contract
+        (`SPEC` class variable + `synthesize` method).
 
         Raises:
             SkaalDeployError: If the target hasn't been registered yet,
-                or `module` isn't a valid synth module.
+                or `synth` isn't a valid `SynthModule`.
         """
+        from skaal.deploy._protocol import SynthModule
         from skaal.deploy._registry import get_target
+        from skaal.errors import SkaalDeployError
 
         deploy_target = get_target(target)
         if not hasattr(deploy_target, "register_synth"):
-            from skaal.errors import SkaalDeployError
-
             raise SkaalDeployError(
                 f"Plugin {self._plugin_name!r} cannot add a synth to "
                 f"target {target.value!r}: the target does not support "
                 "late synth registration."
             )
+
+        instance: SynthModule[Any]
+        if isinstance(synth, type) and issubclass(synth, SynthModule):
+            instance = synth()
+        elif isinstance(synth, SynthModule):
+            instance = synth
+        else:
+            raise SkaalDeployError(
+                f"Plugin {self._plugin_name!r} passed {synth!r} to "
+                "add_synth(...); expected a `SynthModule` subclass or "
+                "instance."
+            )
+
         _LOG.debug(
-            "plugin %r adding synth module %r to target %r",
+            "plugin %r adding synth %r to target %r",
             self._plugin_name,
-            getattr(module, "__name__", module),
+            type(instance).__name__,
             target.value,
         )
-        deploy_target.register_synth(module)
+        deploy_target.register_synth(instance)
 
     def add_backend(self, entry: BackendEntry) -> None:
         """Register a `BackendEntry` in the binding registry."""

@@ -1,18 +1,19 @@
 """`BaseDeployTarget` — shared scaffolding for every concrete `DeployTarget`.
 
 Each cloud target subclasses `BaseDeployTarget`, declares its
-`TargetConfig` subclass, and uses `BaseDeployTarget.from_modules(...)` to
-build itself from a tuple of synth-module objects. The factory walks each
-module's `SPEC: SynthSpec` and `synthesize: SynthFn` and assembles the
-dispatch table — the per-target `__init__.py` lists modules, not
-backend-name → function entries.
+`TargetConfig` subclass, and uses `BaseDeployTarget.from_classes(...)` to
+build itself from a tuple of `SynthModule` subclasses. The factory
+instantiates each class once, reads its `SPEC: ClassVar[SynthSpec]`, and
+binds the instance's `synthesize` method into the dispatch table — the
+per-target `__init__.py` lists classes, not backend-name → function
+entries.
 
 Subclasses override:
 
 - `target` — the `Target` enum value
 - `_config_cls` — the `TargetConfig` subclass for this target
 - `_required_extras` — importable module names the target depends on
-- `stack_name(bound, env)` — usually overrideable for naming conventions
+- `stack_name(bound, env)` — overrideable for naming conventions
 - `stack_config(env)` — for region / project / … config wiring
 """
 
@@ -20,31 +21,18 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from threading import Lock
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from skaal.deploy._protocol import (
     DeployTarget,
     SynthFn,
-    SynthSpec,
+    SynthModule,
     TargetConfig,
 )
 from skaal.errors import SkaalDeployError
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundPlan, Environment, Target
-
-
-class _SynthModule(Protocol):
-    """Duck-typed view of a synth module: `SPEC` + `synthesize`.
-
-    Each synth module declares `SPEC: SynthSpec` listing the backend
-    names it covers, plus a `synthesize` function matching `SynthFn`.
-    The factory in `BaseDeployTarget.from_modules` reads only these two
-    attributes; nothing else in the module participates in dispatch.
-    """
-
-    SPEC: SynthSpec
-    synthesize: SynthFn
 
 
 class BaseDeployTarget(DeployTarget):
@@ -62,89 +50,89 @@ class BaseDeployTarget(DeployTarget):
 
     def __init__(
         self,
-        synth: Mapping[str, SynthFn],
+        synths: Iterable[SynthModule[Any]] = (),
         *,
         default_config: TargetConfig | None = None,
     ) -> None:
-        # Mutable so plugins can call `register_synth(...)` after the
-        # target is built. The public `lookup_synth` / `supported_backends`
-        # methods return snapshots — callers see read-only views.
-        self._synth: dict[str, SynthFn] = dict(synth)
+        # Mutable storage so plugins can call `register_synth(...)` after
+        # the target is built. Public accessors return snapshots so the
+        # outside world sees read-only views.
+        self._synth: dict[str, SynthFn] = {}
+        self._synth_instances: dict[str, SynthModule[Any]] = {}
         self._synth_lock: Lock = Lock()
         self._default_config: TargetConfig = (
             default_config if default_config is not None else self._config_cls()
         )
+        for synth in synths:
+            self._register_locked(synth)
 
     @classmethod
-    def from_modules(
+    def from_classes(
         cls,
-        modules: Iterable[Any],
+        synth_classes: Iterable[type[SynthModule[Any]]],
         *,
         default_config: TargetConfig | None = None,
     ) -> BaseDeployTarget:
-        """Build a target from a tuple of synth modules.
+        """Build a target by instantiating each `SynthModule` subclass.
 
-        Each module must satisfy the `_SynthModule` protocol (a
-        `SPEC: SynthSpec` attribute plus a `synthesize: SynthFn`
-        callable). The `Iterable[Any]` parameter type accepts plain
-        Python modules — mypy cannot see module attributes
-        structurally, so the duck-type check happens at runtime.
+        Each class must declare `SPEC: ClassVar[SynthSpec]` and implement
+        `synthesize(ctx)`. Instances are constructed with no arguments;
+        synth classes that need parameters should accept them via class
+        attributes or override `__init__` with safe defaults.
 
         Raises:
-            SkaalDeployError: If two modules declare the same backend
-                name in `SPEC.backends`, or a module is missing its
-                `SPEC` / `synthesize` attribute.
+            SkaalDeployError: If two classes declare the same backend
+                name in their `SPEC.backends`, or a class is missing
+                `SPEC`.
         """
-        dispatch: dict[str, SynthFn] = {}
-        for module in modules:
-            if not hasattr(module, "SPEC") or not hasattr(module, "synthesize"):
+        instances: list[SynthModule[Any]] = []
+        for synth_cls in synth_classes:
+            if not hasattr(synth_cls, "SPEC"):
                 raise SkaalDeployError(
-                    f"Module {getattr(module, '__name__', module)!r} is not "
-                    "a synth module: missing `SPEC` or `synthesize`."
+                    f"{synth_cls.__name__!r} is not a valid SynthModule "
+                    "subclass: missing `SPEC` class variable."
                 )
-            spec = module.SPEC
-            for backend in spec.backends:
-                if backend in dispatch:
-                    raise SkaalDeployError(
-                        f"Duplicate synth registration for backend "
-                        f"{backend!r}. Each backend name maps to exactly "
-                        "one synth module."
-                    )
-                dispatch[backend] = module.synthesize
-        return cls(dispatch, default_config=default_config)
+            instances.append(synth_cls())
+        return cls(instances, default_config=default_config)
 
-    def register_synth(self, module: Any) -> None:
-        """Add a plugin-contributed synth module to this target.
+    def register_synth(self, synth: SynthModule[Any]) -> None:
+        """Add a plugin-contributed synth to this target.
 
-        The module must expose `SPEC: SynthSpec` (which lists the backend
-        names it serves) and a `synthesize` callable. Re-registering a
-        backend with the same function is a silent no-op so plugins stay
-        idempotent; conflicting registrations raise.
+        Re-registering the exact same instance is a silent no-op
+        (idempotent for plugin double-loads). A different instance
+        claiming the same backend name raises.
 
         Raises:
-            SkaalDeployError: If `module` lacks `SPEC` / `synthesize`, or
-                a different synth is already registered for one of its
-                backend names.
+            SkaalDeployError: If `synth` lacks `SPEC`, or a different
+                synth is already registered for one of its backend
+                names.
         """
-        if not hasattr(module, "SPEC") or not hasattr(module, "synthesize"):
-            raise SkaalDeployError(
-                f"Module {getattr(module, '__name__', module)!r} is not "
-                "a synth module: missing `SPEC` or `synthesize`."
-            )
-        synthesize = module.synthesize
         with self._synth_lock:
-            for backend in module.SPEC.backends:
-                existing = self._synth.get(backend)
-                if existing is synthesize:
-                    continue
-                if existing is not None:
-                    raise SkaalDeployError(
-                        f"Backend {backend!r} on target "
-                        f"{self.target.value!r} is already wired to "
-                        f"{existing!r}; a plugin tried to override it "
-                        f"with {synthesize!r}."
-                    )
-                self._synth[backend] = synthesize
+            self._register_locked(synth)
+
+    def _register_locked(self, synth: SynthModule[Any]) -> None:
+        """Inner registration helper — caller must hold `_synth_lock`."""
+        spec = getattr(synth, "SPEC", None)
+        if spec is None or not hasattr(synth, "synthesize"):
+            raise SkaalDeployError(
+                f"{synth!r} is not a valid SynthModule: missing `SPEC` "
+                "or `synthesize`."
+            )
+        synthesize = synth.synthesize
+        for backend in spec.backends:
+            existing_instance = self._synth_instances.get(backend)
+            if existing_instance is synth:
+                continue
+            if existing_instance is not None:
+                raise SkaalDeployError(
+                    f"Backend {backend!r} on target "
+                    f"{self.target.value!r} is already wired to "
+                    f"{type(existing_instance).__name__!r}; a plugin "
+                    f"tried to override it with "
+                    f"{type(synth).__name__!r}."
+                )
+            self._synth[backend] = synthesize
+            self._synth_instances[backend] = synth
 
     def lookup_synth(self, backend_name: str) -> SynthFn | None:
         with self._synth_lock:

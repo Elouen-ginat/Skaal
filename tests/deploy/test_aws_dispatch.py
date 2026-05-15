@@ -106,27 +106,40 @@ def test_aws_target_lookup_returns_callable_or_none() -> None:
     assert TARGET.lookup_synth("not-a-real-backend") is None
 
 
-def test_aws_synth_modules_each_export_spec_and_synthesize() -> None:
-    """Each synth module follows the (`SPEC`, `synthesize`) convention."""
-    from skaal.deploy.aws import (
-        apigw_lambda,
-        dynamodb,
-        eventbridge,
-        lambda_fn,
-        postgres,
-        redis,
-        s3,
-        secrets,
-        sqs,
-        sqs_worker,
-    )
+def test_aws_synth_classes_satisfy_the_module_contract() -> None:
+    """Each synth class declares a `SPEC` class var and a `synthesize` method."""
+    from skaal.deploy._protocol import SynthModule
+    from skaal.deploy.aws.apigw_lambda import ApigwLambdaSynth
+    from skaal.deploy.aws.dynamodb import DynamoDBSynth
+    from skaal.deploy.aws.eventbridge import EventBridgeLambdaSynth
+    from skaal.deploy.aws.lambda_fn import PlainLambdaSynth
+    from skaal.deploy.aws.postgres import PostgresSynth
+    from skaal.deploy.aws.redis import RedisSynth
+    from skaal.deploy.aws.s3 import S3Synth
+    from skaal.deploy.aws.secrets import SecretsManagerSynth
+    from skaal.deploy.aws.sqs import SqsChannelSynth
+    from skaal.deploy.aws.sqs_worker import SqsWorkerSynth
 
-    modules = [
-        apigw_lambda, dynamodb, eventbridge, lambda_fn, postgres,
-        redis, s3, secrets, sqs, sqs_worker,
+    synth_classes = [
+        ApigwLambdaSynth, DynamoDBSynth, EventBridgeLambdaSynth, PlainLambdaSynth,
+        PostgresSynth, RedisSynth, S3Synth, SecretsManagerSynth, SqsChannelSynth,
+        SqsWorkerSynth,
     ]
-    for module in modules:
-        assert hasattr(module, "SPEC"), f"{module.__name__} missing SPEC"
-        assert hasattr(module, "synthesize"), f"{module.__name__} missing synthesize"
-        assert module.SPEC.backends, f"{module.__name__} SPEC.backends is empty"
-        assert module.SPEC.kinds, f"{module.__name__} SPEC.kinds is empty"
+    for cls in synth_classes:
+        assert issubclass(cls, SynthModule), f"{cls.__name__} not a SynthModule"
+        assert hasattr(cls, "SPEC"), f"{cls.__name__} missing SPEC class var"
+        assert cls.SPEC.backends, f"{cls.__name__} SPEC.backends is empty"
+        assert cls.SPEC.kinds, f"{cls.__name__} SPEC.kinds is empty"
+        assert callable(cls.synthesize), f"{cls.__name__} missing synthesize method"
+
+
+def test_lambda_subclasses_share_the_base_scaffold() -> None:
+    """The four Lambda-shaped synths inherit from `LambdaSynth`."""
+    from skaal.deploy.aws._lambda import LambdaSynth
+    from skaal.deploy.aws.apigw_lambda import ApigwLambdaSynth
+    from skaal.deploy.aws.eventbridge import EventBridgeLambdaSynth
+    from skaal.deploy.aws.lambda_fn import PlainLambdaSynth
+    from skaal.deploy.aws.sqs_worker import SqsWorkerSynth
+
+    for cls in (PlainLambdaSynth, ApigwLambdaSynth, EventBridgeLambdaSynth, SqsWorkerSynth):
+        assert issubclass(cls, LambdaSynth), f"{cls.__name__} should inherit from LambdaSynth"

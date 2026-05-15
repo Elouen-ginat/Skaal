@@ -24,6 +24,7 @@ The four types in this module form the contract:
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -148,13 +149,13 @@ SynthFn = Callable[[SynthContext[Any]], SynthResult]
 
 
 class SynthSpec(BaseModel):
-    """Per-module metadata declared by every synth module.
+    """Per-class metadata declared by every `SynthModule` subclass.
 
-    Each synth module under a target package exports `SPEC: SynthSpec`
-    alongside its `synthesize` function. The target's registration step
-    walks each module's `SPEC` so the dispatch table is the
-    declaration; adding a new backend is "drop a module + list it in
-    `_MODULES`" rather than "edit a dict literal".
+    Each `SynthModule` subclass declares `SPEC: ClassVar[SynthSpec]`
+    listing the backend names it serves and the resource kinds it
+    supports. `BaseDeployTarget.from_classes(...)` walks each class's
+    `SPEC` to build the dispatch table; the binder and the deploy
+    walker both rely on this metadata to validate themselves.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -162,6 +163,32 @@ class SynthSpec(BaseModel):
     backends: tuple[str, ...]
     kinds: frozenset[ResourceKind]
     description: str = ""
+
+
+class SynthModule(Generic[ConfigT], ABC):
+    """Abstract base for one synth contribution.
+
+    Subclasses declare `SPEC` as a `ClassVar[SynthSpec]` (which backend
+    names + resource kinds they serve) and override `synthesize(ctx)`
+    to emit Pulumi resources. Concrete subclasses are usually stateless
+    singletons — `BaseDeployTarget.from_classes(...)` instantiates each
+    once and stores the bound `synthesize` method in its dispatch table.
+
+    The `Generic[ConfigT]` parameter ties a synth class to its target's
+    `TargetConfig` subclass, so `class DynamoDBSynth(SynthModule[AwsConfig])`
+    gets `ctx.config: AwsConfig` typed automatically.
+
+    Adding a shared scaffold (e.g. the Lambda image/IAM/log-group
+    boilerplate) is a normal subclass-with-helpers pattern; the four
+    `LambdaSynth` subclasses in `skaal/deploy/aws/_lambda.py` exercise
+    this directly.
+    """
+
+    SPEC: ClassVar[SynthSpec]
+
+    @abstractmethod
+    def synthesize(self, ctx: SynthContext[ConfigT]) -> SynthResult:
+        """Emit the Pulumi resources for `ctx.resource`."""
 
 
 @runtime_checkable
@@ -210,6 +237,7 @@ __all__ = [
     "DeployTarget",
     "SynthContext",
     "SynthFn",
+    "SynthModule",
     "SynthResult",
     "SynthSpec",
     "TargetConfig",
