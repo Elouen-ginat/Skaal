@@ -1,15 +1,27 @@
 """Adapter that exposes `@app.function` callables as HTTP routes.
 
-The route shape is ``POST /<bare_name>`` with a JSON request body. The
-body is passed as ``**kwargs`` to the wrapped callable (consistent with
-`Module.invoke(name, **kwargs)`). Errors propagate as 500s; the deploy
-layer will reshape this contract once API Gateway / Lambda wiring lands.
+For regular coroutine functions the adapter both:
+
+* Adds a ``POST /<bare_name>`` Starlette route whose JSON body is
+  spread as ``**kwargs`` to the resilience-wrapped callable.
+* Registers the same wrapped callable in
+  `runtime.state.invokables` so `Module.invoke(...)` dispatches
+  through the identical chain without round-tripping HTTP.
+
+For async-generator functions (``async def fn(): yield ...``) the
+adapter only populates `runtime.state.invokable_streams` — the HTTP
+route would have to be SSE-shaped and that wiring is its own work
+item. Users surface streams via their mounted FastAPI / Starlette
+routes plus `app.invoke_stream(...)`.
+
+Errors on the HTTP path propagate as 500s; the deploy layer will
+reshape this contract once API Gateway / Lambda wiring lands.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
@@ -24,10 +36,27 @@ if TYPE_CHECKING:
 
 
 def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
-    """Wire ``target`` (the user's callable) onto the runtime as a route."""
+    """Wire ``target`` (the user's callable) onto the runtime."""
     if bound.external:
         # External functions are not provisioned and not routed; the user
         # is expected to invoke them through `Environment.backends[...]`.
+        return
+
+    bare: str = bound.inferred.source.bare_name
+    # `Module._resolve_invokable` returns the `<app.name>.<bare>` form
+    # built by `_collect_all`; the in-process invokable registries must
+    # be keyed the same way so `runtime.invoke(name, ...)` finds the
+    # entry.
+    qualified: str = f"{runtime.app.name}.{bare}" if runtime.app.name else bare
+
+    underlying: Any = getattr(target, "__wrapped__", target)
+    if inspect.isasyncgenfunction(underlying):
+        # Streams skip the resilience chain (retry on a partial stream
+        # is ill-defined) and skip the HTTP route. Users wrap the
+        # iterator in a Starlette `StreamingResponse` themselves via
+        # `app.invoke_stream(...)`.
+        stream_handler: Callable[..., AsyncIterator[Any]] = underlying
+        runtime.state.invokable_streams[qualified] = stream_handler
         return
 
     policies: ResiliencePolicies = (
@@ -42,7 +71,8 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         bulkhead=policies.bulkhead,
     )
 
-    bare: str = bound.inferred.source.bare_name
+    runtime.state.invokables[qualified] = wrapped
+
     path: str = f"/{bare}"
 
     async def endpoint(request: Request) -> JSONResponse:

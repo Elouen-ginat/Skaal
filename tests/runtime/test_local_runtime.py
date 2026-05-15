@@ -118,3 +118,99 @@ async def test_runtime_function_endpoint_responds(tmp_path: Path) -> None:
     # under the hood, and importing it pulls in the type the endpoint
     # callable receives.
     _ = Request
+
+
+async def test_runtime_invoke_dispatches_in_process() -> None:
+    app = App("svc")
+
+    @app.function()
+    async def echo(value: str) -> dict[str, str]:
+        return {"value": value}
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    result = await runtime.invoke("svc.echo", {"value": "hi"})
+    assert result == {"value": "hi"}
+
+
+async def test_runtime_invoke_unknown_raises_key_error() -> None:
+    app = App("svc")
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    with pytest.raises(KeyError, match=r"svc\.nope"):
+        await runtime.invoke("svc.nope", {})
+
+
+async def test_runtime_invoke_stream_yields_items() -> None:
+    app = App("svc")
+
+    @app.function()
+    async def stream(prompt: str):
+        for token in prompt.split():
+            yield token
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    collected = [item async for item in runtime.invoke_stream("svc.stream", {"prompt": "a b c"})]
+    assert collected == ["a", "b", "c"]
+
+
+async def test_runtime_invoke_stream_unknown_raises_key_error() -> None:
+    app = App("svc")
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    with pytest.raises(KeyError, match=r"svc\.nope"):
+        runtime.invoke_stream("svc.nope", {})
+
+
+async def test_async_generator_function_skips_http_route() -> None:
+    """Async generators register as streams only; no HTTP route is added."""
+    app = App("svc")
+
+    @app.function()
+    async def stream(prompt: str):
+        yield prompt
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    assert "svc.stream" in runtime.state.invokable_streams
+    assert "svc.stream" not in runtime.state.invokables
+    assert [r.path for r in runtime.routes] == []
+
+
+async def test_lifespan_binds_runtime_to_app() -> None:
+    from starlette.testclient import TestClient
+
+    app = App("svc")
+
+    @app.function()
+    async def double(x: int) -> dict[str, int]:
+        return {"x": x * 2}
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = bind(app.infer(), env, LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    # Before the lifespan starts, `app.invoke(...)` cannot dispatch.
+    with pytest.raises(RuntimeError, match="No active Skaal runtime"):
+        await app.invoke(double, x=3)
+
+    # Inside the lifespan, the runtime is bound and dispatch works.
+    asgi = runtime.build_asgi()
+    with TestClient(asgi):
+        result = await app.invoke(double, x=3)
+        assert result == {"x": 6}
+
+    # Once the lifespan exits, the binding is released again.
+    with pytest.raises(RuntimeError, match="No active Skaal runtime"):
+        await app.invoke(double, x=3)
