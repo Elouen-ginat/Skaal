@@ -1,0 +1,42 @@
+"""Boot-time setup for `handler.py` — logging, secret hydration, warm-up.
+
+Rendered from `skaal/deploy/templates/aws/bootstrap.py.j2`. Edits to this
+file are overwritten on the next build.
+"""
+
+from __future__ import annotations
+
+import importlib
+import logging
+import os
+from typing import Any
+
+_LOG = logging.getLogger("skaal.lambda")
+_LOG.setLevel(os.environ.get("SKAAL_LOG_LEVEL", "INFO"))
+
+
+def load_app() -> Any:
+    """Import the user's `App` instance from ``SKAAL_APP_TARGET``."""
+    target = os.environ.get("SKAAL_APP_TARGET", "{{ app_target }}")
+    if ":" not in target:
+        raise RuntimeError(
+            f"SKAAL_APP_TARGET={target!r} is not a `module:attribute` reference"
+        )
+    module_path, attr = target.split(":", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, attr)
+
+
+def warm_up(app: Any) -> None:
+    """Run one-shot setup before the first invocation.
+
+    Phase 4 keeps this deliberately small: secret hydration and backend
+    client warm-up land alongside the per-backend deploy synth modules.
+    """
+    _LOG.info(
+        "skaal.lambda boot: app=%r env=%s target=%s fingerprint=%s",
+        getattr(app, "name", "?"),
+        os.environ.get("SKAAL_ENV", "?"),
+        os.environ.get("SKAAL_TARGET", "?"),
+        os.environ.get("SKAAL_BOUND_FINGERPRINT", "?"),
+    )

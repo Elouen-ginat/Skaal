@@ -30,7 +30,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         raise RuntimeAdapterMissing(f"job/{bound.backend}")
 
-    bare: str = bound.inferred.id.split(":")[-1].split(".")[-1]
+    bare: str = bound.inferred.source.bare_name
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     runtime.state.job_queues[bare] = queue
     worker_task: asyncio.Task[None] | None = None

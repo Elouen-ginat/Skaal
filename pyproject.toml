@@ -60,6 +60,7 @@ runtime = [
 ]
 deploy = [
     "docker>=7.1",
+    "jinja2>=3.1",
     "pulumi>=3.0",
     "pulumi-docker>=4.9",
 ]
@@ -68,6 +69,7 @@ aws = [
     "s3fs>=2025.3.0",
     "pulumi-aws>=6.0",
     "asyncpg>=0.29",
+    "mangum>=0.17",
 ]
 gcp = [
     "google-auth>=2.32",
@@ -114,6 +116,7 @@ test = [
     "fakeredis>=2.23",
     "fastapi",
     "python-multipart>=0.0.5",
+    "jinja2>=3.1",
 ]
 lint = [
     "ruff>=0.8.6",
@@ -248,24 +251,3 @@ directory = "htmlcov"
 [tool.bandit]
 exclude_dirs = ["tests", "skaal/deploy/templates", "examples"]
 skips = ["B101"]
-
-# ── Skaal project defaults ────────────────────────────────────────────────────
-# All fields are optional. CLI flags and SKAAL_* env vars take precedence.
-
-[tool.skaal.build.modules."examples.07_file_upload_api.app"]
-dependencies = ["python-multipart>=0.0.5"]
-
-[tool.skaal.build.targets.local]
-dependencies = ["skaal[serve,runtime]", "gunicorn>=22.0"]
-
-[tool.skaal.build.targets.gcp]
-dependencies = ["skaal[serve,runtime,gcp]"]
-
-[tool.skaal.build.targets.gcp.variants.wsgi]
-dependencies = ["gunicorn>=22.0"]
-
-[tool.skaal.build.targets.aws]
-dependencies = ["skaal[runtime,aws]"]
-
-[tool.skaal.build.targets.aws.variants.wsgi]
-dependencies = ["mangum>=0.17"]
