@@ -19,7 +19,7 @@ Subclasses override:
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from types import MappingProxyType
+from threading import Lock
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from skaal.deploy._protocol import (
@@ -66,7 +66,11 @@ class BaseDeployTarget(DeployTarget):
         *,
         default_config: TargetConfig | None = None,
     ) -> None:
-        self._synth: Mapping[str, SynthFn] = MappingProxyType(dict(synth))
+        # Mutable so plugins can call `register_synth(...)` after the
+        # target is built. The public `lookup_synth` / `supported_backends`
+        # methods return snapshots — callers see read-only views.
+        self._synth: dict[str, SynthFn] = dict(synth)
+        self._synth_lock: Lock = Lock()
         self._default_config: TargetConfig = (
             default_config if default_config is not None else self._config_cls()
         )
@@ -109,11 +113,46 @@ class BaseDeployTarget(DeployTarget):
                 dispatch[backend] = module.synthesize
         return cls(dispatch, default_config=default_config)
 
+    def register_synth(self, module: Any) -> None:
+        """Add a plugin-contributed synth module to this target.
+
+        The module must expose `SPEC: SynthSpec` (which lists the backend
+        names it serves) and a `synthesize` callable. Re-registering a
+        backend with the same function is a silent no-op so plugins stay
+        idempotent; conflicting registrations raise.
+
+        Raises:
+            SkaalDeployError: If `module` lacks `SPEC` / `synthesize`, or
+                a different synth is already registered for one of its
+                backend names.
+        """
+        if not hasattr(module, "SPEC") or not hasattr(module, "synthesize"):
+            raise SkaalDeployError(
+                f"Module {getattr(module, '__name__', module)!r} is not "
+                "a synth module: missing `SPEC` or `synthesize`."
+            )
+        synthesize = module.synthesize
+        with self._synth_lock:
+            for backend in module.SPEC.backends:
+                existing = self._synth.get(backend)
+                if existing is synthesize:
+                    continue
+                if existing is not None:
+                    raise SkaalDeployError(
+                        f"Backend {backend!r} on target "
+                        f"{self.target.value!r} is already wired to "
+                        f"{existing!r}; a plugin tried to override it "
+                        f"with {synthesize!r}."
+                    )
+                self._synth[backend] = synthesize
+
     def lookup_synth(self, backend_name: str) -> SynthFn | None:
-        return self._synth.get(backend_name)
+        with self._synth_lock:
+            return self._synth.get(backend_name)
 
     def supported_backends(self) -> frozenset[str]:
-        return frozenset(self._synth)
+        with self._synth_lock:
+            return frozenset(self._synth)
 
     def default_config(self) -> TargetConfig:
         return self._default_config

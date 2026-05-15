@@ -26,6 +26,7 @@ target instance returned by `get_target(env.target)`.
 from __future__ import annotations
 
 from skaal.cli._load import AppSpec
+from skaal.deploy._base_target import BaseDeployTarget
 from skaal.deploy._protocol import (
     DeployTarget,
     SynthContext,
@@ -53,15 +54,19 @@ from skaal.deploy.program import (
     synthesize_stack,
 )
 from skaal.deploy.tags import tags_for
+from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
 
 __all__ = [
     "AppSpec",
+    "BaseDeployTarget",
     "BuildContext",
     "BuildManifest",
     "BuildPyProject",
     "DeployTarget",
     "ManifestResourceEntry",
+    "PluginRegistry",
     "PulumiProgram",
+    "SkaalPlugin",
     "SkaalTags",
     "SynthContext",
     "SynthFn",
@@ -70,6 +75,7 @@ __all__ = [
     "TargetConfig",
     "build_artefacts",
     "get_target",
+    "load_plugins",
     "pulumi_program_for",
     "register_target",
     "registered_targets",

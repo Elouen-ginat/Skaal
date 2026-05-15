@@ -44,11 +44,15 @@ def register_target(target: DeployTarget) -> None:
 def get_target(target: Target) -> DeployTarget:
     """Return the registered target for `target` or raise.
 
+    Triggers lazy plugin discovery on first call so external libs that
+    declare a target via the ``skaal.plugins`` entry-point group have a
+    chance to register themselves before the lookup decides "no such
+    target".
+
     Raises:
-        SkaalDeployError: If no target has been registered for `target`
-            (typically because the target's module has not been imported,
-            or the optional extras are missing).
+        SkaalDeployError: If no target has been registered for `target`.
     """
+    _ensure_plugins_loaded()
     deploy_target = _TARGETS.get(target)
     if deploy_target is None:
         registered = ", ".join(sorted(t.value for t in _TARGETS)) or "(none)"
@@ -56,15 +60,28 @@ def get_target(target: Target) -> DeployTarget:
             f"No deploy target registered for {target.value!r}. "
             f"Registered targets: {registered}. Import the target's "
             "module (e.g. `import skaal.deploy.aws`) before invoking "
-            "the program callable."
+            "the program callable, or install a plugin that contributes it."
         )
     return deploy_target
 
 
 def registered_targets() -> Mapping[Target, DeployTarget]:
     """Return a snapshot of every currently-registered target."""
+    _ensure_plugins_loaded()
     with _LOCK:
         return dict(_TARGETS)
+
+
+def _ensure_plugins_loaded() -> None:
+    """Trigger lazy plugin discovery on first lookup.
+
+    Deferred import avoids a module-load cycle: `skaal.plugins` imports
+    `register_target` from this module, and this module asks
+    `skaal.plugins` to load.
+    """
+    from skaal.plugins import load_plugins
+
+    load_plugins()
 
 
 def _reset_for_tests() -> None:
