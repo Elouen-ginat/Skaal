@@ -1,21 +1,27 @@
-"""S3 synth module — emit one `aws.s3.BucketV2` per `BLOB` resource.
+"""S3 synth — emit one `aws.s3.BucketV2` per `BLOB` resource.
 
-The bucket name is left to Pulumi auto-naming so multiple deploys of the
-same app stay isolated. Server-side encryption defaults to AES256 (S3's
-managed key). Lifecycle rules and bucket policies are intentionally
-omitted in Phase 4; the Phase 6 edge walker drives those once it knows
-which functions read/write which buckets.
+Configuration tunables live in `AwsConfig.s3`; override via
+``[env.<name>.backends.aws.options.s3]`` in `skaal.toml`.
 """
 
 from __future__ import annotations
 
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("s3",),
+    kinds=frozenset({ResourceKind.BLOB}),
+    description="S3 bucket with server-side encryption.",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create one S3 bucket for a `BLOB` bound resource."""
+    cfg = ctx.config.s3
     bucket = aws.s3.BucketV2(
         ctx.pulumi_name,
         tags=ctx.tags,
@@ -27,13 +33,13 @@ def synthesize(ctx: SynthContext) -> SynthResult:
             aws.s3.BucketServerSideEncryptionConfigurationV2RuleArgs(
                 apply_server_side_encryption_by_default=(
                     aws.s3.BucketServerSideEncryptionConfigurationV2RuleApplyServerSideEncryptionByDefaultArgs(
-                        sse_algorithm="AES256"
+                        sse_algorithm=cfg.sse_algorithm
                     )
                 )
             )
         ],
     )
-    env_key = f"SKAAL_BUCKET_{ctx.resource_slug.replace('-', '_').upper()}"
+    env_key = f"{cfg.env_var_prefix}{ctx.slug_key}"
     return SynthResult(
         resource_id=ctx.resource_id,
         primary=bucket,
@@ -42,4 +48,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

@@ -24,7 +24,12 @@ from skaal.binding.lock import write_lock
 from skaal.binding.model import BoundPlan, Environment, LockEntry, LockFile
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import AppSpec, load_app, load_plan
-from skaal.deploy import PulumiProgram, build_artefacts, pulumi_program_for
+from skaal.deploy import (
+    PulumiProgram,
+    build_artefacts,
+    get_target,
+    pulumi_program_for,
+)
 from skaal.errors import MissingExtraError, SkaalDeployError
 
 app = typer.Typer(
@@ -115,8 +120,9 @@ def _run_pulumi(
     """Invoke the Pulumi Automation API against `program`.
 
     Imports `pulumi.automation` lazily so the rest of the CLI does not
-    pay the import cost (and the broader test suite does not need the
-    optional extras).
+    pay the import cost. Stack naming and stack-config wiring delegate
+    to the registered `DeployTarget` so a new cloud target plugs in
+    without editing this file.
     """
     try:
         from pulumi import automation as auto
@@ -126,8 +132,14 @@ def _run_pulumi(
             "`pip install 'skaal[deploy,aws]'`."
         ) from exc
 
+    # Importing the target package registers the target; the program
+    # callable would do this on invocation, but we need the target
+    # registered here too for stack-name / stack-config wiring.
+    __import__(f"skaal.deploy.{env.target.value}")
+    target = get_target(env.target)
+
     project_name = bound.app or "skaal"
-    stack_name = f"{project_name}-{env.name}"
+    stack_name = target.stack_name(bound, env)
     console.print(
         f"Pulumi stack [bold]{stack_name}[/bold] (project=[cyan]{project_name}[/cyan])"
     )
@@ -137,8 +149,8 @@ def _run_pulumi(
         project_name=project_name,
         program=program,
     )
-    if env.region:
-        stack.set_config("aws:region", auto.ConfigValue(value=env.region))
+    for key, value in target.stack_config(env).items():
+        stack.set_config(key, auto.ConfigValue(value=value))
 
     try:
         if preview:

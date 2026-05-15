@@ -1,32 +1,44 @@
 """`skaal.deploy` — generate cloud artefacts from a `BoundPlan`.
 
-The deploy layer is the Phase 4 rewire of `0.3.x`'s ``skaal.deploy`` against
-the new `BoundPlan` pipeline (ADR 028 §6.2 / ADR 032). Public entry points:
+Public entry points:
 
 - `build_artefacts(bound, env, app_spec)` — pure templating; renders the
   Jinja2 tree under `skaal/deploy/templates/<target>/` to
   ``./.skaal/build/<env>/`` and returns the directory it wrote to. No
-  Pulumi import, no network access. The per-resource artefacts are a
-  `Dockerfile`, `handler.py`, `bootstrap.py`, and a `pyproject.toml`
-  consumed by `uv` inside the rendered Dockerfile.
-- `pulumi_program_for(bound, app, env)` *(Phase 4 follow-up)* — returns a
-  Pulumi-Automation-API callable that provisions the resources the
-  `BoundPlan` describes; consumed by `skaal deploy`.
+  Pulumi import, no network access.
+- `pulumi_program_for(bound, env, build_dir)` — returns a typed
+  `PulumiProgram` callable for the Pulumi Automation API. Defers all
+  cloud-SDK imports until the closure is invoked.
+- `synthesize_stack(bound, env, build_dir)` — programmatic entry point
+  for the same dispatch logic without the Pulumi Automation wrapper
+  (used by tests with `pulumi.runtime.set_mocks`).
+- `register_target(...)` / `get_target(...)` / `registered_targets()` —
+  the target registry. Each `skaal.deploy.<target>` package registers
+  itself at import time; adding a new target (GCP, Azure, …) is a matter
+  of dropping a new package and registering its `DeployTarget`.
 
-Build-time data structures are all pydantic models in
-`skaal.deploy.models`: `SkaalTags`, `BuildContext`, `BuildManifest`,
-`ManifestResourceEntry`, `BuildPyProject`. Re-exported here for
-programmatic consumers.
-
-The package layout deliberately mirrors the `BoundResource.backend` token
-names: each AWS-targeted backend has a one-file synth module under
-`skaal/deploy/aws/`. Phase 4 of ADR 028 ships AWS-first; the GCP tree
-lands in a 0.4.x point release (ADR 032 §"Out of scope").
+The deploy layer never reaches into a target package directly. It
+dispatches through the `DeployTarget` protocol — synth dispatch, stack
+naming, config loading, and required-extras checks all flow through the
+target instance returned by `get_target(env.target)`.
 """
 
 from __future__ import annotations
 
 from skaal.cli._load import AppSpec
+from skaal.deploy._protocol import (
+    DeployTarget,
+    SynthContext,
+    SynthFn,
+    SynthResult,
+    SynthSpec,
+    TargetConfig,
+)
+from skaal.deploy._registry import (
+    get_target,
+    register_target,
+    registered_targets,
+)
 from skaal.deploy.build import build_artefacts
 from skaal.deploy.models import (
     BuildContext,
@@ -35,7 +47,11 @@ from skaal.deploy.models import (
     ManifestResourceEntry,
     SkaalTags,
 )
-from skaal.deploy.program import PulumiProgram, pulumi_program_for
+from skaal.deploy.program import (
+    PulumiProgram,
+    pulumi_program_for,
+    synthesize_stack,
+)
 from skaal.deploy.tags import tags_for
 
 __all__ = [
@@ -43,10 +59,20 @@ __all__ = [
     "BuildContext",
     "BuildManifest",
     "BuildPyProject",
+    "DeployTarget",
     "ManifestResourceEntry",
     "PulumiProgram",
     "SkaalTags",
+    "SynthContext",
+    "SynthFn",
+    "SynthResult",
+    "SynthSpec",
+    "TargetConfig",
     "build_artefacts",
+    "get_target",
     "pulumi_program_for",
+    "register_target",
+    "registered_targets",
+    "synthesize_stack",
     "tags_for",
 ]

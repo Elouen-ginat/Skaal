@@ -1,9 +1,7 @@
 """SQS channel synth — `aws.sqs.Queue` per `CHANNEL` bound to `sqs`.
 
-Phase 4 emits a vanilla standard queue tagged with the Skaal tag set. The
-visibility timeout defaults to AWS's 30-second default and the message
-retention defaults to four days; both will become configurable through
-`ResourceOverrides.options` in a follow-up.
+Configuration tunables live in `AwsConfig.sqs`; override via
+``[env.<name>.backends.aws.options.sqs]`` in `skaal.toml`.
 
 The `sqs-lambda-worker` JOB backend produces its own queue via
 `skaal.deploy.aws.sqs_worker.synthesize`; this module covers the
@@ -14,16 +12,26 @@ from __future__ import annotations
 
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("sqs",),
+    kinds=frozenset({ResourceKind.CHANNEL}),
+    description="SQS standard queue for pub/sub channels.",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create one SQS queue for a `CHANNEL` bound resource."""
+    cfg = ctx.config.sqs
     queue = aws.sqs.Queue(
         ctx.pulumi_name,
+        visibility_timeout_seconds=cfg.visibility_timeout_s,
         tags=ctx.tags,
     )
-    env_key = f"SKAAL_CHANNEL_{ctx.resource_slug.replace('-', '_').upper()}_URL"
+    env_key = f"{cfg.env_var_prefix}{ctx.slug_key}{cfg.env_var_suffix}"
     return SynthResult(
         resource_id=ctx.resource_id,
         primary=queue,
@@ -31,4 +39,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

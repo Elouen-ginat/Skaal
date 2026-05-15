@@ -1,12 +1,9 @@
 """ElastiCache Redis synth — `aws.elasticache.ReplicationGroup`.
 
-Used for both `STORE` resources bound to the `redis` backend and
-`CHANNEL` resources bound to `redis-channel`. Phase 4 emits a single-node
-replication group on `cache.t3.micro` with no automatic failover; multi-AZ
-hardening lands in a follow-up driven by `ResourceOverrides.options`.
-
-The advertised env var (``SKAAL_REDIS_<slug>_URL``) is a ``rediss://``
-connection string the Lambda bootstrap consumes.
+Used for both `STORE` resources bound to `redis` and `CHANNEL` resources
+bound to `redis-channel`. Configuration tunables live in
+`AwsConfig.redis`; override via
+``[env.<name>.backends.aws.options.redis]`` in `skaal.toml`.
 """
 
 from __future__ import annotations
@@ -14,28 +11,38 @@ from __future__ import annotations
 import pulumi
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("redis", "redis-channel"),
+    kinds=frozenset({ResourceKind.STORE, ResourceKind.CHANNEL}),
+    description="ElastiCache Redis replication group (store + channel forms).",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create one ElastiCache Redis cluster for a `STORE` or `CHANNEL` resource."""
+    cfg = ctx.config.redis
     rg = aws.elasticache.ReplicationGroup(
         ctx.pulumi_name,
         description=f"Skaal {ctx.resource_id}",
-        node_type="cache.t3.micro",
-        num_cache_clusters=1,
+        node_type=cfg.node_type,
+        num_cache_clusters=cfg.num_cache_clusters,
         engine="redis",
-        engine_version="7.1",
-        port=6379,
-        automatic_failover_enabled=False,
-        transit_encryption_enabled=True,
-        at_rest_encryption_enabled=True,
+        engine_version=cfg.engine_version,
+        port=cfg.port,
+        automatic_failover_enabled=cfg.automatic_failover,
+        transit_encryption_enabled=cfg.transit_encryption,
+        at_rest_encryption_enabled=cfg.at_rest_encryption,
         tags=ctx.tags,
     )
+    scheme = "rediss" if cfg.transit_encryption else "redis"
     url = pulumi.Output.concat(
-        "rediss://", rg.primary_endpoint_address, ":6379"
+        f"{scheme}://", rg.primary_endpoint_address, f":{cfg.port}"
     )
-    env_key = f"SKAAL_REDIS_{ctx.resource_slug.replace('-', '_').upper()}_URL"
+    env_key = f"{cfg.env_var_prefix}{ctx.slug_key}{cfg.env_var_suffix}"
     return SynthResult(
         resource_id=ctx.resource_id,
         primary=rg,
@@ -43,4 +50,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

@@ -1,11 +1,10 @@
-"""APIGW + Lambda synth — `aws.apigatewayv2.Api` fronting one Lambda image.
+"""APIGW + Lambda synth — `aws.apigatewayv2.Api` fronting a Lambda image.
 
-Used for `ASGI_SERVICE` resources (`app.mount(path, asgi_app)`). The
-Lambda inside is the same scaffold the plain ``lambda`` backend uses; the
-extra plumbing is the HTTP API, a single proxy integration, a route per
-mount path (Phase 4 emits one route covering the whole mount via
-``ANY {proxy+}``), and the Lambda permission that lets API Gateway invoke
-the function.
+Used for `ASGI_SERVICE` resources (`app.mount(path, asgi_app)`).
+Configuration tunables live in `AwsConfig.apigw` (route shape, stage) and
+`AwsConfig.lambda_defaults.asgi_*` (timeout/memory ASGI overrides);
+override either via ``[env.<name>.backends.aws.options.apigw]`` or
+``[env.<name>.backends.aws.options.lambda_defaults]`` in `skaal.toml`.
 """
 
 from __future__ import annotations
@@ -13,22 +12,35 @@ from __future__ import annotations
 import pulumi
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda_common import build_lambda
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("apigw-lambda",),
+    kinds=frozenset({ResourceKind.ASGI_SERVICE}),
+    description="API Gateway HTTPv2 fronting a Lambda container.",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create an APIGW HTTP API fronting one container Lambda."""
+    cfg = ctx.config
     overrides = ctx.resource.inferred.overrides
     scaffold = build_lambda(
         ctx,
-        timeout=int(overrides.timeout_s) if overrides.timeout_s else 29,
-        memory_mb=overrides.memory_mb or 1024,
+        timeout=(
+            int(overrides.timeout_s)
+            if overrides.timeout_s
+            else cfg.lambda_defaults.asgi_timeout_s
+        ),
+        memory_mb=overrides.memory_mb or cfg.lambda_defaults.asgi_memory_mb,
     )
 
     api = aws.apigatewayv2.Api(
         f"{ctx.pulumi_name}-api",
-        protocol_type="HTTP",
+        protocol_type=cfg.apigw.protocol_type,
         tags=ctx.tags,
     )
     integration = aws.apigatewayv2.Integration(
@@ -36,20 +48,20 @@ def synthesize(ctx: SynthContext) -> SynthResult:
         api_id=api.id,
         integration_type="AWS_PROXY",
         integration_uri=scaffold.function.invoke_arn,
-        integration_method="POST",
-        payload_format_version="2.0",
+        integration_method=cfg.apigw.integration_method,
+        payload_format_version=cfg.apigw.payload_format_version,
     )
     route = aws.apigatewayv2.Route(
         f"{ctx.pulumi_name}-route",
         api_id=api.id,
-        route_key="ANY /{proxy+}",
+        route_key=cfg.apigw.catch_all_route,
         target=pulumi.Output.concat("integrations/", integration.id),
     )
     stage = aws.apigatewayv2.Stage(
         f"{ctx.pulumi_name}-stage",
         api_id=api.id,
-        name="$default",
-        auto_deploy=True,
+        name=cfg.apigw.stage_name,
+        auto_deploy=cfg.apigw.auto_deploy,
         tags=ctx.tags,
     )
     permission = aws.lambda_.Permission(
@@ -67,4 +79,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

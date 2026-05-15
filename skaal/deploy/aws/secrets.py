@@ -1,29 +1,32 @@
-"""AWS Secrets Manager synth — one `aws.secretsmanager.Secret` per `SECRET` resource.
+"""Secrets Manager synth — `aws.secretsmanager.Secret` per `SECRET` resource.
 
-Phase 4 emits the secret container only. The actual secret *value* lives in
-``Environment.backends[<name>].options`` or is supplied out-of-band by the
-operator after the first deploy; ADR 028 §6.11 explicitly forbids
-embedding secrets in generated Pulumi programs.
-
-The advertised env var (``SKAAL_SECRET_<slug>_ARN``) lets the Lambda
-bootstrap layer call `secretsmanager:GetSecretValue` on the correct ARN
-at warm-up time.
+Configuration tunables live in `AwsConfig.secrets`; override via
+``[env.<name>.backends.aws.options.secrets]`` in `skaal.toml`.
 """
 
 from __future__ import annotations
 
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("aws-secrets-manager",),
+    kinds=frozenset({ResourceKind.SECRET}),
+    description="AWS Secrets Manager container (value supplied out-of-band).",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create one Secrets Manager container for a `SECRET` bound resource."""
+    cfg = ctx.config.secrets
     secret = aws.secretsmanager.Secret(
         ctx.pulumi_name,
         tags=ctx.tags,
     )
-    env_key = f"SKAAL_SECRET_{ctx.resource_slug.replace('-', '_').upper()}_ARN"
+    env_key = f"{cfg.env_var_prefix}{ctx.slug_key}{cfg.env_var_suffix}"
     return SynthResult(
         resource_id=ctx.resource_id,
         primary=secret,
@@ -31,4 +34,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

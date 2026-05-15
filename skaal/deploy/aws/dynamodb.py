@@ -1,32 +1,39 @@
-"""DynamoDB synth module — emit one `aws.dynamodb.Table` per `STORE` resource.
+"""DynamoDB synth — emit one `aws.dynamodb.Table` per `STORE` resource.
 
-Phase 4 ships a minimal table: a single string `pk` partition key, pay-per-request
-billing, and the canonical Skaal tag set. Secondary indexes from
-`InferredResource.indexes` and TTL configuration land in Phase 6 when the
-bytecode walker emits the necessary edges.
-
-The advertised env var (``SKAAL_TABLE_<slug>``) is consumed by the
-compute-side Lambda synth modules so the running container can read the
-table name without hard-coding it at build time.
+Configuration tunables live in `AwsConfig.dynamodb`; override via
+``[env.<name>.backends.aws.options.dynamodb]`` in `skaal.toml`.
 """
 
 from __future__ import annotations
 
 import pulumi_aws as aws
 
-from skaal.deploy.aws._context import SynthContext, SynthResult
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy.aws._config import AwsConfig
+from skaal.inference.model import ResourceKind
+
+SPEC = SynthSpec(
+    backends=("dynamodb",),
+    kinds=frozenset({ResourceKind.STORE}),
+    description="DynamoDB table for KV stores.",
+)
 
 
-def synthesize(ctx: SynthContext) -> SynthResult:
+def synthesize(ctx: SynthContext[AwsConfig]) -> SynthResult:
     """Create one DynamoDB table for a `STORE` bound resource."""
+    cfg = ctx.config.dynamodb
     table = aws.dynamodb.Table(
         ctx.pulumi_name,
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="pk",
-        attributes=[aws.dynamodb.TableAttributeArgs(name="pk", type="S")],
+        billing_mode=cfg.billing_mode,
+        hash_key=cfg.partition_key_name,
+        attributes=[
+            aws.dynamodb.TableAttributeArgs(
+                name=cfg.partition_key_name, type=cfg.partition_key_type
+            )
+        ],
         tags=ctx.tags,
     )
-    env_key = f"SKAAL_TABLE_{ctx.resource_slug.replace('-', '_').upper()}"
+    env_key = f"{cfg.env_var_prefix}{ctx.slug_key}"
     return SynthResult(
         resource_id=ctx.resource_id,
         primary=table,
@@ -34,4 +41,4 @@ def synthesize(ctx: SynthContext) -> SynthResult:
     )
 
 
-__all__ = ["synthesize"]
+__all__ = ["SPEC", "synthesize"]

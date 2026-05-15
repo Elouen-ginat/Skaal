@@ -17,11 +17,15 @@ pulumi = pytest.importorskip("pulumi")
 pytest.importorskip("pulumi_aws")
 pytest.importorskip("pulumi_docker")
 
+# Importing `skaal.deploy.aws` is what registers the AWS target so
+# `synthesize_stack` can dispatch through the registry. This is normally
+# done lazily by `pulumi_program_for`'s closure; tests call
+# `synthesize_stack` directly so they trigger the import explicitly.
+import skaal.deploy.aws  # noqa: E402, F401
 from skaal import App, Channel, Store  # noqa: E402
 from skaal.binding import bind  # noqa: E402
 from skaal.binding.model import Environment, LockFile, Target  # noqa: E402
-from skaal.deploy import build_artefacts  # noqa: E402
-from skaal.deploy.aws import synthesize_stack  # noqa: E402
+from skaal.deploy import build_artefacts, synthesize_stack  # noqa: E402
 from skaal.errors import SkaalDeployError  # noqa: E402
 
 
@@ -162,7 +166,7 @@ def test_synth_stack_unknown_backend_raises(tmp_path: Path) -> None:
         ),
     )
     env = _aws_env()
-    with pytest.raises(SkaalDeployError, match="No AWS synth module"):
+    with pytest.raises(SkaalDeployError, match="no synth registered"):
         synthesize_stack(bound, env, tmp_path)
 
 
