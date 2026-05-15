@@ -10,13 +10,17 @@ import pytest
 from skaal import App, Store
 from skaal.binding import bind
 from skaal.binding.model import Environment, LockFile, Target
-from skaal.deploy import build_artefacts
+from skaal.deploy import AppSpec, build_artefacts
 from skaal.errors import BuildError
 
 
 def _bound_for(app: App, *, env: Environment | None = None):
     env = env or Environment(name="prod", target=Target.AWS, region="us-east-1")
     return bind(app.infer(), env, LockFile()), env
+
+
+def _spec_for(app: App) -> AppSpec:
+    return AppSpec.for_app(app)
 
 
 def test_build_artefacts_writes_dockerfile_handler_bootstrap_requirements(
@@ -29,7 +33,7 @@ def test_build_artefacts_writes_dockerfile_handler_bootstrap_requirements(
         return {"hello": name}
 
     bound, env = _bound_for(app)
-    out = build_artefacts(bound, app, env, out_dir=tmp_path)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
     # One directory per non-external Lambda-shaped resource.
     subdirs = [p for p in out.iterdir() if p.is_dir()]
@@ -55,7 +59,7 @@ def test_build_artefacts_emits_manifest_with_resource_ids(tmp_path: Path) -> Non
         return x + 1
 
     bound, env = _bound_for(app)
-    out = build_artefacts(bound, app, env, out_dir=tmp_path)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
     manifest_path = out / "manifest.json"
     assert manifest_path.exists()
@@ -84,7 +88,7 @@ def test_build_artefacts_skips_storage_resources(tmp_path: Path) -> None:
         return await Cache.get(key) or {}
 
     bound, env = _bound_for(app)
-    out = build_artefacts(bound, app, env, out_dir=tmp_path)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
     subdirs = sorted(p.name for p in out.iterdir() if p.is_dir())
     # Cache (STORE → DynamoDB on AWS) does not get an artefact dir; only
@@ -105,14 +109,14 @@ def test_build_artefacts_rejects_non_aws_target(tmp_path: Path) -> None:
     bound, _ = _bound_for(app, env=env)
 
     with pytest.raises(BuildError, match="only supports target 'aws'"):
-        build_artefacts(bound, app, env, out_dir=tmp_path)
+        build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
 
 def test_build_artefacts_rejects_empty_app(tmp_path: Path) -> None:
     app = App("svc")
     bound, env = _bound_for(app)
     with pytest.raises(BuildError, match="No Lambda-shaped resources"):
-        build_artefacts(bound, app, env, out_dir=tmp_path)
+        build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
 
 def test_build_artefacts_renders_requirements_lines(tmp_path: Path) -> None:
@@ -125,15 +129,36 @@ def test_build_artefacts_renders_requirements_lines(tmp_path: Path) -> None:
     bound, env = _bound_for(app)
     out = build_artefacts(
         bound,
-        app,
         env,
+        _spec_for(app),
         out_dir=tmp_path,
-        requirements=["my-package==1.2.3", "another>=4.5"],
+        requirements=["skaal[runtime,aws]", "skaal[secrets-aws]"],
     )
     resource_dir = next(p for p in out.iterdir() if p.is_dir())
     req = (resource_dir / "requirements.txt").read_text(encoding="utf-8")
-    assert "my-package==1.2.3" in req
-    assert "another>=4.5" in req
+    assert "skaal[runtime,aws]" in req
+    assert "skaal[secrets-aws]" in req
+
+
+def test_build_artefacts_default_requirements_use_only_skaal_extras(
+    tmp_path: Path,
+) -> None:
+    """No bare third-party deps appear in the default requirements.txt."""
+    app = App("svc")
+
+    @app.function()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    bound, env = _bound_for(app)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
+    resource_dir = next(p for p in out.iterdir() if p.is_dir())
+    req_lines = [
+        line.strip()
+        for line in (resource_dir / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert req_lines == ["skaal[runtime,aws]"]
 
 
 def test_build_artefacts_renders_app_target_into_bootstrap(tmp_path: Path) -> None:
@@ -146,10 +171,9 @@ def test_build_artefacts_renders_app_target_into_bootstrap(tmp_path: Path) -> No
     bound, env = _bound_for(app)
     out = build_artefacts(
         bound,
-        app,
         env,
+        AppSpec(module="examples.todo_api", attribute="app"),
         out_dir=tmp_path,
-        app_target="examples.todo_api:app",
     )
     resource_dir = next(p for p in out.iterdir() if p.is_dir())
     bootstrap = (resource_dir / "bootstrap.py").read_text(encoding="utf-8")
@@ -168,7 +192,7 @@ def test_build_artefacts_uses_default_out_dir(
 
     bound, env = _bound_for(app)
     monkeypatch.chdir(tmp_path)
-    out = build_artefacts(bound, app, env)
+    out = build_artefacts(bound, env, _spec_for(app))
 
     assert out == Path(".skaal") / "build" / env.name
     assert (tmp_path / ".skaal" / "build" / env.name).is_dir()
@@ -183,7 +207,7 @@ def test_build_artefacts_resource_slug_is_filesystem_safe(tmp_path: Path) -> Non
         return {"hello": name}
 
     bound, env = _bound_for(app)
-    out = build_artefacts(bound, app, env, out_dir=tmp_path)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
     subdirs = [p.name for p in out.iterdir() if p.is_dir()]
     slug = subdirs[0]
     # Slug starts with the bare function name and ends with an 8-hex hash.
@@ -191,3 +215,21 @@ def test_build_artefacts_resource_slug_is_filesystem_safe(tmp_path: Path) -> Non
     suffix = slug.rsplit("-", 1)[-1]
     assert len(suffix) == 8
     assert all(c in "0123456789abcdef" for c in suffix)
+
+
+def test_build_artefacts_uses_app_spec_top_package_in_dockerfile(
+    tmp_path: Path,
+) -> None:
+    """`COPY {{ user_package }}` uses the parsed top package, not a re-split string."""
+    app = App("svc")
+
+    @app.function()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    bound, env = _bound_for(app)
+    spec = AppSpec(module="my_corp.payments.api", attribute="app")
+    out = build_artefacts(bound, env, spec, out_dir=tmp_path)
+    resource_dir = next(p for p in out.iterdir() if p.is_dir())
+    dockerfile = (resource_dir / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY my_corp" in dockerfile

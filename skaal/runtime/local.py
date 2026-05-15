@@ -180,8 +180,7 @@ class LocalRuntime:
 
     def _resolve(self, resource: BoundResource) -> Any:
         """Look up the live Python object behind a `BoundResource.id`."""
-        rid: str = resource.inferred.id
-        bare: str = rid.split(":")[-1].split(".")[-1]
+        bare: str = resource.inferred.source.bare_name
 
         registries: tuple[dict[str, Any], ...] = (
             self.app._storage,
@@ -205,7 +204,7 @@ class LocalRuntime:
         if resource.inferred.kind.value == "secret":
             return None
 
-        raise RuntimeResourceUnresolved(rid)
+        raise RuntimeResourceUnresolved(resource.inferred.id)
 
 
 def serve(

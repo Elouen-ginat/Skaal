@@ -18,7 +18,7 @@ import typer
 from rich.console import Console
 
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._load import load_app, load_bound_plan_with_env
+from skaal.cli._load import AppSpec, load_app, load_plan
 from skaal.deploy import build_artefacts
 
 app = typer.Typer(
@@ -59,20 +59,23 @@ def build(
         help="Python minor version embedded in the Dockerfile base image.",
     ),
 ) -> None:
-    skaal_app = load_app(target)
-    bound, env = load_bound_plan_with_env(skaal_app, env_name)
+    try:
+        app_spec = AppSpec.parse(target)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    skaal_app = load_app(app_spec)
+    loaded = load_plan(skaal_app, env_name)
 
     written = build_artefacts(
-        bound,
-        skaal_app,
-        env,
+        loaded.bound,
+        loaded.env,
+        app_spec,
         out_dir=out_dir,
-        app_target=target,
         python_version=python_version,
     )
 
-    console = Console()
-    console.print(
-        f"Built [bold]{len([r for r in bound.resources if not r.external])}[/bold] "
-        f"resource artefact(s) for [cyan]{env_name}[/cyan] → {written}"
+    artefact_count = sum(1 for r in loaded.bound.resources if not r.external)
+    Console().print(
+        f"Built [bold]{artefact_count}[/bold] resource artefact(s) for "
+        f"[cyan]{env_name}[/cyan] → {written}"
     )

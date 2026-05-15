@@ -25,6 +25,7 @@ ships AWS templates only; the GCP tree lands in a 0.4.x point release
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources as resources
 import json
 from collections.abc import Iterable
@@ -35,7 +36,7 @@ from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
 from skaal.errors import BuildError, MissingExtraError
 
 if TYPE_CHECKING:
-    from skaal.app import App
+    from skaal.cli._load import AppSpec
 
 
 _LAMBDA_KINDS = frozenset({"function", "asgi_service", "schedule", "job"})
@@ -43,12 +44,11 @@ _LAMBDA_KINDS = frozenset({"function", "asgi_service", "schedule", "job"})
 
 def build_artefacts(
     bound: BoundPlan,
-    app: App,
     env: Environment,
+    app_spec: AppSpec,
     *,
     out_dir: Path | None = None,
     requirements: Iterable[str] | None = None,
-    app_target: str | None = None,
     python_version: str = "3.11",
 ) -> Path:
     """Render every deploy artefact `bound` needs into ``out_dir``.
@@ -56,16 +56,18 @@ def build_artefacts(
     Args:
         bound: The bound plan to render. Resources whose backend does not
             need a build artefact (e.g. `Sqlite`, `DynamoDB`) are skipped.
-        app: The live `App` (used only for the package-import path).
         env: The active environment. ``env.target`` picks the template
             subdirectory.
+        app_spec: The parsed ``module:attribute`` reference for the live
+            `App`. The Dockerfile uses ``app_spec.top_package`` to know
+            which directory to copy into the build context; the generated
+            ``bootstrap.py`` imports the app via ``app_spec.reference``.
         out_dir: Destination directory. Defaults to
             ``./.skaal/build/<env.name>``.
         requirements: Extra pip requirements rendered into
-            ``requirements.txt``. Defaults to a minimal set covering the
-            skaal runtime + the AWS extras.
-        app_target: The ``module:attribute`` reference the generated
-            ``bootstrap.py`` imports. Defaults to ``<app.__module__>:app``.
+            ``requirements.txt``. Defaults to ``skaal[runtime,aws]`` —
+            every transitive third-party dep (mangum, asyncpg, …) is
+            pulled in through skaal's extras, not pinned in this code.
         python_version: Python minor version embedded in the Dockerfile
             base image (e.g. ``"3.11"``).
 
@@ -74,8 +76,8 @@ def build_artefacts(
         ``out_dir``).
 
     Raises:
-        BuildError: If the env target is not supported, no Lambda-shaped
-            resources are present, or template rendering fails.
+        BuildError: If the env target is not supported, or no
+            Lambda-shaped resources are present.
         MissingExtraError: If the templating dependency (`jinja2`) is not
             installed.
     """
@@ -86,7 +88,7 @@ def build_artefacts(
             "GCP support lands in a 0.4.x point release per ADR 032."
         )
 
-    env_module = _Jinja2(_template_root(env.target))
+    template_env = _Jinja2(_template_root(env.target))
     resolved_out = out_dir or Path(".skaal") / "build" / env.name
     resolved_out.mkdir(parents=True, exist_ok=True)
 
@@ -98,8 +100,9 @@ def build_artefacts(
             "to the app."
         )
 
-    resolved_app_target = app_target or _default_app_target(app)
-    resolved_requirements = list(requirements) if requirements is not None else _default_requirements()
+    resolved_requirements = (
+        list(requirements) if requirements is not None else _default_requirements()
+    )
 
     manifest_resources: list[dict[str, Any]] = []
     manifest: dict[str, Any] = {
@@ -113,18 +116,19 @@ def build_artefacts(
     }
 
     for resource in target_resources:
-        slug = _slug(resource.inferred.id)
+        slug = _slug_for(resource)
         resource_dir = resolved_out / slug
         resource_dir.mkdir(parents=True, exist_ok=True)
-        context = {
+        context: dict[str, Any] = {
             "app_name": bound.app,
             "env_name": env.name,
             "target": env.target.value,
-            "user_package": _user_package(app),
-            "app_target": resolved_app_target,
+            "user_package": app_spec.top_package,
+            "app_target": app_spec.reference,
             "python_version": python_version,
             "resource_id": resource.inferred.id,
             "resource_kind": resource.inferred.kind.value,
+            "resource_bare_name": resource.inferred.source.bare_name,
             "backend": resource.backend,
             "bound_fingerprint": bound.bound_fingerprint,
             "app_fingerprint": bound.app_fingerprint,
@@ -136,7 +140,7 @@ def build_artefacts(
             ("bootstrap.py.j2", "bootstrap.py"),
             ("requirements.txt.j2", "requirements.txt"),
         ):
-            template = env_module.get_template(template_name)
+            template = template_env.get_template(template_name)
             rendered = template.render(**context)
             (resource_dir / output_name).write_text(rendered, encoding="utf-8")
 
@@ -166,47 +170,29 @@ def _lambda_resources(resources_in: Iterable[BoundResource]) -> Iterable[BoundRe
             yield resource
 
 
-def _slug(resource_id: str) -> str:
-    """Return a filesystem-safe slug derived from a resource id.
+def _slug_for(resource: BoundResource) -> str:
+    """Return a filesystem-safe slug for a bound resource.
 
-    The slug keeps the bare class/function name plus a short hash of the
-    full id so two same-named resources in different modules do not
-    collide on disk.
+    The slug keeps the bare class/function name (from the typed
+    `SourceLocation.bare_name`) plus a short hash of the full id so two
+    same-named resources in different modules do not collide on disk.
     """
-    import hashlib
-
-    bare = resource_id.rsplit(":", 1)[-1].rsplit(".", 1)[-1] or "resource"
-    digest = hashlib.sha256(resource_id.encode("utf-8")).hexdigest()[:8]
+    bare = resource.inferred.source.bare_name or "resource"
+    digest = hashlib.sha256(resource.inferred.id.encode("utf-8")).hexdigest()[:8]
     safe = "".join(c if c.isalnum() or c in {"-", "_"} else "_" for c in bare)
     return f"{safe}-{digest}"
 
 
-def _user_package(app: App) -> str:
-    """Return the importable package the app lives under.
-
-    Used by the Dockerfile to know which directory to copy in. For
-    ``examples.todo_api`` (module form) the package is ``examples``; for
-    ``my_service.app`` it is ``my_service``.
-    """
-    module = getattr(type(app), "__module__", "") or ""
-    return module.split(".", 1)[0] if module else "skaal_user_app"
-
-
-def _default_app_target(app: App) -> str:
-    """Best-effort ``module:attribute`` reference for ``app``.
-
-    The CLI passes an explicit ``--app-target`` value when invoked, so
-    this is a fallback for programmatic callers.
-    """
-    module = getattr(type(app), "__module__", "") or "__main__"
-    return f"{module}:app"
-
-
 def _default_requirements() -> list[str]:
-    return [
-        "skaal[runtime,aws]",
-        "mangum>=0.17",
-    ]
+    """Default `requirements.txt` contents.
+
+    Returns only `skaal[...]` extras — every transitive third-party
+    dependency (mangum for ASGI-on-Lambda, asyncpg for Postgres,
+    boto3 for AWS clients, …) is pulled in through skaal's
+    optional-dependency table in ``pyproject.toml``. Pinning bare
+    package names here would split the dependency source-of-truth.
+    """
+    return ["skaal[runtime,aws]"]
 
 
 def _template_root(target: Target) -> Path:

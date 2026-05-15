@@ -20,10 +20,12 @@ lands in a 0.4.x point release (ADR 032 §"Out of scope").
 
 from __future__ import annotations
 
+from skaal.cli._load import AppSpec
 from skaal.deploy.build import build_artefacts
 from skaal.deploy.tags import tags_for
 
 __all__ = [
+    "AppSpec",
     "build_artefacts",
     "tags_for",
 ]

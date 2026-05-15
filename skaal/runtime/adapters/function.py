@@ -42,7 +42,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         bulkhead=policies.bulkhead,
     )
 
-    bare: str = bound.inferred.id.split(":")[-1].split(".")[-1]
+    bare: str = bound.inferred.source.bare_name
     path: str = f"/{bare}"
 
     async def endpoint(request: Request) -> JSONResponse:

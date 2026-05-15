@@ -38,12 +38,11 @@ def tags_for(
         A mapping of tag keys to string values. The mapping is fresh per
         call so callers can mutate / extend without aliasing.
     """
-    rid = resource.inferred.id
-    app_name = rid.split(":", 1)[0].split(".")[0] if rid else ""
+    inferred = resource.inferred
     return {
-        "skaal:app": app_name,
-        "skaal:resource_id": rid,
-        "skaal:kind": resource.inferred.kind.value,
+        "skaal:app": inferred.source.top_package,
+        "skaal:resource_id": inferred.id,
+        "skaal:kind": inferred.kind.value,
         "skaal:env": env.name,
         "skaal:target": env.target.value,
         "skaal:backend": resource.backend,

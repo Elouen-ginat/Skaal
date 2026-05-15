@@ -15,16 +15,22 @@ from skaal.inference.model import (
 
 
 def _make_resource(
-    rid: str = "myapp.svc:Cache",
     *,
+    module: str = "myapp.svc",
+    qualname: str = "Cache",
     backend: str = "redis",
     kind: ResourceKind = ResourceKind.STORE,
     external: bool = False,
 ) -> BoundResource:
+    """Build a `BoundResource` whose ``id`` and ``source`` agree.
+
+    Tests pass ``module`` / ``qualname`` once; the resource id is derived
+    so the fixture cannot drift from the parsed structure.
+    """
     inferred = InferredResource(
-        id=rid,
+        id=f"{module}:{qualname}",
         kind=kind,
-        source=SourceLocation(module="myapp.svc", qualname="Cache", file="?", line=1),
+        source=SourceLocation(module=module, qualname=qualname, file="?", line=1),
         overrides=ResourceOverrides(),
     )
     return BoundResource(
@@ -53,14 +59,14 @@ def test_tags_for_returns_canonical_keys() -> None:
 
 def test_tags_for_extracts_top_level_package_as_app() -> None:
     """``skaal:app`` is the first dotted segment of the resource module."""
-    resource = _make_resource(rid="my_corp.payments.api:Charges")
+    resource = _make_resource(module="my_corp.payments.api", qualname="Charges")
     env = Environment(name="prod", target=Target.AWS)
     tags = tags_for(resource, env, "deadbeef00000002")
     assert tags["skaal:app"] == "my_corp"
 
 
 def test_tags_for_handles_top_level_module() -> None:
-    resource = _make_resource(rid="counter:Counts", kind=ResourceKind.STORE)
+    resource = _make_resource(module="counter", qualname="Counts", kind=ResourceKind.STORE)
     env = Environment(name="local", target=Target.LOCAL)
     tags = tags_for(resource, env, "0" * 16)
     assert tags["skaal:app"] == "counter"

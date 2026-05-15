@@ -79,6 +79,27 @@ class SourceLocation(BaseModel):
             line = 0
         return cls(module=module, qualname=qualname, file=file, line=line)
 
+    @property
+    def top_package(self) -> str:
+        """First dotted segment of `module`.
+
+        Used as the `skaal:app` tag value and as the docker-context
+        directory to copy in. Returns the full `module` string when it
+        has no dots (top-level scripts, ``__main__``).
+        """
+        return self.module.partition(".")[0]
+
+    @property
+    def bare_name(self) -> str:
+        """Last dotted segment of `qualname`.
+
+        For free functions and top-level classes this is identical to
+        `qualname`; for nested classes (`Outer.Inner`) it is the
+        innermost name. Used as the HTTP route name and the on-disk
+        artefact slug prefix.
+        """
+        return self.qualname.rpartition(".")[-1]
+
 
 class SchemaRef(BaseModel):
     """Reference to the pydantic / SQLModel schema backing a resource."""
