@@ -60,6 +60,7 @@ runtime = [
 ]
 deploy = [
     "docker>=7.1",
+    "jinja2>=3.1",
     "pulumi>=3.0",
     "pulumi-docker>=4.9",
 ]
@@ -114,6 +115,7 @@ test = [
     "fakeredis>=2.23",
     "fastapi",
     "python-multipart>=0.0.5",
+    "jinja2>=3.1",
 ]
 lint = [
     "ruff>=0.8.6",
