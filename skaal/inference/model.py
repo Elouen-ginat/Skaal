@@ -135,8 +135,8 @@ class SchemaRef(BaseModel):
 class ResourceOverrides(BaseModel):
     """The full set of declaration-site knobs (ADR 028 §6.5).
 
-    ``backend`` is populated from the second generic parameter on the
-    primitive class (`Store[T, B]` / `Relational[T, B]` / `BlobStore[B]` /
+    ``backend`` is populated from the backend generic parameter on the
+    primitive class (`Store[T, B]` / `Relational[B]` / `BlobStore[B]` /
     `Channel[T, B]`) — see ADR 032 §4.4. ``external`` is set by
     `@app.external` to bypass the defaults / lock / env-override branches
     of the binder. ``options`` carries free-form declaration-site knobs

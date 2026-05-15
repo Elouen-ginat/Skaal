@@ -102,7 +102,7 @@ def _extract_backend_pin(cls: type) -> type[Backend] | None:
     * `Store[T, B]` / `BlobStore[B]` / `Channel[T, B]` keep the
       parametrisation visible on ``__orig_bases__``; the walk below
       picks the `Backend` subclass out of the generic args directly.
-    * `Relational[T, B]` flows through `SQLModelMetaclass`, which
+    * `Relational[B]` flows through `SQLModelMetaclass`, which
       overwrites ``__orig_bases__`` on subclasses. The token is stashed
       on ``__skaal_backend_pin__`` by `Relational.__class_getitem__`
       instead; subclasses inherit it via the normal MRO.
@@ -229,7 +229,7 @@ def external(
         if pinned_token is None:
             raise SkaalConfigError(
                 f"@external requires a Backend type-pin on {cls.__name__!r}; "
-                "declare e.g. `class LegacyDb(Relational[Row, Postgres])`."
+                "declare e.g. `class LegacyDb(Relational[Postgres])`."
             )
         _validate_storage_class(cls, kind=normalized_kind)
         overrides = ResourceOverrides(

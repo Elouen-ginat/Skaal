@@ -4,13 +4,14 @@ This module exposes two entry points for declaring relational tables:
 
 * The original form — subclass ``SQLModel`` directly with ``table=True`` and
   decorate with ``@app.storage(kind="relational")``.
-* The typed form — subclass ``Relational[T, B]`` and decorate. The second
+* The typed form — subclass ``Relational[B]`` and decorate. The single
   generic parameter ``B`` is a `Backend` type-pin (ADR 028 §6.6, ADR 032
-  §4.4) so ``class Sales(Relational[Sale, BigQuery], table=True)`` flows
-  the ``bigquery`` pin into `ResourceOverrides.backend` without an env
-  override. ``SQLModelMetaclass`` swallows ``__orig_bases__`` on
-  subclasses, so the pin is captured via ``__class_getitem__`` and
-  inherited through the standard MRO.
+  §4.4) so ``class Sales(Relational[BigQuery], table=True)`` flows the
+  ``bigquery`` pin into `ResourceOverrides.backend` without an env
+  override. The class body *is* the row schema — there is no companion
+  DTO model and no field duplication. ``SQLModelMetaclass`` swallows
+  ``__orig_bases__`` on subclasses, so the pin is captured via
+  ``__class_getitem__`` and inherited through the standard MRO.
 """
 
 from __future__ import annotations
@@ -28,48 +29,43 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-T = TypeVar("T")
 B = TypeVar("B", bound=Backend, default=Backend)
 
 _RELATIONAL_BACKEND_ATTR = "__skaal_relational_backend__"
 
 
-class Relational(SQLModel, Generic[T, B]):
+class Relational(SQLModel, Generic[B]):
     """Typed relational table primitive.
 
-    Subclass ``Relational[T, B]`` to declare a relational table whose
+    Subclass ``Relational[B]`` to declare a relational table whose
     backend is pinned at declaration time:
 
-        class Comments(Relational[CommentRow, Postgres], table=True):
+        class Comments(Relational[Postgres], table=True):
             id: int | None = Field(default=None, primary_key=True)
             todo_id: str = Field(index=True)
             body: str
 
-    ``T`` is the value/row model — typically the same shape used to feed
-    `@app.function` signatures or returned to callers; ``B`` is a
-    `Backend` token (``Postgres``, ``Sqlite``, ``BigQuery``, …). Omitting
-    ``B`` leaves the binding to the defaults table:
+    The class body is the row schema; there is no separate DTO model.
+    ``B`` is a `Backend` token (``Postgres``, ``Sqlite``, ``BigQuery``,
+    …). Omitting the parameter leaves the binding to the defaults table:
 
-        class Notes(Relational[NoteRow], table=True): ...
+        class Notes(Relational, table=True): ...
 
     `SQLModelMetaclass` overwrites ``__orig_bases__`` on subclasses, so
     `_extract_backend_pin` cannot read the pin off ``Comments`` directly.
-    Instead, ``__class_getitem__`` stashes the captured type args onto
-    the intermediate parametrised class as `__skaal_value_type__` and
-    `__skaal_backend_pin__`; concrete subclasses inherit them via the
-    normal MRO and `_extract_backend_pin` reads them from there.
+    Instead, ``__class_getitem__`` stashes the captured backend token on
+    the intermediate parametrised class as `__skaal_backend_pin__`;
+    concrete subclasses inherit it via the normal MRO and
+    `_extract_backend_pin` reads it from there.
     """
 
-    __skaal_value_type__: ClassVar[type | None] = None
     __skaal_backend_pin__: ClassVar[type[Backend] | None] = None
 
     def __class_getitem__(cls, params: Any) -> Any:
         sub: Any = super().__class_getitem__(params)
         param_tuple = params if isinstance(params, tuple) else (params,)
-        if param_tuple and isinstance(param_tuple[0], type):
-            sub.__skaal_value_type__ = param_tuple[0]
-        if len(param_tuple) >= 2:
-            backend_arg = param_tuple[1]
+        if param_tuple:
+            backend_arg = param_tuple[0]
             if (
                 isinstance(backend_arg, type)
                 and issubclass(backend_arg, Backend)
