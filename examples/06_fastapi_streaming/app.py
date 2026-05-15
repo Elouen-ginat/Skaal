@@ -40,4 +40,4 @@ async def chat(prompt: str) -> StreamingResponse:
     )
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)

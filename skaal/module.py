@@ -6,6 +6,10 @@ The agent / pattern surface and the constraint vocabulary
 Phase 1. Decorators retain only their structural arguments; the inference
 layer (Phase 2) re-derives infrastructure shape from class shape, not
 constraints.
+
+Phase 4 (ADR 032 §4.9) deletes every legacy per-decorator dunder
+(`storage`, `function`, `schedule`, `channel`, `job`, `secrets`);
+``__skaal_inferred__`` is the single contract decorated objects expose.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ import weakref
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast, overload
 
 from skaal.inference.model import (
     InferredResource,
@@ -29,7 +33,6 @@ from skaal.types import (
     CircuitBreaker,
     Duration,
     JobHandle,
-    JobSpec,
     RateLimitPolicy,
     RetryPolicy,
     SecondaryIndex,
@@ -84,73 +87,29 @@ class _BeforeInvokeContext:
     span_id: str | None
 
 
-class _HasName(Protocol):
-    name: str
-
-
-class _HasDunderName(Protocol):
+class _HasDunderName:
     __name__: str
-
-
-class _FunctionMetadataFn(Protocol):
-    __skaal_function__: dict[str, Any]
-    __skaal_secrets__: tuple[SecretRef, ...]
-
-
-class _JobMetadataFn(Protocol):
-    __skaal_job__: JobSpec
-
-
-class _ChannelMetadataType(Protocol):
-    __skaal_channel__: dict[str, Any]
-
-
-class _ScheduleMetadataFn(Protocol):
-    __skaal_schedule__: dict[str, Any]
-
-
-def _attach_function_metadata(
-    fn: F,
-    metadata: dict[str, Any],
-    *,
-    secrets: tuple[SecretRef, ...] | None,
-) -> F:
-    metadata_fn = cast(_FunctionMetadataFn, fn)
-    metadata_fn.__skaal_function__ = metadata
-    if secrets is not None:
-        metadata_fn.__skaal_secrets__ = secrets
-    return fn
-
-
-def _attach_job_metadata(fn: F, spec: JobSpec) -> F:
-    metadata_fn = cast(_JobMetadataFn, fn)
-    metadata_fn.__skaal_job__ = spec
-    return fn
-
-
-def _attach_channel_metadata(cls: C, metadata: dict[str, Any]) -> C:
-    metadata_cls = cast(_ChannelMetadataType, cls)
-    metadata_cls.__skaal_channel__ = metadata
-    return cls
-
-
-def _attach_schedule_metadata(fn: F, metadata: dict[str, Any]) -> F:
-    metadata_fn = cast(_ScheduleMetadataFn, fn)
-    metadata_fn.__skaal_schedule__ = metadata
-    return fn
 
 
 def _attach_inferred(target: Any, inferred: InferredResource) -> None:
     """Attach the inference-layer `InferredResource` to a decorated object.
 
-    Phase 2 is additive: this runs alongside the per-decorator dunder
-    (`__skaal_storage__` / `__skaal_function__` / …) so the existing runtime
-    consumers keep working until Phase 4 rewires them on top of `BoundPlan`.
+    `__skaal_inferred__` is the single contract every consumer (runtime,
+    deploy, `_resolve_invokable`, the kind-detection predicates) reads
+    after the Phase 4 dunder sweep.
     """
     import contextlib
 
     with contextlib.suppress(AttributeError, TypeError):  # slotted-but-unwritable objects
         target.__skaal_inferred__ = inferred
+
+
+def _inferred_kind(obj: Any) -> ResourceKind | None:
+    """Return the `ResourceKind` recorded on ``obj`` by `_attach_inferred`."""
+    inferred = getattr(obj, "__skaal_inferred__", None)
+    if isinstance(inferred, InferredResource):
+        return inferred.kind
+    return None
 
 
 class Module:
@@ -275,30 +234,28 @@ class Module:
         bulkhead: Bulkhead | None = None,
         secrets: list[SecretRef] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a function with optional resilience policies."""
+        """Register a function with optional resilience policies.
+
+        Delegates the inference-side work to `skaal.decorators.function`
+        so the module form and the bare decorator form construct the
+        same `FunctionRef` and the same `InferredResource`.
+        """
+        from skaal.decorators import function as _function_dec
+
+        outer = _function_dec(
+            retry=retry,
+            circuit_breaker=circuit_breaker,
+            rate_limit=rate_limit,
+            bulkhead=bulkhead,
+        )
 
         def decorator(fn: F) -> F:
-            metadata = {
-                "retry": retry,
-                "circuit_breaker": circuit_breaker,
-                "rate_limit": rate_limit,
-                "bulkhead": bulkhead,
-            }
-            secret_tuple = tuple(secrets) if secrets else None
-            fn = _attach_function_metadata(fn, metadata, secrets=secret_tuple)
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.FUNCTION,
-                    source=SourceLocation.from_object(fn),
-                ),
-            )
+            ref = outer(fn)
             if secrets:
-                for ref in secrets:
-                    self.secret(ref)
-            self._functions[fn.__name__] = fn
-            return fn
+                for ref_obj in secrets:
+                    self.secret(ref_obj)
+            self._functions[fn.__name__] = ref
+            return cast(F, ref)
 
         if fn_to_decorate is None:
             return decorator
@@ -327,17 +284,23 @@ class Module:
         retry: RetryPolicy | None = None,
     ) -> F | Callable[[F], F]:
         """Register a background job handler executed by the runtime worker."""
+        from skaal.decorators import _resilience as _build_resilience
 
         def decorator(fn: F) -> F:
-            fn = _attach_job_metadata(fn, JobSpec(name=fn.__name__, retry=retry))
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.JOB,
-                    source=SourceLocation.from_object(fn),
+            inferred = InferredResource(
+                id=InferredResource.id_for(fn),
+                kind=ResourceKind.JOB,
+                source=SourceLocation.from_object(fn),
+                overrides=ResourceOverrides(
+                    resilience=_build_resilience(
+                        retry=retry,
+                        circuit_breaker=None,
+                        rate_limit=None,
+                        bulkhead=None,
+                    ),
                 ),
             )
+            _attach_inferred(fn, inferred)
             self._jobs[fn.__name__] = fn
             return fn
 
@@ -376,13 +339,11 @@ class Module:
         def decorator(cls: C) -> C:
             from skaal.decorators import _extract_backend_pin
 
-            cls = _attach_channel_metadata(cls, {"buffer": buffer})
             instance = cls(buffer=buffer)
             pinned_token = _extract_backend_pin(cls)
-            overrides = (
-                ResourceOverrides(backend=pinned_token.name)
-                if pinned_token is not None
-                else ResourceOverrides()
+            overrides = ResourceOverrides(
+                backend=pinned_token.name if pinned_token is not None else None,
+                channel_buffer=buffer,
             )
             inferred = InferredResource(
                 id=InferredResource.id_for(cls),
@@ -462,19 +423,21 @@ class Module:
         """Register a background function triggered on a time-based schedule."""
 
         def decorator(fn: F) -> F:
-            fn = _attach_schedule_metadata(
-                fn,
-                {"trigger": trigger, "emit_to": emit_to, "timezone": timezone},
-            )
-            _attach_inferred(
-                fn,
-                InferredResource(
-                    id=InferredResource.id_for(fn),
-                    kind=ResourceKind.SCHEDULE,
-                    source=SourceLocation.from_object(fn),
+            inferred = InferredResource(
+                id=InferredResource.id_for(fn),
+                kind=ResourceKind.SCHEDULE,
+                source=SourceLocation.from_object(fn),
+                overrides=ResourceOverrides(
+                    trigger=trigger,
+                    schedule_timezone=timezone,
                 ),
             )
+            _attach_inferred(fn, inferred)
             self._schedules[fn.__name__] = fn
+            # `emit_to` is accepted but not yet honoured by the new
+            # local-runtime SCHEDULE adapter; it will be wired in alongside
+            # the deploy-side EventBridge / Cloud Scheduler synth.
+            _ = emit_to
             return fn
 
         if fn_to_decorate is None:
@@ -690,11 +653,11 @@ class Module:
         return ctx.kwargs
 
     def _resolve_invokable(self, fn: str | Callable[..., Any]) -> tuple[str, Callable[..., Any]]:
+        invokable_kinds = {ResourceKind.FUNCTION, ResourceKind.SCHEDULE}
         invokables = {
             name: obj
             for name, obj in self._collect_all().items()
-            if callable(obj)
-            and (hasattr(obj, "__skaal_function__") or hasattr(obj, "__skaal_schedule__"))
+            if callable(obj) and _inferred_kind(obj) in invokable_kinds
         }
 
         if isinstance(fn, str):

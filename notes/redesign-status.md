@@ -4,7 +4,7 @@ This file is the canonical answer to "where are we in the redesign?" It carries 
 
 **Current alpha:** `v0.4.0a0` declared in `pyproject.toml`; no alpha tag pushed yet.
 **Branch:** `claude/plan-redesign-strategy-A5ixu` (de-facto `v0.4.0-alpha` working branch). Promotion/rename to `v0.4.0-alpha` on `origin` is a maintainer action.
-**Last updated:** 2026-05-14 — Phase 4 runtime skeleton landed on `claude/continue-redesign-0ypyZ`: `skaal/runtime/` with `LocalRuntime`, the per-kind dispatch table, a four-policy resilience middleware chain, and adapters for `STORE` (sqlite/redis), `FUNCTION`, `ASGI_SERVICE`, `SECRET` (dotenv), `RELATIONAL` (sqlite-only), `BLOB` (filesystem-blob), `CHANNEL` (in-process), `SCHEDULE` (apscheduler), and `JOB` (asyncio). `skaal run <module:attr>` now walks `infer → bind → LocalRuntime.from_bound_plan` and serves the resulting Starlette app via uvicorn. The deploy rebuild, CLI `build`/`deploy`/`plan` rewire, legacy-dunder sweep, and examples sweep are still pending — see the Phase 4 checklist below.
+**Last updated:** 2026-05-14 — Phase 4 dunder sweep, ASGI mount alias deletion, and `skaal plan` rewire landed on `claude/continue-redesign-SbweQ`: every legacy ``__skaal_storage__`` / ``__skaal_function__`` / ``__skaal_schedule__`` / ``__skaal_channel__`` / ``__skaal_job__`` / ``__skaal_secrets__`` write and read is gone (resilience policies + schedule triggers now ride on `ResourceOverrides.resilience` / `.trigger` via `skaal.inference.runtime_meta` encode/decode helpers); `App.mount_asgi` / `App.mount_wsgi` are deleted in favour of the path-form `App.mount("/path", asgi_app)` (WSGI users wrap with `WSGIMiddleware` at the call site); `skaal plan <module:attr>` walks `infer → bind` and prints the `BoundPlan` as a Rich table; a `tests/typing/test_legacy_dunders_gone.py` grep gate prevents reintroduction. Deploy package rebuild (§4.2, `build`/`deploy` CLI) is the remaining Phase 4 work and lands on a follow-up branch.
 
 ---
 
@@ -125,7 +125,7 @@ Checklist:
 
 ## Phase 4 — Runtime/deploy on `BoundPlan`
 
-- **Status:** foundations landed on `claude/continue-redesign-lcaT5` (§4.3, §4.4 partial, §4.5, §4.6, §4.7) and `claude/continue-redesign-0ypyZ` (§4.1, §4.8 partial — `skaal run`). Deploy rebuild, `build`/`deploy`/`plan` CLI rewire, legacy-dunder sweep, and examples sweep are still pending and tracked below.
+- **Status:** foundations landed on `claude/continue-redesign-lcaT5` (§4.3, §4.4 partial, §4.5, §4.6, §4.7) and `claude/continue-redesign-0ypyZ` (§4.1, §4.8 partial — `skaal run`). The legacy-dunder sweep (§4.9), `App.mount` alias deletion (§4.6), `skaal plan` rewire (§4.8 partial), and examples mount sweep (§4.11 partial) landed on `claude/continue-redesign-SbweQ`. Deploy rebuild (§4.2), `build`/`deploy` CLI rewire (§4.8 remainder), and the full examples sweep (§4.11) are still pending — see the Phase 4 checklist below.
 - **ADR:** [032](design/032-runtime-deploy-on-bound-plan-implementation-plan.md)
 - **Target alpha tag:** `v0.4.0-alpha.4`
 
@@ -138,16 +138,16 @@ Checklist:
 - [x] 4.4 Decorator rewire: `Store[T, B]` / `BlobStore[B]` / `Channel[T, B]` second generic flows into `ResourceOverrides.backend` *(`Relational[T, B]` deferred — bridging SQLModel's metaclass is its own work item)*
 - [x] 4.4 `@app.external(name=...)` decorator added, requiring a type-pinned second generic
 - [x] 4.5 Per-backend public import paths (`from skaal.backends.redis import Redis`) — 25 thin re-export modules (24 new + `RedisChannel` re-exported alongside the existing `RedisStreamChannel` impl)
-- [ ] 4.6 `App.mount(path: str, asgi_app: ASGIApplication)` *partial*: path-form overload added alongside the existing `mount_asgi` / `mount_wsgi`; inference `asgi.recognise_path_mounts` emits one `ASGI_SERVICE` per path with the path on `overrides.options["path"]`. Deleting the legacy `mount_asgi` / `mount_wsgi` aliases blocks on the runtime rewire (§4.1).
-- [x] 4.7 `FunctionRef[P, R]` typed return shape added; attribute-forwarding via `__getattr__` keeps the legacy dunder consumers working. Wiring it into `Module.function` blocks on the runtime rewire (§4.1).
-- [ ] 4.8 CLI verbs reactivated: `skaal run` (landed — accepts `module:attr` target, walks `infer → bind → LocalRuntime.serve`), `skaal build`, `skaal deploy`, `skaal plan` (the plan-as-diff form is Phase 6)
-- [ ] 4.9 Legacy dunder deletion: `__skaal_storage__`, `__skaal_function__`, `__skaal_schedule__`, `__skaal_channel__`, `__skaal_job__` removed from every `skaal/` module that still reads or writes them
-- [x] 4.10 Tests for the Phase 4 foundations: `tests/decorators/test_backend_pin.py`, `tests/decorators/test_external.py`, `tests/decorators/test_function_ref.py`, `tests/inference/test_mount.py`, `tests/binding/test_phase4_extensions.py`, `tests/backends/test_token_reexports.py`, `tests/runtime/test_dispatch.py`, `tests/runtime/test_local_runtime.py`, `tests/runtime/test_middleware.py` (90 new tests; full suite 241 pass)
-- [ ] 4.11 Examples updated to the new `app.mount` surface and one type-pinned `Store[T, Redis]` example added
-- [ ] Exit-criterion grep gate: `grep -r "__skaal_storage__\|__skaal_function__\|__skaal_schedule__\|__skaal_channel__\|__skaal_job__" skaal/` returns zero hits
+- [x] 4.6 `App.mount(path: str, asgi_app: ASGIApplication)` is now the canonical surface; `mount_asgi` / `mount_wsgi` deleted along with the `_asgi_app` / `_wsgi_app` recogniser branch; WSGI users wrap with `WSGIMiddleware` at the call site. The inference recogniser walks `app._asgi_path_mounts` only.
+- [x] 4.7 `FunctionRef[P, R]` typed return shape added; the decorator now carries `__skaal_inferred__` directly on the ref so consumers no longer rely on attribute forwarding for the inference contract.
+- [x] 4.8 `skaal run` (landed earlier) and `skaal plan <module:attr>` (this branch) are wired against `infer → bind`; `skaal build`, `skaal deploy` still stubbed (the plan-as-diff form is Phase 6)
+- [x] 4.9 Legacy dunder deletion: every read and write of `__skaal_storage__`, `__skaal_function__`, `__skaal_schedule__`, `__skaal_channel__`, `__skaal_job__`, `__skaal_secrets__` removed from `skaal/`; resilience policies and schedule triggers ride on `ResourceOverrides.resilience` / `.trigger` via `skaal.inference.runtime_meta` encode/decode helpers; `skaal.schedule.create_async_scheduler` (the last legacy reader) deleted. A `tests/typing/test_legacy_dunders_gone.py` grep gate prevents reintroduction.
+- [x] 4.10 Tests for the Phase 4 foundations: `tests/decorators/test_backend_pin.py`, `tests/decorators/test_external.py`, `tests/decorators/test_function_ref.py`, `tests/inference/test_mount.py`, `tests/binding/test_phase4_extensions.py`, `tests/backends/test_token_reexports.py`, `tests/runtime/test_dispatch.py`, `tests/runtime/test_local_runtime.py`, `tests/runtime/test_middleware.py`, `tests/cli/test_plan_cmd.py`, `tests/typing/test_legacy_dunders_gone.py` (full suite 250 pass)
+- [x] 4.11 Examples switched from `mount_asgi` / `mount_wsgi` to `app.mount("/", asgi_app)` (`session_cache`, `02_todo_api`, `03_dash_app`, `05_task_dashboard`, `06_fastapi_streaming`, `07_file_upload_api`); the type-pinned `Store[T, Redis]` example is still pending
+- [x] Exit-criterion grep gate: `grep -r "__skaal_storage__\|__skaal_function__\|__skaal_schedule__\|__skaal_channel__\|__skaal_job__" skaal/` returns zero hits
 - [ ] `skaal run` boots `examples/todo_api` against a `local` environment and serves HTTP on `localhost:8000`
 - [ ] `skaal deploy --env prod` (target `aws`) provisions resources for `examples/todo_api` and `examples/counter` with `skaal:*` tags
-- [x] `uv run ruff check && uv run mypy skaal && uv run pytest` green (241 tests; mypy clean on 115 source files; ruff clean)
+- [x] `uv run ruff check && uv run mypy skaal && uv run pytest` green (250 tests; mypy clean on 117 source files; ruff clean)
 - [ ] Tag `v0.4.0-alpha.4` pushed *(maintainer action)*
 
 ## Phase 5 — Typing contract and `skaal stubs`

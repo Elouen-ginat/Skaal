@@ -12,7 +12,9 @@ class subclasses `Store[T, Redis]` / `BlobStore[S3]` / `Channel[T, Sqs]`,
 the decorator reads the parameterised base and populates
 `ResourceOverrides.backend` so the binder pins to that backend. The
 `@external` decorator wraps the same machinery with an environment-side
-connection lookup.
+connection lookup. The legacy per-decorator dunders (`storage`, `function`,
+`schedule`, `channel`, `job`, `secrets`) are gone: every consumer reads
+``__skaal_inferred__``.
 """
 
 from __future__ import annotations
@@ -33,9 +35,14 @@ from skaal.inference.model import (
     SourceLocation,
 )
 from skaal.types import SecondaryIndex
-from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimitPolicy, RetryPolicy
+from skaal.types.compute import (
+    Bulkhead,
+    CircuitBreaker,
+    RateLimitPolicy,
+    ResiliencePolicies,
+    RetryPolicy,
+)
 
-F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -46,15 +53,17 @@ class FunctionRef(Generic[P, R]):
     """Typed handle to a ``@app.function``-decorated callable.
 
     The decorator returns a `FunctionRef` so cross-module call-sites see
-    the typed signature without `getattr` indirection into legacy dunders
-    (ADR 028 §6.4.2, ADR 032 §4.7).
+    the typed signature without `getattr` indirection (ADR 028 §6.4.2,
+    ADR 032 §4.7). Resilience policies, the source location, and the
+    canonical resource id all live on ``self.overrides`` /
+    ``self.__skaal_inferred__``.
 
-    Attribute-forwarding to ``__wrapped__`` is preserved so existing
-    consumers reading ``fn.__skaal_function__`` / ``fn.__skaal_inferred__``
-    keep working until the legacy-dunder sweep in a follow-up phase.
+    Attribute access falls through to ``__wrapped__`` so callers that
+    read ``__name__`` / ``__module__`` / ``__doc__`` keep working without
+    the runtime having to special-case `FunctionRef`.
     """
 
-    __slots__ = ("__wrapped__", "id", "overrides")
+    __slots__ = ("__skaal_inferred__", "__wrapped__", "id", "overrides")
 
     def __init__(
         self,
@@ -62,10 +71,12 @@ class FunctionRef(Generic[P, R]):
         *,
         id: str,
         overrides: ResourceOverrides,
+        inferred: InferredResource,
     ) -> None:
         self.__wrapped__ = fn
         self.id = id
         self.overrides = overrides
+        self.__skaal_inferred__ = inferred
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
         return self.__wrapped__(*args, **kwargs)
@@ -73,8 +84,8 @@ class FunctionRef(Generic[P, R]):
     def __getattr__(self, name: str) -> Any:
         # Slots block direct setattr but __getattr__ is only invoked when
         # the normal lookup fails — forward everything else to the wrapped
-        # callable so legacy consumers (`fn.__skaal_function__`, `__name__`,
-        # `__module__`, `__doc__`, `__skaal_inferred__`, …) keep working.
+        # callable so consumers reading ``__name__`` / ``__module__`` /
+        # ``__doc__`` keep working.
         wrapped = object.__getattribute__(self, "__wrapped__")
         return getattr(wrapped, name)
 
@@ -115,16 +126,6 @@ _STORAGE_KIND_TO_RESOURCE_KIND: dict[StorageKind, ResourceKind] = {
 }
 
 
-def _apply_metadata(target: C, attribute: str, metadata: Any) -> C:
-    setattr(target, attribute, metadata)
-    return target
-
-
-def _apply_callable_metadata(target: F, attribute: str, metadata: Any) -> F:
-    setattr(target, attribute, metadata)
-    return target
-
-
 def _normalize_storage_kind(kind: StorageKind | str) -> StorageKind:
     normalized = kind.strip().lower()
     if normalized not in {"kv", "blob", "relational"}:
@@ -132,29 +133,20 @@ def _normalize_storage_kind(kind: StorageKind | str) -> StorageKind:
     return cast(StorageKind, normalized)
 
 
-def _storage_schema(cls: C, *, kind: StorageKind) -> dict[str, Any]:
+def _validate_storage_class(cls: type, *, kind: StorageKind) -> None:
+    """Run the kind-specific structural validation for a storage class.
+
+    Phase 1 used the schema-hints helpers as the validation entry point;
+    Phase 4 keeps the validation but no longer surfaces the hints onto
+    the class — the inference layer's `SchemaRef` is the canonical source.
+    """
     if kind == "blob":
         validate_blob_model(cls)
-        try:
-            from skaal.storage import _schema_hints
-
-            return _schema_hints(cls)
-        except Exception:
-            return {}
-
+        return
     if kind == "relational":
-        from skaal.relational import _schema_hints as relational_schema_hints
         from skaal.relational import validate_relational_model
 
         validate_relational_model(cls)
-        return relational_schema_hints(cls)
-
-    try:
-        from skaal.storage import _schema_hints
-
-        return _schema_hints(cls)
-    except Exception:
-        return {}
 
 
 def storage(
@@ -172,16 +164,7 @@ def storage(
     normalized_kind = _normalize_storage_kind(kind)
 
     def decorator(cls: C) -> C:
-        schema = _storage_schema(cls, kind=normalized_kind)
-        _apply_metadata(
-            cls,
-            "__skaal_storage__",
-            {
-                "kind": normalized_kind,
-                "indexes": list(indexes or []) if normalized_kind == "kv" else [],
-                "schema": schema,
-            },
-        )
+        _validate_storage_class(cls, kind=normalized_kind)
         idx = tuple(indexes or ()) if normalized_kind == "kv" else ()
         pinned_token = _extract_backend_pin(cls)
         overrides = (
@@ -197,7 +180,8 @@ def storage(
             indexes=idx,
             overrides=overrides,
         )
-        return _apply_metadata(cls, "__skaal_inferred__", inferred)
+        cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        return cls
 
     return decorator
 
@@ -235,18 +219,7 @@ def external(
                 f"@external requires a Backend type-pin on {cls.__name__!r}; "
                 "declare e.g. `class LegacyDb(Relational[Row, Postgres])`."
             )
-        schema = _storage_schema(cls, kind=normalized_kind)
-        _apply_metadata(
-            cls,
-            "__skaal_storage__",
-            {
-                "kind": normalized_kind,
-                "indexes": [],
-                "schema": schema,
-                "external": True,
-                "external_name": name,
-            },
-        )
+        _validate_storage_class(cls, kind=normalized_kind)
         overrides = ResourceOverrides(
             backend=pinned_token.name,
             external=True,
@@ -259,7 +232,8 @@ def external(
             schema_=SchemaRef.from_class(cls),
             overrides=overrides,
         )
-        return _apply_metadata(cls, "__skaal_inferred__", inferred)
+        cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        return cls
 
     return decorator
 
@@ -270,30 +244,58 @@ def function(
     circuit_breaker: CircuitBreaker | None = None,
     rate_limit: RateLimitPolicy | None = None,
     bulkhead: Bulkhead | None = None,
-) -> Callable[[F], F]:
+) -> Callable[[Callable[..., Any]], FunctionRef[..., Any]]:
     """Declare a Skaal compute function with optional resilience policies.
 
     Resilience policies (`retry`, `circuit_breaker`, `rate_limit`,
     `bulkhead`) are honoured by the runtime — see
-    `skaal.runtime.middleware`.
+    `skaal.runtime.middleware`. The decorator returns a `FunctionRef`
+    carrying ``id``, ``overrides``, and ``__skaal_inferred__`` for
+    runtime / deploy consumers; no per-decorator legacy dunder is
+    written.
     """
 
-    def decorator(fn: F) -> F:
-        _apply_callable_metadata(
-            fn,
-            "__skaal_function__",
-            {
-                "retry": retry,
-                "circuit_breaker": circuit_breaker,
-                "rate_limit": rate_limit,
-                "bulkhead": bulkhead,
-            },
+    def decorator(fn: Callable[..., Any]) -> FunctionRef[..., Any]:
+        import contextlib
+
+        overrides = ResourceOverrides(
+            resilience=_resilience(
+                retry=retry,
+                circuit_breaker=circuit_breaker,
+                rate_limit=rate_limit,
+                bulkhead=bulkhead,
+            ),
         )
         inferred = InferredResource(
             id=InferredResource.id_for(fn),
             kind=ResourceKind.FUNCTION,
             source=SourceLocation.from_object(fn),
+            overrides=overrides,
         )
-        return _apply_callable_metadata(fn, "__skaal_inferred__", inferred)
+        with contextlib.suppress(AttributeError, TypeError):
+            fn.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        return FunctionRef(fn, id=inferred.id, overrides=overrides, inferred=inferred)
 
     return decorator
+
+
+def _resilience(
+    *,
+    retry: RetryPolicy | None,
+    circuit_breaker: CircuitBreaker | None,
+    rate_limit: RateLimitPolicy | None,
+    bulkhead: Bulkhead | None,
+) -> ResiliencePolicies | None:
+    """Build a `ResiliencePolicies` from the four kwarg policies, or `None`.
+
+    Collapsing the empty-envelope case to ``None`` keeps the `BoundPlan`
+    fingerprint stable for resources that declare zero policies — the
+    common case in examples and tests.
+    """
+    policies = ResiliencePolicies(
+        retry=retry,
+        circuit_breaker=circuit_breaker,
+        rate_limit=rate_limit,
+        bulkhead=bulkhead,
+    )
+    return None if policies.is_empty else policies

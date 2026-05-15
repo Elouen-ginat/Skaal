@@ -84,12 +84,19 @@ def test_submodule_resources_are_collected() -> None:
     assert any(r.kind is ResourceKind.STORE and "Inner" in r.id for r in plan.resources)
 
 
-def test_mount_asgi_emits_asgi_service_resource() -> None:
+def test_path_mount_emits_asgi_service_resource() -> None:
     app = App("demo")
-    app.mount_asgi(None, attribute="fastapi_app")
+    app.mount("/api", _DummyAsgiApp())
 
     plan = infer(app)
-    assert any(r.kind is ResourceKind.ASGI_SERVICE for r in plan.resources)
+    asgi_resources = [r for r in plan.resources if r.kind is ResourceKind.ASGI_SERVICE]
+    assert len(asgi_resources) == 1
+    assert asgi_resources[0].overrides.options.get("path") == "/api"
+
+
+class _DummyAsgiApp:
+    async def __call__(self, scope: object, receive: object, send: object) -> None:
+        return None
 
 
 def test_no_mount_no_asgi_service_resource() -> None:

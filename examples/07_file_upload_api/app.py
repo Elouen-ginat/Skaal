@@ -137,4 +137,4 @@ async def delete_file(path: str) -> dict[str, object]:
     return {"deleted": path}
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)

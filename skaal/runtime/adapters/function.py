@@ -10,43 +10,17 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from skaal.runtime.middleware import wrap_resilience
-from skaal.types.compute import (
-    Bulkhead,
-    CircuitBreaker,
-    RateLimitPolicy,
-    RetryPolicy,
-)
+from skaal.types.compute import ResiliencePolicies
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
     from skaal.runtime.local import LocalRuntime
-
-
-@dataclass(frozen=True)
-class _ResiliencePolicies:
-    """Typed projection of the resilience kwargs stashed by `@app.function`."""
-
-    retry: RetryPolicy | None = None
-    circuit_breaker: CircuitBreaker | None = None
-    rate_limit: RateLimitPolicy | None = None
-    bulkhead: Bulkhead | None = None
-
-    @classmethod
-    def from_target(cls, target: Any) -> _ResiliencePolicies:
-        metadata: dict[str, Any] = getattr(target, "__skaal_function__", None) or {}
-        return cls(
-            retry=metadata.get("retry"),
-            circuit_breaker=metadata.get("circuit_breaker"),
-            rate_limit=metadata.get("rate_limit"),
-            bulkhead=metadata.get("bulkhead"),
-        )
 
 
 def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
@@ -56,7 +30,9 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         # is expected to invoke them through `Environment.backends[...]`.
         return
 
-    policies: _ResiliencePolicies = _ResiliencePolicies.from_target(target)
+    policies: ResiliencePolicies = (
+        bound.inferred.overrides.resilience or ResiliencePolicies()
+    )
     handler: Callable[..., Awaitable[Any]] = _coerce_async(target)
     wrapped: Callable[..., Awaitable[Any]] = wrap_resilience(
         handler,

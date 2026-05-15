@@ -148,7 +148,6 @@ class CloudRunEnvVar(TypedDict, total=False):
 class AppLike(Protocol):
     name: str
     _mounts: dict[str, str]
-    _wsgi_attribute: str
 
 
 class BackendWiring(NamedTuple):

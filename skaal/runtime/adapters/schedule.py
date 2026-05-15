@@ -1,10 +1,11 @@
 """Adapter for `SCHEDULE` resources.
 
-Phase 4 ships a minimal hook that imports the existing
-`apscheduler`-backed runner from `skaal.schedule` and registers the
-callable. The richer scheduler lifecycle (graceful shutdown, jitter,
-clustering) is part of the broader runtime work and will be filled in
-alongside the deploy-side EventBridge / Cloud Scheduler synth.
+Phase 4 ships a minimal hook that registers each callable with an
+in-process APScheduler whose triggers are reconstructed from the
+inference layer's ``overrides.trigger`` payload. Richer lifecycle
+(graceful shutdown, jitter, clustering) is part of the broader runtime
+work and will be filled in alongside the deploy-side EventBridge /
+Cloud Scheduler synth.
 """
 
 from __future__ import annotations
@@ -40,9 +41,9 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
 
         sched: AsyncIOScheduler = AsyncIOScheduler()
         for resource, fn in runtime.state.schedules:
-            metadata: dict[str, Any] = getattr(fn, "__skaal_schedule__", None) or {}
-            trigger: Any = metadata.get("trigger")
-            timezone: str = metadata.get("timezone", "UTC")
+            overrides = resource.inferred.overrides
+            trigger = overrides.trigger
+            timezone: str = overrides.schedule_timezone or "UTC"
             aps_trigger: Any
             if isinstance(trigger, Every):
                 aps_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=timezone)

@@ -8,14 +8,12 @@ this verb just stops short at the local-runtime step.
 
 from __future__ import annotations
 
-import importlib
 import logging
-from pathlib import Path
-from typing import Any
 
 import typer
 
 from skaal.cli._errors import cli_error_boundary
+from skaal.cli._load import load_app, load_bound_plan
 
 app = typer.Typer(
     help="Run a Skaal app locally.",
@@ -43,8 +41,8 @@ def run(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host."),
     port: int = typer.Option(8000, "--port", "-p", help="Bind port."),
 ) -> None:
-    skaal_app = _load_app(target)
-    bound = _load_bound_plan(skaal_app, env_name)
+    skaal_app = load_app(target)
+    bound = load_bound_plan(skaal_app, env_name)
     log.info(
         "Serving app %r (env=%s, fingerprint=%s) on %s:%d",
         skaal_app.name,
@@ -57,28 +55,3 @@ def run(
     from skaal.runtime import LocalRuntime
 
     LocalRuntime.from_bound_plan(bound, skaal_app).serve(host=host, port=port)
-
-
-def _load_app(target: str) -> Any:
-    if ":" not in target:
-        raise typer.BadParameter(
-            f"`{target}` is not a `module:attribute` reference. "
-            "Example: `examples.todo_api:app`."
-        )
-    module_path, attr = target.split(":", 1)
-    module = importlib.import_module(module_path)
-    try:
-        return getattr(module, attr)
-    except AttributeError as exc:
-        raise typer.BadParameter(
-            f"Module `{module_path}` has no attribute `{attr}`."
-        ) from exc
-
-
-def _load_bound_plan(skaal_app: Any, env_name: str) -> Any:
-    from skaal.binding import bind, load_environment, load_lock
-
-    env = load_environment(env_name, path=Path("skaal.toml"))
-    lock = load_lock(Path("skaal.lock"))
-    plan = skaal_app.infer()
-    return bind(plan, env, lock)

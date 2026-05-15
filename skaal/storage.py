@@ -92,11 +92,11 @@ def _primary_key_field(model: type) -> str:
 
 
 def _schema_hints(cls: type) -> dict[str, Any]:
-    """
-    Extract solver-visible hints from a ``Store`` subclass.
+    """Extract structural hints from a ``Store`` subclass.
 
-    These are stored in ``__skaal_storage__["schema"]`` and surfaced in
-    ``skaal plan`` output. They do not yet change backend selection.
+    Returns a dict of declarative shape hints (field count, nested-model
+    count, …) used by tests and the inference layer's `SchemaRef` to
+    fingerprint a model.
     """
     hints: dict[str, Any] = {}
     value_type = getattr(cls, "__skaal_value_type__", None)
@@ -343,10 +343,15 @@ class Store(Generic[T, B]):
     @classmethod
     def wire(cls, backend: StorageBackend) -> None:
         """Bind *backend* to this storage class."""
+        from skaal.inference.model import InferredResource
+
         cls._backend = backend
-        indexes = list(getattr(cls, "__skaal_storage__", {}).get("indexes", []))
-        retention = getattr(cls, "__skaal_storage__", {}).get("retention")
-        cls.__skaal_default_ttl_seconds__ = getattr(retention, "default_ttl_seconds", None)
+        inferred = getattr(cls, "__skaal_inferred__", None)
+        indexes = (
+            list(inferred.indexes)
+            if isinstance(inferred, InferredResource)
+            else []
+        )
         _configure_backend_indexes(backend, indexes)
 
     @classmethod

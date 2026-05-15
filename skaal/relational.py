@@ -38,11 +38,12 @@ def validate_relational_model(model_cls: type) -> None:
 
 def is_relational_model(obj: Any) -> bool:
     """Return ``True`` if *obj* is a relational model registered with Skaal."""
-    return (
-        isinstance(obj, type)
-        and hasattr(obj, "__skaal_storage__")
-        and getattr(obj, "__skaal_storage__", {}).get("kind") == "relational"
-    )
+    from skaal.inference.model import InferredResource, ResourceKind
+
+    if not isinstance(obj, type):
+        return False
+    inferred = getattr(obj, "__skaal_inferred__", None)
+    return isinstance(inferred, InferredResource) and inferred.kind == ResourceKind.RELATIONAL
 
 
 def _schema_hints(model_cls: type) -> dict[str, Any]:
