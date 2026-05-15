@@ -50,6 +50,7 @@ from skaal.inference import (
 )
 from skaal.module import Module, ModuleExport
 from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
+from skaal.relational import Relational
 from skaal.relational import ensure_schema as ensure_relational_schema
 from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
@@ -113,6 +114,7 @@ __all__ = [
     "Page",
     "PluginRegistry",
     "RateLimitPolicy",
+    "Relational",
     "ResourceKind",
     "ResourceOverride",
     "ResourceOverrides",
