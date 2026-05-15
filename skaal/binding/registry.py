@@ -14,6 +14,8 @@ overlay; third-party backends re-enter through a separate
 
 from __future__ import annotations
 
+from threading import Lock
+
 from pydantic import BaseModel, ConfigDict
 
 from skaal.backends._base import Backend
@@ -156,8 +158,56 @@ REGISTRY: tuple[BackendEntry, ...] = (
 )
 
 
+# Mutable storage for plugin-contributed entries. `REGISTRY` above is the
+# in-tree baseline; `_EXTRA` holds anything added at runtime via
+# `register_backend(...)` (typically by `skaal.plugins`). The two are
+# stitched together on every lookup so the in-tree consistency invariant
+# stays loud while still allowing external libs to add backends.
+_LOCK: Lock = Lock()
+_EXTRA: list[BackendEntry] = []
+_EXTRA_BY_NAME: dict[str, BackendEntry] = {}
+_EXTRA_BY_TOKEN: dict[type[Backend], BackendEntry] = {}
+
+
 _BY_NAME: dict[str, BackendEntry] = {entry.token.name: entry for entry in REGISTRY}
 _BY_TOKEN: dict[type[Backend], BackendEntry] = {entry.token: entry for entry in REGISTRY}
+
+
+def all_entries() -> tuple[BackendEntry, ...]:
+    """Return every registered entry — built-in plus plugin-contributed."""
+    _ensure_plugins_loaded()
+    with _LOCK:
+        return REGISTRY + tuple(_EXTRA)
+
+
+def register_backend(entry: BackendEntry) -> None:
+    """Register a new `BackendEntry` (typically from a `SkaalPlugin`).
+
+    Re-registering an already-known backend token is a silent no-op so
+    plugin idempotency does not crash a deploy. Conflicting registrations
+    (same `token.name` but different token classes) raise.
+
+    Raises:
+        SkaalConfigError: If a different token already owns this name.
+    """
+    name = entry.token.name
+    with _LOCK:
+        existing_builtin = _BY_NAME.get(name)
+        existing_extra = _EXTRA_BY_NAME.get(name)
+        existing = existing_builtin or existing_extra
+        if existing is not None:
+            if existing.token is entry.token:
+                return
+            from skaal.errors import SkaalConfigError
+
+            raise SkaalConfigError(
+                f"Backend name {name!r} is already registered to "
+                f"{existing.token.__name__!r}; cannot re-register to "
+                f"{entry.token.__name__!r}."
+            )
+        _EXTRA.append(entry)
+        _EXTRA_BY_NAME[name] = entry
+        _EXTRA_BY_TOKEN[entry.token] = entry
 
 
 def lookup(name: str) -> BackendEntry:
@@ -166,31 +216,62 @@ def lookup(name: str) -> BackendEntry:
     Raises:
         UnknownBackendError: if no entry matches.
     """
-    entry = _BY_NAME.get(name)
-    if entry is None:
-        from skaal.errors import UnknownBackendError
+    _ensure_plugins_loaded()
+    with _LOCK:
+        entry = _BY_NAME.get(name) or _EXTRA_BY_NAME.get(name)
+        if entry is not None:
+            return entry
+        valid = tuple(sorted({*_BY_NAME, *_EXTRA_BY_NAME}))
+    from skaal.errors import UnknownBackendError
 
-        raise UnknownBackendError(name, tuple(sorted(_BY_NAME)))
-    return entry
+    raise UnknownBackendError(name, valid)
 
 
 def lookup_token(token: type[Backend]) -> BackendEntry:
     """Return the registry entry for a `Backend` subclass identity."""
-    entry = _BY_TOKEN.get(token)
-    if entry is None:
-        from skaal.errors import UnknownBackendError
+    _ensure_plugins_loaded()
+    with _LOCK:
+        entry = _BY_TOKEN.get(token) or _EXTRA_BY_TOKEN.get(token)
+        if entry is not None:
+            return entry
+        valid = tuple(sorted({*_BY_NAME, *_EXTRA_BY_NAME}))
+    from skaal.errors import UnknownBackendError
 
-        raise UnknownBackendError(token.name, tuple(sorted(_BY_NAME)))
-    return entry
+    raise UnknownBackendError(token.name, valid)
 
 
 def tokens_for(kind: str, target: Target) -> tuple[BackendEntry, ...]:
     """Return every registered entry that can host ``kind`` on ``target``."""
+    _ensure_plugins_loaded()
+    with _LOCK:
+        merged = REGISTRY + tuple(_EXTRA)
     return tuple(
         entry
-        for entry in REGISTRY
+        for entry in merged
         if target in entry.targets and kind in entry.token.kinds
     )
+
+
+def _ensure_plugins_loaded() -> None:
+    """Trigger lazy plugin discovery on first lookup.
+
+    The import lives inside the function body to avoid a circular import
+    between `skaal.plugins` and `skaal.binding.registry`: `skaal.plugins`
+    calls `register_backend` (defined here), and this module triggers
+    `load_plugins()` from there. Module-level imports would form a cycle
+    at package load.
+    """
+    from skaal.plugins import load_plugins
+
+    load_plugins()
+
+
+def _reset_for_tests() -> None:
+    """Clear plugin-contributed entries (test-only helper)."""
+    with _LOCK:
+        _EXTRA.clear()
+        _EXTRA_BY_NAME.clear()
+        _EXTRA_BY_TOKEN.clear()
 
 
 def _registry_consistency_check() -> None:

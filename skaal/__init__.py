@@ -49,6 +49,7 @@ from skaal.inference import (
     infer,
 )
 from skaal.module import Module, ModuleExport
+from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
 from skaal.relational import ensure_schema as ensure_relational_schema
 from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
@@ -110,6 +111,7 @@ __all__ = [
     "Module",
     "ModuleExport",
     "Page",
+    "PluginRegistry",
     "RateLimitPolicy",
     "ResourceKind",
     "ResourceOverride",
@@ -122,6 +124,7 @@ __all__ = [
     "SecondaryIndex",
     "Secret",
     "SecretRegistry",
+    "SkaalPlugin",
     "SourceLocation",
     "Store",
     "Target",
@@ -133,6 +136,7 @@ __all__ = [
     "load_environment",
     "load_environments",
     "load_lock",
+    "load_plugins",
     "open_relational_session",
     "storage",
     "types",
