@@ -46,6 +46,8 @@ def test_tags_for_returns_typed_skaal_tags() -> None:
     assert isinstance(tags, SkaalTags)
     assert tags.app == "myapp"
     assert tags.resource_id == "myapp.svc:Cache"
+    assert tags.source == "myapp.svc:Cache"
+    assert tags.source_line == "?:1"
     assert tags.kind is ResourceKind.STORE
     assert tags.env == "prod"
     assert tags.target is Target.AWS
@@ -62,6 +64,8 @@ def test_skaal_tags_as_mapping_emits_prefixed_keys() -> None:
     assert tags == {
         "skaal:app": "myapp",
         "skaal:resource_id": "myapp.svc:Cache",
+        "skaal:source": "myapp.svc:Cache",
+        "skaal:source_line": "?:1",
         "skaal:kind": "store",
         "skaal:env": "prod",
         "skaal:target": "aws",
@@ -100,6 +104,8 @@ def test_skaal_tags_extra_keys_rejected() -> None:
         SkaalTags(  # type: ignore[call-arg]
             app="x",
             resource_id="x:y",
+            source="x:y",
+            source_line="file.py:1",
             kind=ResourceKind.STORE,
             env="prod",
             target=Target.AWS,

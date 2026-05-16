@@ -64,7 +64,7 @@ Checklist:
 
 Phase 1 made several deletions beyond the table above so the remaining tree could compile cleanly without a partial constraint stack:
 
-- `skaal/api.py`, `skaal/plan.py`, and `skaal/deploy/` deleted (Phase 4/7 rewires deploy + the public Python API surface on `InferredPlan` / `BoundPlan`).
+- `skaal/plan.py` and the old `skaal/deploy/` surface were deleted; `skaal/api/` was removed in Phase 1 and is now being restored incrementally as thin CLI-parity wrappers on `BoundPlan`-based flows.
 - `skaal/runtime/` deleted (Phase 4 rebuilds the local runtime on top of the new bound plan).
 - `skaal/cli/migrate/` CLI subgroup deleted (the `skaal/migrate/` engine survives; Phase 6 brings the verbs back).
 - `skaal/cli/_utils.py` deleted (its loaders depended on the now-removed `skaal.api` surface).
@@ -181,11 +181,19 @@ Phase 5b checklist:
 
 ## Phase 6 — `skaal plan` diff, `map`, `where`, `trace`, PR-comment action
 
-- **Status:** not started
+- **Status:** in progress — the first CLI slices are landing on `copilot/continue-redesign-implementation`
 - **ADR:** planned 034
 - **Target alpha tag:** `v0.4.0-alpha.6`
 
-Checklist: TBD when ADR 034 lands.
+Checklist:
+
+- [x] `skaal plan` diffs the current `BoundPlan` against `skaal.lock` for deployable resources and reports create/update/delete rows
+- [x] `skaal map` prints the source → resource tree for an environment and emits `.skaal/map.json`
+- [x] `skaal trace <log-line-or-resource-id>` resolves back to source
+- [x] `skaal.api` provides strongly typed Python equivalents for the landed CLI surfaces (`init`, `run`, `plan`, `map`, `trace`, `build`, `deploy`, `stubs`, `doctor`)
+- [ ] `skaal where <resource>` resolves a deployed resource to its cloud-console URL
+- [ ] GitHub Action posts the rendered infra diff as a sticky PR comment
+- [ ] Tag `v0.4.0-alpha.6` pushed *(maintainer action)*
 
 ## Phase 7 — Docs, examples, migration guide; cut `v0.4.0`
 

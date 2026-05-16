@@ -49,7 +49,7 @@ class StubEmitError(RuntimeError):
     """
 
 
-def discover_app(source: Path) -> App:
+def discover_app(source: str | Path) -> App:
     """Resolve the `App` instance hosted by a source path.
 
     `source` may be a directory (added to `sys.path` and walked for a
@@ -79,7 +79,7 @@ def discover_app(source: Path) -> App:
     )
 
 
-def _resolve_source(source: Path) -> object:
+def _resolve_source(source: str | Path) -> object:
     """Return the value the user pointed `--from` at.
 
     The form `module:attribute` short-circuits filesystem discovery and

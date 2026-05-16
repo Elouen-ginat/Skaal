@@ -8,8 +8,9 @@ catalogs, `Latency` / `Durability` / `AccessPattern`, `@app.handler`,
 surface is a strict subset of the eventual `__all__` in ADR 028 §8.
 """
 
-from skaal import types
+from skaal import api, types
 from skaal._logging import ensure_null_handler as _ensure_null_handler
+from skaal.api import PlanChange, PlanDiff, TraceHit
 from skaal.app import App
 from skaal.backends._base import Backend
 from skaal.binding import (
@@ -112,6 +113,8 @@ __all__ = [
     "Module",
     "ModuleExport",
     "Page",
+    "PlanChange",
+    "PlanDiff",
     "PluginRegistry",
     "RateLimitPolicy",
     "Relational",
@@ -130,6 +133,8 @@ __all__ = [
     "SourceLocation",
     "Store",
     "Target",
+    "TraceHit",
+    "api",
     "bind",
     "ensure_relational_schema",
     "external",

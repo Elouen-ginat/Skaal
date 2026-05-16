@@ -129,7 +129,7 @@ skaal deploy
 
 ## Reference Links
 
-- Read [Python API: CLI-Parity API](../reference/python-api-cli-parity.md) for the `skaal.api` functions that mirror `run`, `plan`, `build`, `deploy`, and `diff`.
+- Read [Python API: CLI-Parity API](../reference/python-api-cli-parity.md) for the `skaal.api` functions that mirror the landed `init`, `run`, `plan`, `map`, `trace`, `build`, `deploy`, `stubs`, and `doctor` commands.
 - Read [CLI Configuration](../cli-configuration.md) for full `tool.skaal` defaults, stack profiles, and supported `SKAAL_*` variables.
 
 ## Continue
