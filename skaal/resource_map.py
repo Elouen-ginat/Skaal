@@ -1,0 +1,81 @@
+"""Typed source-to-resource map emitted by `skaal map`.
+
+The map sidecar lives at `.skaal/map.json` by default and gives editor or
+automation integrations a stable, validated view of what source symbols became
+which bound resources in a given environment.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict
+
+from skaal.binding.model import BoundPlan, BoundResource
+from skaal.inference.model import ResourceKind
+
+
+class ResourceMapEntry(BaseModel):
+    """One source symbol mapped to one bound resource."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    resource_id: str
+    module: str
+    qualname: str
+    file: str
+    line: int
+    kind: ResourceKind
+    backend: str
+    region: str | None = None
+    external: bool = False
+    pinned: bool = False
+
+    @classmethod
+    def for_resource(cls, resource: BoundResource) -> ResourceMapEntry:
+        """Build an entry from a bound resource."""
+        source = resource.inferred.source
+        return cls(
+            resource_id=resource.inferred.id,
+            module=source.module,
+            qualname=source.qualname,
+            file=source.file,
+            line=source.line,
+            kind=resource.inferred.kind,
+            backend=resource.backend,
+            region=resource.region,
+            external=resource.external,
+            pinned=resource.pinned,
+        )
+
+
+class ResourceMap(BaseModel):
+    """The full source-to-resource map for one app/environment pair."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = 1
+    app: str
+    environment: str
+    app_fingerprint: str
+    bound_fingerprint: str
+    resources: tuple[ResourceMapEntry, ...] = ()
+
+    @classmethod
+    def for_bound_plan(cls, bound: BoundPlan) -> ResourceMap:
+        """Build the resource map from a bound plan."""
+        resources = tuple(
+            sorted(
+                (ResourceMapEntry.for_resource(resource) for resource in bound.resources),
+                key=lambda entry: (entry.file, entry.line, entry.qualname, entry.resource_id),
+            )
+        )
+        return cls(
+            app=bound.app,
+            environment=bound.environment,
+            app_fingerprint=bound.app_fingerprint,
+            bound_fingerprint=bound.bound_fingerprint,
+            resources=resources,
+        )
+
+    def to_json(self) -> str:
+        """Render the canonical JSON form for on-disk storage."""
+        return self.model_dump_json(indent=2) + "\n"

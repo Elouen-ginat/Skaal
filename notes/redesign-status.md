@@ -181,11 +181,18 @@ Phase 5b checklist:
 
 ## Phase 6 — `skaal plan` diff, `map`, `where`, `trace`, PR-comment action
 
-- **Status:** not started
+- **Status:** in progress — the first CLI slices are landing on `copilot/continue-redesign-implementation`
 - **ADR:** planned 034
 - **Target alpha tag:** `v0.4.0-alpha.6`
 
-Checklist: TBD when ADR 034 lands.
+Checklist:
+
+- [x] `skaal plan` diffs the current `BoundPlan` against `skaal.lock` for deployable resources and reports create/update/delete rows
+- [x] `skaal map` prints the source → resource tree for an environment and emits `.skaal/map.json`
+- [ ] `skaal where <resource>` resolves a deployed resource to its cloud-console URL
+- [ ] `skaal trace <log-line-or-resource-id>` resolves back to source
+- [ ] GitHub Action posts the rendered infra diff as a sticky PR comment
+- [ ] Tag `v0.4.0-alpha.6` pushed *(maintainer action)*
 
 ## Phase 7 — Docs, examples, migration guide; cut `v0.4.0`
 
