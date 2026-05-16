@@ -94,7 +94,7 @@ class SynthResult:
 
 
 class WherePreference(BaseModel):
-    """One ordered deployed-resource preference for `skaal where`.
+    """One ordered deployed resource preference for `skaal where`.
 
     When a synth emits multiple Pulumi resources for one Skaal resource,
     `skaal where` needs a stable way to pick which exported provider type

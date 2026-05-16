@@ -273,6 +273,7 @@ def _resource_type_preferences(target: Target) -> dict[ResourceKind, tuple[str, 
         for kind, overlay in _RESOURCE_TYPE_PREFERENCES.get(target, {}).items():
             current = preferences.get(kind, ())
             # Plugin registrations stay authoritative over built-in target metadata.
+            # `dict.fromkeys(...)` deduplicates while preserving overlay-first order.
             preferences[kind] = tuple(dict.fromkeys([*overlay, *current]))
     return preferences
 

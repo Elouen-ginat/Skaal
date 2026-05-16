@@ -215,6 +215,7 @@ class BaseDeployTarget(DeployTarget):
                     continue
                 if existing_preference.priority < preference.priority:
                     current[index] = preference
+                # Equal priorities keep the earlier registration as the tie-breaker.
                 break
             else:
                 current.append(preference)

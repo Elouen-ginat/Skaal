@@ -25,7 +25,7 @@ WHERE_FALLBACK = 10
 
 
 def dynamodb_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for a DynamoDB table export."""
+    """Return the AWS console URL for a DynamoDB table's Pulumi outputs."""
     actual_region = _aws_region(region)
     name = _find_first_string_value(outputs, "name", "id")
     return (
@@ -35,7 +35,7 @@ def dynamodb_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def s3_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an S3 bucket export."""
+    """Return the AWS console URL for an S3 bucket's Pulumi outputs."""
     actual_region = _aws_region(region)
     bucket = _find_first_string_value(outputs, "bucket", "id")
     return (
@@ -45,7 +45,7 @@ def s3_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def rds_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an RDS instance export."""
+    """Return the AWS console URL for an RDS instance's Pulumi outputs."""
     actual_region = _aws_region(region)
     identifier = _find_first_string_value(outputs, "identifier", "id")
     return (
@@ -55,7 +55,7 @@ def rds_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def elasticache_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an ElastiCache replication group export."""
+    """Return the AWS console URL for an ElastiCache group's Pulumi outputs."""
     actual_region = _aws_region(region)
     group = _find_first_string_value(outputs, "replicationGroupId", "id")
     return (
@@ -65,7 +65,7 @@ def elasticache_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def lambda_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for a Lambda function export."""
+    """Return the AWS console URL for a Lambda function's Pulumi outputs."""
     actual_region = _aws_region(region)
     name = _find_first_string_value(outputs, "name", "functionName", "id")
     return (
@@ -75,7 +75,7 @@ def lambda_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def apigw_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an API Gateway HTTP API export."""
+    """Return the AWS console URL for an API Gateway HTTP API's Pulumi outputs."""
     actual_region = _aws_region(region)
     api_id = _find_first_string_value(outputs, "apiId", "id")
     return (
@@ -85,7 +85,7 @@ def apigw_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def eventbridge_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an EventBridge rule export."""
+    """Return the AWS console URL for an EventBridge rule's Pulumi outputs."""
     actual_region = _aws_region(region)
     name = _find_first_string_value(outputs, "name", "id")
     return (
@@ -95,7 +95,7 @@ def eventbridge_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def sqs_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for an SQS queue export."""
+    """Return the AWS console URL for an SQS queue's Pulumi outputs."""
     actual_region = _aws_region(region)
     queue_url = _find_first_string_value(outputs, "url", "id")
     return (
@@ -105,7 +105,7 @@ def sqs_console_url(outputs: StackMapping, region: str | None) -> str:
 
 
 def secret_console_url(outputs: StackMapping, region: str | None) -> str:
-    """Return the AWS console URL for a Secrets Manager secret export."""
+    """Return the AWS console URL for a Secrets Manager secret's Pulumi outputs."""
     actual_region = _aws_region(region)
     name = _find_first_string_value(outputs, "name", "id")
     return (
