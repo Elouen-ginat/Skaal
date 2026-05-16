@@ -6,10 +6,12 @@ import importlib
 import sys
 import textwrap
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from skaal import api
+from skaal.app import App
 
 _FIXTURE = textwrap.dedent(
     """
@@ -32,7 +34,7 @@ _FIXTURE = textwrap.dedent(
 
 
 @pytest.fixture
-def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, object]:
+def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, App]:
     pkg_dir = tmp_path / "api_fixture_pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").write_text("")
@@ -42,10 +44,10 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, o
     sys.modules.pop("api_fixture_pkg", None)
     sys.modules.pop("api_fixture_pkg.app", None)
     module = importlib.import_module("api_fixture_pkg.app")
-    return "api_fixture_pkg.app:app", module.app
+    return "api_fixture_pkg.app:app", cast(App, module.app)
 
 
-def test_plan_accepts_reference_and_returns_diff(fixture_app: tuple[str, object]) -> None:
+def test_plan_accepts_reference_and_returns_diff(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
     diff = api.plan(target)
@@ -55,7 +57,7 @@ def test_plan_accepts_reference_and_returns_diff(fixture_app: tuple[str, object]
 
 
 def test_map_accepts_app_object_and_writes_json(
-    fixture_app: tuple[str, object], tmp_path: Path
+    fixture_app: tuple[str, App], tmp_path: Path
 ) -> None:
     _, app = fixture_app
     out_path = tmp_path / "artefacts" / "map.json"
@@ -67,7 +69,7 @@ def test_map_accepts_app_object_and_writes_json(
     assert "greet" in out_path.read_text(encoding="utf-8")
 
 
-def test_trace_resolves_log_line(fixture_app: tuple[str, object]) -> None:
+def test_trace_resolves_log_line(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
     hit = api.trace("error resource=api_fixture_pkg.app:greet", target)
@@ -76,7 +78,7 @@ def test_trace_resolves_log_line(fixture_app: tuple[str, object]) -> None:
     assert hit.resource.inferred.source.qualname == "greet"
 
 
-def test_trace_rejects_unknown_resource(fixture_app: tuple[str, object]) -> None:
+def test_trace_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
     with pytest.raises(ValueError, match="Could not resolve"):

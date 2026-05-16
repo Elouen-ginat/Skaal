@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TypeAlias
 
+from skaal.app import App
 from skaal.binding import load_lock
 from skaal.cli._load import AppSpec, load_app, load_plan
 from skaal.plan_diff import PlanDiff, diff_plan
 from skaal.resource_map import ResourceMap
 from skaal.traceability import TraceHit, resolve_trace
 
-if TYPE_CHECKING:
-    from skaal.app import App
+AppTarget: TypeAlias = App | str
+
+__all__ = ["AppTarget", "PlanDiff", "ResourceMap", "TraceHit", "map", "plan", "trace"]
 
 
 def plan(
-    target: str | App,
+    target: AppTarget,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
@@ -43,7 +45,7 @@ def plan(
 
 
 def map(
-    target: str | App,
+    target: AppTarget,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
@@ -77,7 +79,7 @@ def map(
 
 def trace(
     needle: str,
-    target: str | App,
+    target: AppTarget,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
@@ -104,8 +106,22 @@ def trace(
     return resolve_trace(needle, loaded.bound)
 
 
-def _coerce_app(target: str | App) -> App:
-    """Resolve `target` to a live `App` instance."""
+def _coerce_app(target: AppTarget) -> App:
+    """Resolve `target` to a live `App` instance.
+
+    Args:
+        target: `module:attribute` reference or live `App` instance.
+
+    Returns:
+        The resolved `App`.
+
+    Raises:
+        TypeError: If the resolved object is not a Skaal `App`.
+    """
     if isinstance(target, str):
-        return load_app(AppSpec.parse(target))
+        resolved = load_app(AppSpec.parse(target))
+        if not isinstance(resolved, App):
+            msg = f"`{target}` did not resolve to a Skaal `App` instance."
+            raise TypeError(msg)
+        return resolved
     return target
