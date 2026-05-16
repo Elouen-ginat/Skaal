@@ -29,14 +29,14 @@ def resolve_trace(needle: str, bound: BoundPlan) -> TraceHit:
         ValueError: If no resource id can be resolved from the input.
     """
     resources = bound.resources
-    best_match: BoundResource | None = None
     for resource in resources:
         if needle == resource.inferred.id:
             return TraceHit(resource=resource, matched_text=resource.inferred.id)
 
     matches = [resource for resource in resources if resource.inferred.id in needle]
-    if matches:
-        best_match = max(matches, key=lambda resource: len(resource.inferred.id))
+    best_match: BoundResource | None = (
+        max(matches, key=lambda resource: len(resource.inferred.id)) if matches else None
+    )
     if best_match is not None:
         return TraceHit(resource=best_match, matched_text=best_match.inferred.id)
 
