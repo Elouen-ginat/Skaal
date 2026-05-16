@@ -27,7 +27,7 @@ WHERE_FALLBACK = 10
 def dynamodb_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for a DynamoDB table export."""
     actual_region = _aws_region(region)
-    name = _string_value(outputs, "name", "id")
+    name = _find_first_string_value(outputs, "name", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/dynamodbv2/home"
         f"?region={actual_region}#table?name={quote(name)}"
@@ -37,7 +37,7 @@ def dynamodb_console_url(outputs: StackMapping, region: str | None) -> str:
 def s3_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an S3 bucket export."""
     actual_region = _aws_region(region)
-    bucket = _string_value(outputs, "bucket", "id")
+    bucket = _find_first_string_value(outputs, "bucket", "id")
     return (
         f"https://s3.console.aws.amazon.com/s3/buckets/{quote(bucket)}"
         f"?region={actual_region}&tab=objects"
@@ -47,7 +47,7 @@ def s3_console_url(outputs: StackMapping, region: str | None) -> str:
 def rds_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an RDS instance export."""
     actual_region = _aws_region(region)
-    identifier = _string_value(outputs, "identifier", "id")
+    identifier = _find_first_string_value(outputs, "identifier", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/rds/home"
         f"?region={actual_region}#database:id={quote(identifier)};is-cluster=false"
@@ -57,7 +57,7 @@ def rds_console_url(outputs: StackMapping, region: str | None) -> str:
 def elasticache_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an ElastiCache replication group export."""
     actual_region = _aws_region(region)
-    group = _string_value(outputs, "replicationGroupId", "id")
+    group = _find_first_string_value(outputs, "replicationGroupId", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/elasticache/home"
         f"?region={actual_region}#/redis/{quote(group)}"
@@ -67,7 +67,7 @@ def elasticache_console_url(outputs: StackMapping, region: str | None) -> str:
 def lambda_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for a Lambda function export."""
     actual_region = _aws_region(region)
-    name = _string_value(outputs, "name", "functionName", "id")
+    name = _find_first_string_value(outputs, "name", "functionName", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/lambda/home"
         f"?region={actual_region}#/functions/{quote(name)}"
@@ -77,7 +77,7 @@ def lambda_console_url(outputs: StackMapping, region: str | None) -> str:
 def apigw_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an API Gateway HTTP API export."""
     actual_region = _aws_region(region)
-    api_id = _string_value(outputs, "apiId", "id")
+    api_id = _find_first_string_value(outputs, "apiId", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/apigateway/home"
         f"?region={actual_region}#/apis/{quote(api_id)}"
@@ -87,7 +87,7 @@ def apigw_console_url(outputs: StackMapping, region: str | None) -> str:
 def eventbridge_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an EventBridge rule export."""
     actual_region = _aws_region(region)
-    name = _string_value(outputs, "name", "id")
+    name = _find_first_string_value(outputs, "name", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/events/home"
         f"?region={actual_region}#/rules/{quote(name)}"
@@ -97,7 +97,7 @@ def eventbridge_console_url(outputs: StackMapping, region: str | None) -> str:
 def sqs_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for an SQS queue export."""
     actual_region = _aws_region(region)
-    queue_url = _string_value(outputs, "url", "id")
+    queue_url = _find_first_string_value(outputs, "url", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/sqs/v3/home"
         f"?region={actual_region}#/queues/{quote(queue_url, safe='')}"
@@ -107,7 +107,7 @@ def sqs_console_url(outputs: StackMapping, region: str | None) -> str:
 def secret_console_url(outputs: StackMapping, region: str | None) -> str:
     """Return the AWS console URL for a Secrets Manager secret export."""
     actual_region = _aws_region(region)
-    name = _string_value(outputs, "name", "id")
+    name = _find_first_string_value(outputs, "name", "id")
     return (
         f"https://{actual_region}.console.aws.amazon.com/secretsmanager/secret"
         f"?region={actual_region}&name={quote(name)}"
@@ -119,7 +119,7 @@ def _aws_region(region: str | None) -> str:
     return region or "us-east-1"
 
 
-def _string_value(container: StackMapping, *keys: str) -> str:
+def _find_first_string_value(container: StackMapping, *keys: str) -> str:
     for key in keys:
         value = container.get(key)
         if isinstance(value, str) and value:

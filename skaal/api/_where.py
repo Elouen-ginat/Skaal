@@ -10,13 +10,16 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
 from skaal.deploy import get_target
 from skaal.deploy._protocol import ConsoleUrlResolver
 from skaal.errors import MissingExtraError, SkaalDeployError
 from skaal.inference.model import ResourceKind
+
+if TYPE_CHECKING:
+    from skaal.deploy._protocol import DeployTarget
 
 StackMapping: TypeAlias = Mapping[str, Any]
 _WHERE_LOCK = Lock()
@@ -252,7 +255,7 @@ def register_resource_type_preference(
 def _console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:
     _ensure_plugins_loaded()
     resolvers: dict[str, ConsoleUrlResolver] = {}
-    target_impl = _deploy_target(target)
+    target_impl = _get_deploy_target_safely(target)
     if target_impl is not None:
         resolvers.update(target_impl.where_console_url_resolvers())
     with _WHERE_LOCK:
@@ -263,7 +266,7 @@ def _console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:
 def _resource_type_preferences(target: Target) -> dict[ResourceKind, tuple[str, ...]]:
     _ensure_plugins_loaded()
     preferences: dict[ResourceKind, tuple[str, ...]] = {}
-    target_impl = _deploy_target(target)
+    target_impl = _get_deploy_target_safely(target)
     if target_impl is not None:
         preferences.update(target_impl.where_resource_type_preferences())
     with _WHERE_LOCK:
@@ -273,7 +276,13 @@ def _resource_type_preferences(target: Target) -> dict[ResourceKind, tuple[str, 
     return preferences
 
 
-def _deploy_target(target: Target):
+def _get_deploy_target_safely(target: Target) -> DeployTarget | None:
+    """Return the registered deploy target, importing the built-in module if needed.
+
+    `skaal where` may be the first deploy-adjacent code path a caller hits.
+    In that case the built-in target package might not have been imported
+    yet, so this helper retries after importing `skaal.deploy.<target>`.
+    """
     try:
         return get_target(target)
     except Exception:
