@@ -46,6 +46,8 @@ class SkaalTags(BaseModel):
 
     app: str
     resource_id: str
+    source: str
+    source_line: str
     kind: ResourceKind
     env: str
     target: Target
@@ -64,6 +66,8 @@ class SkaalTags(BaseModel):
         return cls(
             app=inferred.source.top_package,
             resource_id=inferred.id,
+            source=inferred.id,
+            source_line=f"{inferred.source.file}:{inferred.source.line}",
             kind=inferred.kind,
             env=env.name,
             target=env.target,
@@ -76,6 +80,8 @@ class SkaalTags(BaseModel):
         return {
             "skaal:app": self.app,
             "skaal:resource_id": self.resource_id,
+            "skaal:source": self.source,
+            "skaal:source_line": self.source_line,
             "skaal:kind": self.kind.value,
             "skaal:env": self.env,
             "skaal:target": self.target.value,
