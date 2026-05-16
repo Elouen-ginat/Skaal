@@ -19,7 +19,7 @@ from skaal.deploy._protocol import (
     WhereSpec,
 )
 from skaal.deploy.aws._config import AwsConfig
-from skaal.deploy.aws._where import AWS_S3_BUCKET, s3_console_url
+from skaal.deploy.aws._where import AWS_S3_BUCKET, WHERE_PRIMARY, s3_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -31,7 +31,13 @@ class S3Synth(SynthModule[AwsConfig]):
         kinds=frozenset({ResourceKind.BLOB}),
         description="S3 bucket with server-side encryption.",
         where=WhereSpec(
-            preferences=(WherePreference(kind=ResourceKind.BLOB, provider_type=AWS_S3_BUCKET),),
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.BLOB,
+                    provider_type=AWS_S3_BUCKET,
+                    priority=WHERE_PRIMARY,
+                ),
+            ),
             console_url_resolvers={AWS_S3_BUCKET: s3_console_url},
         ),
     )

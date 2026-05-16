@@ -193,7 +193,12 @@ class BaseDeployTarget(DeployTarget):
         return self._required_extras
 
     def _register_where_locked(self, where: WhereSpec, *, owner: str) -> None:
-        """Merge one synth's built-in `skaal where` metadata into the target."""
+        """Merge one synth's built-in `skaal where` metadata into the target.
+
+        If two preferences name the same `(kind, provider_type)`, the
+        higher priority wins. Equal priorities keep the earlier
+        registration, which makes synth registration order the tie-breaker.
+        """
         for provider_type, resolver in where.console_url_resolvers.items():
             existing = self._where_console_url_resolvers.get(provider_type)
             if existing is not None and existing is not resolver:

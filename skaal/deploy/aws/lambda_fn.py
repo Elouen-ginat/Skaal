@@ -13,7 +13,7 @@ from typing import ClassVar
 
 from skaal.deploy._protocol import SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._lambda import LambdaSynth
-from skaal.deploy.aws._where import AWS_LAMBDA_FUNCTION, lambda_console_url
+from skaal.deploy.aws._where import AWS_LAMBDA_FUNCTION, WHERE_PRIMARY, lambda_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -26,7 +26,11 @@ class PlainLambdaSynth(LambdaSynth):
         description="AWS Lambda function (image package).",
         where=WhereSpec(
             preferences=(
-                WherePreference(kind=ResourceKind.FUNCTION, provider_type=AWS_LAMBDA_FUNCTION),
+                WherePreference(
+                    kind=ResourceKind.FUNCTION,
+                    provider_type=AWS_LAMBDA_FUNCTION,
+                    priority=WHERE_PRIMARY,
+                ),
             ),
             console_url_resolvers={AWS_LAMBDA_FUNCTION: lambda_console_url},
         ),

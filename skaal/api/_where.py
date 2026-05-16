@@ -272,6 +272,7 @@ def _resource_type_preferences(target: Target) -> dict[ResourceKind, tuple[str, 
     with _WHERE_LOCK:
         for kind, overlay in _RESOURCE_TYPE_PREFERENCES.get(target, {}).items():
             current = preferences.get(kind, ())
+            # Plugin registrations stay authoritative over built-in target metadata.
             preferences[kind] = tuple(dict.fromkeys([*overlay, *current]))
     return preferences
 
@@ -285,11 +286,11 @@ def _get_deploy_target_safely(target: Target) -> DeployTarget | None:
     """
     try:
         return get_target(target)
-    except Exception:
+    except SkaalDeployError:
         try:
             __import__(f"skaal.deploy.{target.value}")
             return get_target(target)
-        except Exception:
+        except (ImportError, SkaalDeployError):
             return None
 
 

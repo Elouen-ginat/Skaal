@@ -99,7 +99,8 @@ class WherePreference(BaseModel):
     When a synth emits multiple Pulumi resources for one Skaal resource,
     `skaal where` needs a stable way to pick which exported provider type
     should represent that resource in console lookups. Higher `priority`
-    wins; ties keep registration order.
+    wins; ties keep registration order. A priority of `0` is the lowest
+    built-in/default priority level.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

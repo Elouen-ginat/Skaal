@@ -19,7 +19,11 @@ from skaal.deploy._protocol import (
     WhereSpec,
 )
 from skaal.deploy.aws._config import AwsConfig
-from skaal.deploy.aws._where import AWS_SECRETSMANAGER_SECRET, secret_console_url
+from skaal.deploy.aws._where import (
+    AWS_SECRETSMANAGER_SECRET,
+    WHERE_PRIMARY,
+    secret_console_url,
+)
 from skaal.inference.model import ResourceKind
 
 
@@ -35,6 +39,7 @@ class SecretsManagerSynth(SynthModule[AwsConfig]):
                 WherePreference(
                     kind=ResourceKind.SECRET,
                     provider_type=AWS_SECRETSMANAGER_SECRET,
+                    priority=WHERE_PRIMARY,
                 ),
             ),
             console_url_resolvers={AWS_SECRETSMANAGER_SECRET: secret_console_url},
