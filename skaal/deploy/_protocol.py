@@ -207,6 +207,15 @@ class DeployTarget(Protocol):
         """Return the synth function for `backend_name`, or ``None``."""
         ...
 
+    def register_synth(self, synth: SynthModule[Any]) -> None:
+        """Register a plugin-contributed synth on this target.
+
+        Implementations should be idempotent for the same instance and
+        raise `SkaalDeployError` on a name collision with a different
+        instance.
+        """
+        ...
+
     def supported_backends(self) -> frozenset[str]:
         """The set of backend names this target can synthesise."""
         ...

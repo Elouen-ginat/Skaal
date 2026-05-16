@@ -14,7 +14,7 @@ import pulumi_aws as aws
 
 from skaal.deploy._protocol import SynthContext, SynthSpec
 from skaal.deploy.aws._config import AwsConfig
-from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth
+from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
 from skaal.inference.model import ResourceKind
 from skaal.schedule import Cron, Every
 
@@ -29,7 +29,10 @@ class EventBridgeLambdaSynth(LambdaSynth):
     )
 
     def _event_source(
-        self, ctx: SynthContext[AwsConfig], scaffold: LambdaScaffold
+        self,
+        ctx: SynthContext[AwsConfig],
+        scaffold: LambdaScaffold,
+        pre: PreScaffold,
     ) -> tuple[Any, ...]:
         cfg = ctx.config.eventbridge
         overrides = ctx.resource.inferred.overrides

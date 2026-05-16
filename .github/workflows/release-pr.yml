@@ -77,32 +77,12 @@ jobs:
           replacements = {
               "pyproject.toml": [
                   (f'version = "{old_version}"', f'version = "{new_version}"'),
-                  (f'"skaal-mesh=={old_version}"', f'"skaal-mesh=={new_version}"'),
               ],
               "skaal/__init__.py": [
                   (f'__version__ = "{old_version}"', f'__version__ = "{new_version}"'),
               ],
-              "mesh/pyproject.toml": [
-                  (f'version = "{old_version}"', f'version = "{new_version}"'),
-              ],
-              "Cargo.toml": [
-                  (f'version = "{old_version}"', f'version = "{new_version}"'),
-              ],
-              "mesh/Cargo.toml": [
-                  (f'version = "{old_version}"', f'version = "{new_version}"'),
-              ],
-              "skaal/deploy/pulumi/render.py": [
-                  (f'f\'version = "{old_version}"\\n\'', f'f\'version = "{new_version}"\\n\''),
-              ],
               "skaal/cli/templates/init/pyproject.toml.tmpl": [
                   (f'version = "{old_version}"', f'version = "{new_version}"'),
-              ],
-              "tests/deploy/test_mesh_artifacts.py": [
-                  (f'version = "{old_version}"', f'version = "{new_version}"'),
-                  (
-                    f'skaal_mesh-{old_version}-',
-                    f'skaal_mesh-{new_version}-',
-                  ),
               ],
           }
 
@@ -142,14 +122,9 @@ jobs:
           set -euo pipefail
           git checkout -b "${BRANCH}"
           git add \
-            Cargo.toml \
-            mesh/Cargo.toml \
-            mesh/pyproject.toml \
             pyproject.toml \
             skaal/__init__.py \
-            skaal/cli/templates/init/pyproject.toml.tmpl \
-            skaal/deploy/pulumi/render.py \
-            tests/deploy/test_mesh_artifacts.py
+            skaal/cli/templates/init/pyproject.toml.tmpl
           git commit -m "chore(release): bump version to ${NEW_TAG}"
           git push --force-with-lease origin "${BRANCH}"
 

@@ -109,9 +109,6 @@ FIXTURE_MEMBERS = [
 
 
 @app.storage(
-    read_latency="< 10ms",
-    durability="persistent",
-    access_pattern="random-read",
     indexes=[
         SecondaryIndex(name="by_team", partition_key="team", sort_key="score"),
         SecondaryIndex(name="by_email", partition_key="email", unique=True),
