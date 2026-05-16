@@ -1,8 +1,16 @@
-"""Session cache example demonstrating class-level retention and per-call TTL overrides.
+"""Session cache example demonstrating the `Store[T, Redis]` type-pin and TTLs.
+
+`Sessions` and `Tokens` pin the second generic parameter to ``Redis``, which
+flows through the inference layer as ``ResourceOverrides.backend == "redis"``
+and tells the binder to use Redis regardless of environment defaults. TTL
+behaviour is wired in two places: a class-level default via
+``__skaal_default_ttl_seconds__`` and per-call overrides on the
+``set`` / ``add`` calls.
 
 Run locally:
 
-    skaal run examples.session_cache:app
+    docker run --rm -p 6379:6379 redis:7-alpine            # one terminal
+    skaal run examples.session_cache:app                   # another terminal
 
 Try it:
 
@@ -16,11 +24,13 @@ Try it:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import ClassVar
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from skaal import App, Store
+from skaal.backends.redis import Redis
 
 app = App("session-cache")
 api = FastAPI(title="Skaal Session Cache Example")
@@ -39,14 +49,18 @@ class TokenRecord(BaseModel):
     issued_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-@app.storage(read_latency="< 5ms", durability="ephemeral", retention="30m")
-class Sessions(Store[SessionRecord]):
+@app.storage
+class Sessions(Store[SessionRecord, Redis]):
     """Session rows expire after 30 minutes unless a write overrides the TTL."""
 
+    __skaal_default_ttl_seconds__: ClassVar[float] = 30 * 60
 
-@app.storage(read_latency="< 5ms", durability="ephemeral", retention="15m")
-class Tokens(Store[TokenRecord]):
+
+@app.storage
+class Tokens(Store[TokenRecord, Redis]):
     """Short-lived token cache with per-call TTL overrides."""
+
+    __skaal_default_ttl_seconds__: ClassVar[float] = 15 * 60
 
 
 @app.function()
