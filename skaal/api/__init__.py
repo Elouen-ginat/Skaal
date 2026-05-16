@@ -24,6 +24,7 @@ from ._commands import (
 from ._plan import PlanChange, PlanDiff, diff_plan
 from ._resource_map import ResourceMap, ResourceMapEntry
 from ._trace import TraceHit, resolve_trace
+from ._where import WhereHit, resolve_where
 
 AppTarget: TypeAlias = App | str
 
@@ -38,6 +39,7 @@ __all__ = [
     "ResourceMapEntry",
     "StubEmitResult",
     "TraceHit",
+    "WhereHit",
     "build",
     "deploy",
     "diff_plan",
@@ -49,6 +51,7 @@ __all__ = [
     "run",
     "stubs",
     "trace",
+    "where",
 ]
 
 
@@ -139,6 +142,35 @@ def trace(
         lock_path=lock_path,
     )
     return resolve_trace(needle, loaded.bound)
+
+
+def where(
+    resource_id: str,
+    target: AppTarget,
+    *,
+    env_name: str = "prod",
+    toml_path: Path = Path("skaal.toml"),
+    lock_path: Path = Path("skaal.lock"),
+) -> WhereHit:
+    """Resolve a resource id to its deployed cloud-console URL.
+
+    Args:
+        resource_id: Bound resource id to locate.
+        target: `module:attribute` reference or live `App` instance.
+        env_name: Environment name from `skaal.toml`.
+        toml_path: Settings file path.
+        lock_path: Lock file path.
+
+    Returns:
+        The resolved deployed-resource location.
+    """
+    loaded = load_plan(
+        _resolve_app_target(target),
+        env_name,
+        toml_path=toml_path,
+        lock_path=lock_path,
+    )
+    return resolve_where(resource_id, loaded.bound, loaded.env)
 
 
 def _resolve_app_target(target: AppTarget) -> App:

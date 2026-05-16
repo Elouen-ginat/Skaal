@@ -103,6 +103,43 @@ def test_trace_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
         api.trace("missing-resource", target)
 
 
+def test_where_resolves_resource_console_url(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+
+    fake_state = {
+        "resources": [
+            {
+                "type": "aws:dynamodb/table:Table",
+                "outputs": {
+                    "name": "skaal-sessions",
+                    "id": "skaal-sessions",
+                    "tags": {
+                        "skaal:resource_id": "api_fixture_pkg.app:Sessions",
+                    },
+                },
+            }
+        ]
+    }
+
+    monkeypatch.setattr("skaal.api._where._load_stack_deployment", lambda *args, **kwargs: fake_state)
+
+    hit = api.where("api_fixture_pkg.app:Sessions", target)
+
+    assert hit.resource.inferred.id == "api_fixture_pkg.app:Sessions"
+    assert hit.provider_type == "aws:dynamodb/table:Table"
+    assert hit.physical_id == "skaal-sessions"
+    assert "dynamodbv2" in hit.console_url
+
+
+def test_where_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
+    target, _ = fixture_app
+
+    with pytest.raises(ValueError, match="Could not resolve"):
+        api.where("missing-resource", target)
+
+
 def test_build_accepts_reference_and_returns_manifest(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 

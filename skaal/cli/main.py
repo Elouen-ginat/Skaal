@@ -2,9 +2,9 @@
 
 The CLI surface in `0.4.0-alpha` is:
 
-  - `init`, `run`, `plan`, `map`, `trace`, `build`, `deploy`, `stubs`, `doctor`
+  - `init`, `run`, `plan`, `map`, `where`, `trace`, `build`, `deploy`, `stubs`, `doctor`
 
-`where`, `rebind`, `unbind`, `backends`, `diff`,
+`rebind`, `unbind`, `backends`, `diff`,
 `destroy`, `infra`, `stacks`, `catalog` are scheduled for their respective
 later phases and are not registered here.
 """
@@ -21,6 +21,7 @@ from skaal.cli.plan_cmd import app as plan_app
 from skaal.cli.run_cmd import app as run_app
 from skaal.cli.stubs_cmd import app as stubs_app
 from skaal.cli.trace_cmd import app as trace_app
+from skaal.cli.where_cmd import app as where_app
 
 app = typer.Typer(
     name="skaal",
@@ -32,6 +33,7 @@ app.add_typer(init_app, name="init")
 app.add_typer(run_app, name="run")
 app.add_typer(plan_app, name="plan")
 app.add_typer(map_app, name="map")
+app.add_typer(where_app, name="where")
 app.add_typer(trace_app, name="trace")
 app.add_typer(build_app, name="build")
 app.add_typer(deploy_app, name="deploy")
