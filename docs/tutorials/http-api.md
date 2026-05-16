@@ -115,7 +115,7 @@ Skaal also reserves `/_skaal/*` for internal runtime traffic. Your mounted ASGI 
 
 ## Compare With the Full Example
 
-The repository version at `examples/02_todo_api/app.py` grows this pattern into a more complete application:
+The repository version at `examples/todo_api/app.py` grows this pattern into a more complete application:
 
 - key-value storage for todo items
 - relational storage for comments
