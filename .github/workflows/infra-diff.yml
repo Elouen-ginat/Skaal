@@ -175,6 +175,7 @@ jobs:
 
           import json
           import os
+          import re
           from pathlib import Path
           from urllib import error, request
 
@@ -182,6 +183,10 @@ jobs:
           repo = os.environ["REPOSITORY"]
           pr_number = os.environ["PR_NUMBER"]
           token = os.environ["GITHUB_TOKEN"]
+          if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) is None:
+              raise ValueError(f"Unexpected repository value: {repo!r}")
+          issue_number = int(pr_number)
+          api_base = f"https://api.github.com/repos/{repo}"
           body = marker + "\n" + Path("/tmp/skaal-infra-diff.md").read_text(encoding="utf-8")
           headers = {
               "Accept": "application/vnd.github+json",
@@ -199,7 +204,7 @@ jobs:
 
           comments = api(
               "GET",
-              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100",
+              f"{api_base}/issues/{issue_number}/comments?per_page=100",
           )
           existing = next(
               (
@@ -213,13 +218,13 @@ jobs:
               if isinstance(existing, dict):
                   api(
                       "PATCH",
-                      f"https://api.github.com/repos/{repo}/issues/comments/{existing['id']}",
+                      f"{api_base}/issues/comments/{existing['id']}",
                       {"body": body},
                   )
               else:
                   api(
                       "POST",
-                      f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+                      f"{api_base}/issues/{issue_number}/comments",
                       {"body": body},
                   )
           except error.HTTPError as exc:
