@@ -158,7 +158,7 @@ def _default_cells(
     *targets: Target,
     kinds: Iterable[ResourceKind] | None = None,
 ) -> frozenset[BackendDefault]:
-    default_kinds = tuple(kinds) if kinds is not None else tuple(ResourceKind(kind) for kind in token.kinds)
+    default_kinds = tuple(kinds) if kinds is not None else (ResourceKind(kind) for kind in token.kinds)
     return frozenset(
         BackendDefault(kind=kind, target=target) for kind in default_kinds for target in targets
     )
@@ -395,15 +395,16 @@ def _registry_consistency_check() -> None:
             raise RuntimeError(msg)
         seen.add(token)
         for default in entry.default_for:
+            cell_repr = f"({default.kind.value}, {default.target.value})"
             if default.target not in entry.targets:
                 msg = (
-                    f"default cell ({default.kind.value}, {default.target.value}) points to "
+                    f"default cell {cell_repr} points to "
                     f"{token.__name__}, but that backend does not target {default.target.value!r}"
                 )
                 raise RuntimeError(msg)
             if not entry.supports_kind(default.kind):
                 msg = (
-                    f"default cell ({default.kind.value}, {default.target.value}) points to "
+                    f"default cell {cell_repr} points to "
                     f"{token.__name__}, but that backend does not host {default.kind.value!r}"
                 )
                 raise RuntimeError(msg)

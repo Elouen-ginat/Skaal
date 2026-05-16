@@ -12,20 +12,20 @@ from skaal.inference.model import ResourceKind
 
 def test_synth_spec_derives_backend_names_and_kinds_from_tokens() -> None:
     spec = SynthSpec(tokens=(Redis, RedisChannel), description="Redis-backed store + channel.")
+    redis_entries = tuple(lookup_token(token) for token in (Redis, RedisChannel))
 
     assert spec.token_classes == (Redis, RedisChannel)
-    assert spec.backends == tuple(lookup_token(token).name for token in (Redis, RedisChannel))
-    assert spec.kinds == frozenset(
-        kind for token in (Redis, RedisChannel) for kind in lookup_token(token).kinds
-    )
+    assert spec.backends == tuple(entry.name for entry in redis_entries)
+    assert spec.kinds == frozenset(kind for entry in redis_entries for kind in entry.kinds)
 
 
 def test_synth_spec_accepts_legacy_backend_names() -> None:
     spec = SynthSpec(backends=("dynamodb",), kinds=frozenset({ResourceKind.STORE}))
+    dynamodb = lookup_token(DynamoDB)
 
     assert spec.token_classes == (DynamoDB,)
-    assert spec.backends == (lookup_token(DynamoDB).name,)
-    assert spec.kinds == frozenset(lookup_token(DynamoDB).kinds)
+    assert spec.backends == (dynamodb.name,)
+    assert spec.kinds == frozenset(dynamodb.kinds)
 
 
 def test_synth_spec_rejects_mismatched_legacy_kinds() -> None:
