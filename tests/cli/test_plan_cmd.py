@@ -130,3 +130,12 @@ def test_plan_reports_updates_when_code_changes_after_lock(
     assert result.exit_code == 0, result.output
     assert "update" in result.output
     assert "fingerprint" in result.output
+
+
+def test_plan_renders_github_markdown(fixture_app: str) -> None:
+    result = runner.invoke(app, ["plan", fixture_app, "--format", "github-markdown"])
+
+    assert result.exit_code == 0, result.output
+    assert "| Action | Resource | Kind | Backend | Region | Details |" in result.output
+    assert "`plan_fixture_pkg.app:Sessions`" in result.output
+    assert "- env: `local`" in result.output

@@ -40,8 +40,7 @@ class Aurora(Backend[object]):
 
 class AuroraSynth(SynthModule[AwsConfig]):
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("aurora",),
-        kinds=frozenset({ResourceKind.RELATIONAL}),
+        tokens=(Aurora,),
     )
     def synthesize(self, ctx: SynthContext) -> SynthResult: ...
 
@@ -58,7 +57,7 @@ class AuroraPlugin(SkaalPlugin):
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from threading import Lock
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast, runtime_checkable
 
@@ -66,6 +65,7 @@ if TYPE_CHECKING:
     from skaal.binding.model import Target
     from skaal.binding.registry import BackendEntry
     from skaal.deploy._protocol import DeployTarget
+    from skaal.inference.model import ResourceKind
 
 
 _LOG = logging.getLogger("skaal.plugins")
@@ -172,6 +172,41 @@ class PluginRegistry:
 
         _LOG.debug("plugin %r adding backend %r", self._plugin_name, entry.token_class.name)
         register_backend(entry)
+
+    def add_where_console_url(
+        self,
+        target: Target,
+        provider_type: str,
+        resolver: Callable[[Mapping[str, Any], str | None], str],
+    ) -> None:
+        """Register a `skaal where` console URL resolver for one provider type."""
+        from skaal.api._where import register_console_url
+
+        _LOG.debug(
+            "plugin %r adding `where` resolver for %r on %r",
+            self._plugin_name,
+            provider_type,
+            target.value,
+        )
+        register_console_url(target, provider_type, resolver)
+
+    def add_where_resource_preference(
+        self,
+        target: Target,
+        kind: ResourceKind,
+        provider_type: str,
+    ) -> None:
+        """Register a preferred Pulumi resource type for `skaal where` lookups."""
+        from skaal.api._where import register_resource_type_preference
+
+        _LOG.debug(
+            "plugin %r preferring `where` provider type %r for %r on %r",
+            self._plugin_name,
+            provider_type,
+            kind.value,
+            target.value,
+        )
+        register_resource_type_preference(target, kind, provider_type)
 
 
 def load_plugins(*, force: bool = False) -> None:

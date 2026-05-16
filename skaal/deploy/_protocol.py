@@ -39,10 +39,13 @@ from typing import (
     runtime_checkable,
 )
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from skaal.backends._base import Backend
 from skaal.binding.model import Target
+from skaal.binding.registry import lookup, lookup_token
 from skaal.deploy.models import SkaalTags
+from skaal.errors import UnknownBackendError
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
@@ -63,6 +66,7 @@ class TargetConfig(BaseModel):
 
 
 ConfigT = TypeVar("ConfigT", bound=TargetConfig)
+ConsoleUrlResolver = Callable[[Mapping[str, Any], str | None], str]
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,37 @@ class SynthResult:
     primary: Any
     extras: tuple[Any, ...] = ()
     env_vars: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
+
+
+class WherePreference(BaseModel):
+    """One ordered deployed resource preference for `skaal where`.
+
+    When a synth emits multiple Pulumi resources for one Skaal resource,
+    `skaal where` needs a stable way to pick which exported provider type
+    should represent that resource in console lookups. Higher `priority`
+    wins; ties keep registration order. A priority of `0` is the lowest
+    built-in/default priority level.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ResourceKind
+    provider_type: str
+    priority: int = 0
+
+
+class WhereSpec(BaseModel):
+    """Optional `skaal where` metadata exported by a `SynthModule`.
+
+    `preferences` tells `where` which Pulumi resource types should be
+    preferred for each Skaal `ResourceKind`. `console_url_resolvers`
+    converts a provider type's exported Pulumi outputs into a console URL.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    preferences: tuple[WherePreference, ...] = ()
+    console_url_resolvers: Mapping[str, ConsoleUrlResolver] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -149,21 +184,125 @@ class SynthContext(Generic[ConfigT]):
 SynthFn = Callable[[SynthContext[Any]], SynthResult]
 
 
+def _backend_name_for_token(token: type[Backend[Any]]) -> str:
+    """Return the canonical backend name for `token`.
+
+    Built-in and already-registered plugin backends resolve through the
+    binding registry; late-bound plugin synths can still fall back to the
+    token's class metadata before registration happens.
+    """
+    try:
+        return lookup_token(token).name
+    except UnknownBackendError:
+        return token.name
+
+
+def _kinds_for_token(token: type[Backend[Any]]) -> frozenset[ResourceKind]:
+    """Return the `ResourceKind`s hosted by `token`.
+
+    Prefer the binding registry when the backend is registered so deploy and
+    binding metadata share one source of truth. Late-bound plugin synths keep
+    working by falling back to the token class until the plugin registers the
+    corresponding `BackendEntry`.
+    """
+    try:
+        return lookup_token(token).kinds
+    except UnknownBackendError:
+        return frozenset(ResourceKind(kind) for kind in token.kinds)
+
+
+def _normalize_synth_tokens(
+    raw: object,
+) -> tuple[type[Backend[Any]], ...]:
+    """Normalize legacy backend names or backend tokens into backend tokens."""
+    if not isinstance(raw, (tuple, list)):
+        raise TypeError("`SynthSpec.tokens` must be a sequence of backend tokens.")
+    tokens: list[type[Backend[Any]]] = []
+    for item in raw:
+        if isinstance(item, str):
+            tokens.append(lookup(item).token_class)
+            continue
+        if isinstance(item, type) and issubclass(item, Backend):
+            tokens.append(item)
+            continue
+        raise TypeError(
+            "`SynthSpec.tokens` items must be `Backend` subclasses or legacy "
+            f"backend name strings; got {item!r}."
+        )
+    if not tokens:
+        raise ValueError("`SynthSpec.tokens` must name at least one backend.")
+    return tuple(tokens)
+
+
+def _kinds_for_synth_tokens(tokens: tuple[type[Backend[Any]], ...]) -> frozenset[ResourceKind]:
+    """Return the union of `ResourceKind`s hosted by `tokens`."""
+    return frozenset(kind for token in tokens for kind in _kinds_for_token(token))
+
+
 class SynthSpec(BaseModel):
     """Per-class metadata declared by every `SynthModule` subclass.
 
     Each `SynthModule` subclass declares `SPEC: ClassVar[SynthSpec]`
-    listing the backend names it serves and the resource kinds it
-    supports. `BaseDeployTarget.from_classes(...)` walks each class's
-    `SPEC` to build the dispatch table; the binder and the deploy
-    walker both rely on this metadata to validate themselves.
+    listing the backend tokens it serves; backend names and resource
+    kinds are derived from those tokens so deploy-side metadata stays in
+    lock-step with the binding registry. `BaseDeployTarget.from_classes(...)`
+    walks each class's `SPEC` to build the dispatch table; the binder and
+    the deploy walker both rely on the same backend token metadata.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backends: tuple[str, ...]
-    kinds: frozenset[ResourceKind]
+    # Backend token classes this synth handles. Pydantic's schema
+    # generation rejects the parameterised `Backend[Any]` form here (same
+    # limitation handled in `skaal.binding.registry.BackendEntry`), so we
+    # store the bare `Backend` and expose the fully-typed `token_classes`
+    # property below for static-typing consumers.
+    tokens: tuple[
+        type[Backend],  # pyright: ignore[reportMissingTypeArgument] - Pydantic rejects parameterised generics in schema generation
+        ...,
+    ]
     description: str = ""
+    where: WhereSpec | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_backend_metadata(cls, data: object) -> object:
+        """Accept token-based metadata and coerce legacy name-based input."""
+        if not isinstance(data, dict):
+            return data
+        raw_tokens = data.pop("tokens", None)
+        raw_backends = data.pop("backends", None)
+        if raw_tokens is not None and raw_backends is not None:
+            raise ValueError("Provide only one of `tokens` or `backends` to `SynthSpec`.")
+        if raw_tokens is None and raw_backends is None:
+            raise ValueError("`SynthSpec` requires `tokens` (or legacy `backends`).")
+        tokens = _normalize_synth_tokens(raw_tokens if raw_tokens is not None else raw_backends)
+        raw_kinds = data.pop("kinds", None)
+        derived_kinds = _kinds_for_synth_tokens(tokens)
+        provided_kinds = frozenset(raw_kinds) if raw_kinds is not None else None
+        if provided_kinds is not None and provided_kinds != derived_kinds:
+            expected = ", ".join(sorted(kind.value for kind in derived_kinds))
+            provided = ", ".join(sorted(kind.value for kind in provided_kinds))
+            raise ValueError(
+                "`SynthSpec.kinds` is derived from the supplied backend tokens and "
+                f"must match them exactly. Expected: [{expected}]. Provided: [{provided}]."
+            )
+        return {**data, "tokens": tokens}
+
+    @property
+    def token_classes(self) -> tuple[type[Backend[Any]], ...]:
+        """Return `tokens` as fully-parameterised backend token classes."""
+        return cast("tuple[type[Backend[Any]], ...]", self.tokens)
+
+    @property
+    def backends(self) -> tuple[str, ...]:
+        """Return the backend names derived from `tokens`."""
+        return tuple(_backend_name_for_token(token) for token in self.token_classes)
+
+    @property
+    def kinds(self) -> frozenset[ResourceKind]:
+        """Return the union of `ResourceKind`s hosted by `tokens`."""
+        return _kinds_for_synth_tokens(self.token_classes)
 
 
 class SynthModule(Generic[ConfigT], ABC):
@@ -241,9 +380,18 @@ class DeployTarget(Protocol):
         """Importable module names this target needs (for clean errors)."""
         ...
 
+    def where_console_url_resolvers(self) -> Mapping[str, ConsoleUrlResolver]:
+        """Built-in `skaal where` console URL resolvers keyed by provider type."""
+        ...
+
+    def where_resource_type_preferences(self) -> Mapping[ResourceKind, tuple[str, ...]]:
+        """Built-in `skaal where` provider-type orderings keyed by resource kind."""
+        ...
+
 
 __all__ = [
     "ConfigT",
+    "ConsoleUrlResolver",
     "DeployTarget",
     "SynthContext",
     "SynthFn",
@@ -251,4 +399,6 @@ __all__ = [
     "SynthResult",
     "SynthSpec",
     "TargetConfig",
+    "WherePreference",
+    "WhereSpec",
 ]

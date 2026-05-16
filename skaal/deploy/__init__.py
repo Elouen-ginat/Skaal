@@ -28,6 +28,7 @@ from __future__ import annotations
 from skaal.cli._load import AppSpec
 from skaal.deploy._base_target import BaseDeployTarget
 from skaal.deploy._protocol import (
+    ConsoleUrlResolver,
     DeployTarget,
     SynthContext,
     SynthFn,
@@ -35,6 +36,8 @@ from skaal.deploy._protocol import (
     SynthResult,
     SynthSpec,
     TargetConfig,
+    WherePreference,
+    WhereSpec,
 )
 from skaal.deploy._registry import (
     get_target,
@@ -63,6 +66,7 @@ __all__ = [
     "BuildContext",
     "BuildManifest",
     "BuildPyProject",
+    "ConsoleUrlResolver",
     "DeployTarget",
     "ManifestResourceEntry",
     "PluginRegistry",
@@ -75,6 +79,8 @@ __all__ = [
     "SynthResult",
     "SynthSpec",
     "TargetConfig",
+    "WherePreference",
+    "WhereSpec",
     "build_artefacts",
     "get_target",
     "load_plugins",

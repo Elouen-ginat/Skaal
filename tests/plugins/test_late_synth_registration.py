@@ -33,7 +33,6 @@ from skaal.deploy import (  # noqa: E402
     synthesize_stack,
 )
 from skaal.deploy.aws._config import AwsConfig  # noqa: E402
-from skaal.inference.model import ResourceKind  # noqa: E402
 
 
 class _MyDatabase(Backend[object]):
@@ -45,8 +44,7 @@ class _MyDatabaseSynth(SynthModule[AwsConfig]):
     """Fake KV store synth (re-uses DynamoDB under the hood as a stand-in)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("my-database",),
-        kinds=frozenset({ResourceKind.STORE}),
+        tokens=(_MyDatabase,),
         description="Fake KV store for the plugin loader test.",
     )
 

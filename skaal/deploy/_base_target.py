@@ -23,13 +23,18 @@ from collections.abc import Iterable, Mapping
 from threading import Lock
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from skaal.binding.registry import lookup_token
 from skaal.deploy._protocol import (
+    ConsoleUrlResolver,
     DeployTarget,
     SynthFn,
     SynthModule,
     TargetConfig,
+    WherePreference,
+    WhereSpec,
 )
-from skaal.errors import SkaalDeployError
+from skaal.errors import SkaalDeployError, UnknownBackendError
+from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundPlan, Environment, Target
@@ -59,6 +64,8 @@ class BaseDeployTarget(DeployTarget):
         # outside world sees read-only views.
         self._synth: dict[str, SynthFn] = {}
         self._synth_instances: dict[str, SynthModule[Any]] = {}
+        self._where_console_url_resolvers: dict[str, ConsoleUrlResolver] = {}
+        self._where_preferences: dict[ResourceKind, list[WherePreference]] = {}
         self._synth_lock: Lock = Lock()
         self._default_config: TargetConfig = (
             default_config if default_config is not None else self._config_cls()
@@ -82,7 +89,7 @@ class BaseDeployTarget(DeployTarget):
 
         Raises:
             SkaalDeployError: If two classes declare the same backend
-                name in their `SPEC.backends`, or a class is missing
+                name in their derived `SPEC.backends`, or a class is missing
                 `SPEC`.
         """
         instances: list[SynthModule[Any]] = []
@@ -118,7 +125,24 @@ class BaseDeployTarget(DeployTarget):
                 f"{synth!r} is not a valid SynthModule: missing `SPEC` or `synthesize`."
             )
         synthesize = synth.synthesize
-        for backend in spec.backends:
+        for token in spec.token_classes:
+            try:
+                entry = lookup_token(token)
+            except UnknownBackendError as exc:
+                raise SkaalDeployError(
+                    f"{type(synth).__name__!r} declares backend token "
+                    f"{token.__name__!r}, but that token is not registered in the "
+                    "binding registry. Register the backend before the synth "
+                    f"(lookup failed with {type(exc).__name__})."
+                ) from exc
+            if self.target not in entry.targets:
+                supported = ", ".join(sorted(t.value for t in entry.targets)) or "(none)"
+                raise SkaalDeployError(
+                    f"{type(synth).__name__!r} declares backend token "
+                    f"{token.__name__!r} ({entry.token_class.name!r}), but that backend does "
+                    f"not target {self.target.value!r}. Supported targets: {supported}."
+                )
+            backend = entry.token_class.name
             existing_instance = self._synth_instances.get(backend)
             if existing_instance is synth:
                 continue
@@ -132,6 +156,8 @@ class BaseDeployTarget(DeployTarget):
                 )
             self._synth[backend] = synthesize
             self._synth_instances[backend] = synth
+        if spec.where is not None:
+            self._register_where_locked(spec.where, owner=type(synth).__name__)
 
     def lookup_synth(self, backend_name: str) -> SynthFn | None:
         with self._synth_lock:
@@ -143,6 +169,20 @@ class BaseDeployTarget(DeployTarget):
 
     def default_config(self) -> TargetConfig:
         return self._default_config
+
+    def where_console_url_resolvers(self) -> Mapping[str, ConsoleUrlResolver]:
+        with self._synth_lock:
+            return dict(self._where_console_url_resolvers)
+
+    def where_resource_type_preferences(self) -> Mapping[ResourceKind, tuple[str, ...]]:
+        with self._synth_lock:
+            return {
+                kind: tuple(
+                    preference.provider_type
+                    for preference in sorted(preferences, key=lambda pref: -pref.priority)
+                )
+                for kind, preferences in self._where_preferences.items()
+            }
 
     def config_for(self, env: Environment) -> TargetConfig:
         """Overlay any TOML overrides from `env.backends[<target>]`.
@@ -169,6 +209,34 @@ class BaseDeployTarget(DeployTarget):
 
     def required_extras(self) -> tuple[str, ...]:
         return self._required_extras
+
+    def _register_where_locked(self, where: WhereSpec, *, owner: str) -> None:
+        """Merge one synth's built-in `skaal where` metadata into the target.
+
+        If two preferences name the same `(kind, provider_type)`, the
+        higher priority wins. Equal priorities keep the earlier
+        registration, which makes synth registration order the tie-breaker.
+        """
+        for provider_type, resolver in where.console_url_resolvers.items():
+            existing = self._where_console_url_resolvers.get(provider_type)
+            if existing is not None and existing is not resolver:
+                raise SkaalDeployError(
+                    f"Provider type {provider_type!r} on target {self.target.value!r} "
+                    f"already has a `where` resolver; {owner!r} tried to replace it."
+                )
+            self._where_console_url_resolvers[provider_type] = resolver
+
+        for preference in where.preferences:
+            current = self._where_preferences.setdefault(preference.kind, [])
+            for index, existing_preference in enumerate(current):
+                if existing_preference.provider_type != preference.provider_type:
+                    continue
+                if existing_preference.priority < preference.priority:
+                    current[index] = preference
+                # Equal priorities keep the earlier registration as the tie-breaker.
+                break
+            else:
+                current.append(preference)
 
 
 __all__ = ["BaseDeployTarget"]

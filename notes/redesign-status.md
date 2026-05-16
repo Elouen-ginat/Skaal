@@ -181,7 +181,7 @@ Phase 5b checklist:
 
 ## Phase 6 — `skaal plan` diff, `map`, `where`, `trace`, PR-comment action
 
-- **Status:** in progress — the first CLI slices are landing on `copilot/continue-redesign-implementation`
+- **Status:** code work complete on `copilot/continue-redesign-implementation-again`; only the alpha tag push remains a maintainer action
 - **ADR:** planned 034
 - **Target alpha tag:** `v0.4.0-alpha.6`
 
@@ -190,9 +190,9 @@ Checklist:
 - [x] `skaal plan` diffs the current `BoundPlan` against `skaal.lock` for deployable resources and reports create/update/delete rows
 - [x] `skaal map` prints the source → resource tree for an environment and emits `.skaal/map.json`
 - [x] `skaal trace <log-line-or-resource-id>` resolves back to source
-- [x] `skaal.api` provides strongly typed Python equivalents for the landed CLI surfaces (`init`, `run`, `plan`, `map`, `trace`, `build`, `deploy`, `stubs`, `doctor`)
-- [ ] `skaal where <resource>` resolves a deployed resource to its cloud-console URL
-- [ ] GitHub Action posts the rendered infra diff as a sticky PR comment
+- [x] `skaal.api` provides strongly typed Python equivalents for the landed CLI surfaces (`init`, `run`, `plan`, `map`, `where`, `trace`, `build`, `deploy`, `stubs`, `doctor`)
+- [x] `skaal where <resource>` resolves a deployed resource to its cloud-console URL
+- [x] GitHub Action posts the rendered infra diff as a sticky PR comment
 - [ ] Tag `v0.4.0-alpha.6` pushed *(maintainer action)*
 
 ## Phase 7 — Docs, examples, migration guide; cut `v0.4.0`

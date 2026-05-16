@@ -17,9 +17,18 @@ from typing import Any, ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthSpec
+from skaal.backends._tokens import SqsLambdaWorker
+from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
+from skaal.deploy.aws._where import (
+    AWS_LAMBDA_FUNCTION,
+    AWS_SQS_QUEUE,
+    WHERE_FALLBACK,
+    WHERE_PRIMARY,
+    lambda_console_url,
+    sqs_console_url,
+)
 from skaal.inference.model import ResourceKind
 
 
@@ -27,9 +36,26 @@ class SqsWorkerSynth(LambdaSynth):
     """SQS queue + Lambda worker (event-source mapping)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("sqs-lambda-worker",),
-        kinds=frozenset({ResourceKind.JOB}),
+        tokens=(SqsLambdaWorker,),
         description="SQS queue + Lambda worker (event-source mapping).",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.JOB,
+                    provider_type=AWS_SQS_QUEUE,
+                    priority=WHERE_PRIMARY,
+                ),
+                WherePreference(
+                    kind=ResourceKind.JOB,
+                    provider_type=AWS_LAMBDA_FUNCTION,
+                    priority=WHERE_FALLBACK,
+                ),
+            ),
+            console_url_resolvers={
+                AWS_SQS_QUEUE: sqs_console_url,
+                AWS_LAMBDA_FUNCTION: lambda_console_url,
+            },
+        ),
     )
 
     def _timeout_s(self, ctx: SynthContext[AwsConfig]) -> int:

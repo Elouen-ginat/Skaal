@@ -7,21 +7,32 @@ and `where` / `trace` land in follow-ups.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from skaal.api import PlanDiff, diff_plan
+from skaal.api import PlanDiff, diff_plan, render_plan_diff_markdown
 from skaal.binding import load_lock
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+
+
+class PlanOutputFormat(StrEnum):
+    """Supported output formats for `skaal plan`."""
+
+    TABLE = "table"
+    GITHUB_MARKDOWN = "github-markdown"
+
 
 app = typer.Typer(
     help="Render the diff between the current app and `skaal.lock`.",
     context_settings={"allow_interspersed_args": True},
 )
+
+
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
@@ -37,11 +48,20 @@ def plan(
         "-e",
         help="Environment name from `skaal.toml` (defaults to `local`).",
     ),
+    output_format: PlanOutputFormat = typer.Option(
+        PlanOutputFormat.TABLE,
+        "--format",
+        help="Output format: `table` or `github-markdown`.",
+    ),
 ) -> None:
     skaal_app = load_app(target)
     loaded_plan = load_plan(skaal_app, env_name)
     lock = load_lock(Path("skaal.lock"))
-    _render(diff_plan(loaded_plan.bound, lock))
+    diff = diff_plan(loaded_plan.bound, lock)
+    if output_format is PlanOutputFormat.GITHUB_MARKDOWN:
+        typer.echo(render_plan_diff_markdown(diff))
+        return
+    _render(diff)
 
 
 def _render(diff: PlanDiff) -> None:

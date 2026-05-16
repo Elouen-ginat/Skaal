@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from skaal.deploy._protocol import SynthSpec
+from skaal.backends._tokens import Lambda
+from skaal.deploy._protocol import SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._lambda import LambdaSynth
+from skaal.deploy.aws._where import AWS_LAMBDA_FUNCTION, WHERE_PRIMARY, lambda_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -20,9 +22,18 @@ class PlainLambdaSynth(LambdaSynth):
     """Function-kind Lambda, invoked directly (no event source attached)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("lambda",),
-        kinds=frozenset({ResourceKind.FUNCTION}),
+        tokens=(Lambda,),
         description="AWS Lambda function (image package).",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.FUNCTION,
+                    provider_type=AWS_LAMBDA_FUNCTION,
+                    priority=WHERE_PRIMARY,
+                ),
+            ),
+            console_url_resolvers={AWS_LAMBDA_FUNCTION: lambda_console_url},
+        ),
     )
 
 

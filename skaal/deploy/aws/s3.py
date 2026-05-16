@@ -10,8 +10,17 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.backends._tokens import S3
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import AWS_S3_BUCKET, WHERE_PRIMARY, s3_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -19,9 +28,18 @@ class S3Synth(SynthModule[AwsConfig]):
     """`aws.s3.BucketV2` for `BLOB` resources, plus an SSE configuration."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("s3",),
-        kinds=frozenset({ResourceKind.BLOB}),
+        tokens=(S3,),
         description="S3 bucket with server-side encryption.",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.BLOB,
+                    provider_type=AWS_S3_BUCKET,
+                    priority=WHERE_PRIMARY,
+                ),
+            ),
+            console_url_resolvers={AWS_S3_BUCKET: s3_console_url},
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:
