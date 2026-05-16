@@ -208,3 +208,58 @@ def test_synth_stack_channel_emits_sqs(tmp_path: Path) -> None:
     results = synthesize_stack(bound, env, build_dir)
     channel_id = next(r for r in results if "Events" in r)
     assert results[channel_id].primary.__class__.__name__ == "Queue"
+
+
+def test_synth_stack_job_emits_sqs_worker(tmp_path: Path) -> None:
+    """`@app.job` emits the SQS queue + Lambda worker pair with mapping."""
+    app = App("svc")
+
+    @app.job
+    async def process_digest(payload: dict) -> None:
+        return None
+
+    env = _aws_env()
+    bound = _bound(app, env)
+    build_dir = _build(app, bound, env, tmp_path)
+
+    results = synthesize_stack(bound, env, build_dir)
+    [(rid, result)] = results.items()
+    assert "process_digest" in rid
+
+    # The Lambda is the primary; the queue sits in `extras` before the
+    # scaffold (so a `pre_scaffold` resource ordering test would pass).
+    assert result.primary.__class__.__name__ == "Function"
+    extra_class_names = [r.__class__.__name__ for r in result.extras]
+    assert "Queue" in extra_class_names
+    assert "EventSourceMapping" in extra_class_names
+    # Queue appears before the Lambda scaffolding so its URL can flow
+    # into the function's env vars at construction time.
+    assert extra_class_names.index("Queue") < extra_class_names.index("Role")
+
+    # The queue URL is re-exported to peers so a separate FUNCTION can
+    # enqueue work via the standard peer-env-var mechanism.
+    assert any(key.startswith("SKAAL_JOB_") for key in result.env_vars)
+
+
+def test_synth_stack_job_peer_env_var_reaches_function(tmp_path: Path) -> None:
+    """A FUNCTION declared after a JOB receives the queue URL as an env var."""
+    app = App("svc")
+
+    @app.job
+    async def worker(payload: dict) -> None:
+        return None
+
+    @app.function()
+    async def producer() -> None:
+        return None
+
+    env = _aws_env()
+    bound = _bound(app, env)
+    build_dir = _build(app, bound, env, tmp_path)
+
+    results = synthesize_stack(bound, env, build_dir)
+    job_id = next(r for r in results if "worker" in r)
+    # The JOB's `env_vars` mapping carries the queue URL — peers
+    # (other Lambdas in the same plan) read it during their own
+    # `_merge_env_vars` pass.
+    assert any(key.startswith("SKAAL_JOB_") for key in results[job_id].env_vars)

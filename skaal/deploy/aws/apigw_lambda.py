@@ -16,7 +16,7 @@ import pulumi_aws as aws
 
 from skaal.deploy._protocol import SynthContext, SynthSpec
 from skaal.deploy.aws._config import AwsConfig
-from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth
+from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
 from skaal.inference.model import ResourceKind
 
 
@@ -40,7 +40,10 @@ class ApigwLambdaSynth(LambdaSynth):
         return overrides.memory_mb or ctx.config.lambda_defaults.asgi_memory_mb
 
     def _event_source(
-        self, ctx: SynthContext[AwsConfig], scaffold: LambdaScaffold
+        self,
+        ctx: SynthContext[AwsConfig],
+        scaffold: LambdaScaffold,
+        pre: PreScaffold,
     ) -> tuple[Any, ...]:
         cfg = ctx.config.apigw
         api = aws.apigatewayv2.Api(

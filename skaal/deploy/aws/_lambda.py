@@ -11,13 +11,20 @@ attach its event trigger.
 won't pick it up. The four concrete subclasses live in their own files
 (`lambda_fn.py`, `apigw_lambda.py`, `eventbridge.py`, `sqs_worker.py`)
 and inherit from this base.
+
+The `_pre_scaffold(ctx)` hook covers the SQS-worker case: a synth that
+needs a resource available *before* the Lambda is constructed (so its
+URL can be injected into the Lambda's env). The returned `PreScaffold`
+flows into both the scaffold builder (`extra_env=pre.env_vars`) and the
+`_event_source(ctx, scaffold, pre)` hook (via `pre.payload`) so the
+post-scaffold wiring step can reference the pre-built resource.
 """
 
 from __future__ import annotations
 
 from abc import ABC
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pulumi
@@ -55,26 +62,56 @@ class LambdaScaffold:
         return (self.role, self.log_group, self.image, self.repository)
 
 
+@dataclass(frozen=True)
+class PreScaffold:
+    """Resources and env vars produced *before* the Lambda scaffold.
+
+    Synth subclasses that need a resource available at Lambda-construction
+    time (e.g. an SQS queue whose URL must be in the Lambda's environment
+    so the handler can re-enqueue work) return this from
+    `_pre_scaffold(ctx)`. The orchestrator:
+
+    - prepends `resources` to `SynthResult.extras`,
+    - injects `env_vars` into the scaffold's `Function.environment`,
+    - and re-exposes the whole `PreScaffold` to
+      `_event_source(ctx, scaffold, pre)` so the post-scaffold wiring
+      step can reference the pre-built resources via `pre.payload`.
+
+    `payload` is a subclass-defined bag for any cross-hook state that
+    isn't already captured in `resources` / `env_vars` (typically the
+    same Pulumi resource references the subclass needs back from the
+    `_event_source` callback).
+    """
+
+    resources: tuple[Any, ...] = ()
+    env_vars: Mapping[str, Any] = field(default_factory=dict)
+    payload: Any = None
+
+
 class LambdaSynth(SynthModule[AwsConfig], ABC):
     """Abstract base for every Lambda-shaped AWS synth.
 
-    Subclasses override `_event_source(ctx, scaffold)` to attach an
+    Subclasses override `_event_source(ctx, scaffold, pre)` to attach an
     event trigger (APIGW, EventBridge, SQS event-source-mapping, …).
     `_timeout_s(ctx)` and `_memory_mb(ctx)` are overrideable so the
     ASGI / JOB variants can pick their own defaults from `AwsConfig`.
+    Subclasses that need a resource available before the Lambda is
+    constructed override `_pre_scaffold(ctx)` instead of overriding the
+    whole `synthesize(ctx)` method.
     """
 
     # No `SPEC` here — `LambdaSynth` is abstract and must not appear in
     # any target's class list directly. Concrete subclasses declare it.
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:
-        scaffold = self._build_scaffold(ctx)
-        event_resources = self._event_source(ctx, scaffold)
+        pre = self._pre_scaffold(ctx)
+        scaffold = self._build_scaffold(ctx, extra_env=pre.env_vars)
+        event_resources = self._event_source(ctx, scaffold, pre)
         return SynthResult(
             resource_id=ctx.resource_id,
             primary=scaffold.function,
-            extras=(*scaffold.as_extras(), *event_resources),
-            env_vars=self._env_vars(ctx, scaffold),
+            extras=(*pre.resources, *scaffold.as_extras(), *event_resources),
+            env_vars=self._env_vars(ctx, scaffold, pre),
         )
 
     def _build_scaffold(
@@ -115,10 +152,15 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         overrides = ctx.resource.inferred.overrides
         return overrides.memory_mb or ctx.config.lambda_defaults.memory_mb
 
+    def _pre_scaffold(self, ctx: SynthContext[AwsConfig]) -> PreScaffold:
+        """Default: no pre-scaffold resources or env vars."""
+        return PreScaffold()
+
     def _event_source(
         self,
         ctx: SynthContext[AwsConfig],
         scaffold: LambdaScaffold,
+        pre: PreScaffold,
     ) -> tuple[Any, ...]:
         """Default: no event source attached."""
         return ()
@@ -127,9 +169,15 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         self,
         ctx: SynthContext[AwsConfig],
         scaffold: LambdaScaffold,
+        pre: PreScaffold,
     ) -> Mapping[str, Any]:
-        """Default: contribute no env vars to downstream peers."""
-        return {}
+        """Default: re-export the pre-scaffold env vars to downstream peers.
+
+        SQS worker peers see `SKAAL_JOB_<slug>_URL` here, so a separate
+        FUNCTION resource that wants to enqueue work picks the URL up
+        via the standard peer-env-var mechanism in `_merge_env_vars`.
+        """
+        return dict(pre.env_vars)
 
     # -- Internal Pulumi resource builders ------------------------------------
 
@@ -258,4 +306,4 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         return merged
 
 
-__all__ = ["LambdaScaffold", "LambdaSynth"]
+__all__ = ["LambdaScaffold", "LambdaSynth", "PreScaffold"]

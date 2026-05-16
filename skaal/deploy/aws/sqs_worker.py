@@ -1,21 +1,25 @@
 """SQS + Lambda worker synth class — `JOB` resources.
 
-Builds a queue first so the queue URL can be injected into the Lambda's
-env vars, then the standard Lambda scaffold with that extra env, then an
-event-source mapping to wire the queue to the Lambda. Configuration
-tunables live in `AwsConfig.lambda_defaults` (timeout / visibility
-timeout / batch size).
+The queue is built in `_pre_scaffold` so its URL can be injected into
+the Lambda's env vars before the function is constructed. The
+`_event_source` hook then attaches the IAM policy and the
+EventSourceMapping that wires the queue to the Lambda. The same URL is
+re-exported via `_env_vars` so downstream FUNCTION resources that want
+to enqueue jobs pick it up through the standard peer-env-var mechanism.
+
+Configuration tunables live in `AwsConfig.lambda_defaults` (timeout /
+visibility timeout / batch size).
 """
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec
+from skaal.deploy._protocol import SynthContext, SynthSpec
 from skaal.deploy.aws._config import AwsConfig
-from skaal.deploy.aws._lambda import LambdaSynth
+from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
 from skaal.inference.model import ResourceKind
 
 
@@ -34,7 +38,7 @@ class SqsWorkerSynth(LambdaSynth):
             return int(overrides.timeout_s)
         return ctx.config.lambda_defaults.job_timeout_s
 
-    def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:
+    def _pre_scaffold(self, ctx: SynthContext[AwsConfig]) -> PreScaffold:
         cfg = ctx.config
         queue = aws.sqs.Queue(
             f"{ctx.pulumi_name}-queue",
@@ -42,30 +46,38 @@ class SqsWorkerSynth(LambdaSynth):
             tags=ctx.tags,
         )
         queue_env_key = f"SKAAL_JOB_{ctx.slug_key}_URL"
-
-        # Build the scaffold with the queue URL injected — the base class
-        # `_build_scaffold` accepts an `extra_env` kwarg for this purpose.
-        scaffold = self._build_scaffold(ctx, extra_env={queue_env_key: queue.url})
-
-        if "sqs" in cfg.iam.policies:
-            aws.iam.RolePolicyAttachment(
-                f"{ctx.pulumi_name}-sqs-consume",
-                role=scaffold.role.name,
-                policy_arn=cfg.iam.policies["sqs"],
-            )
-        mapping = aws.lambda_.EventSourceMapping(
-            f"{ctx.pulumi_name}-mapping",
-            event_source_arn=queue.arn,
-            function_name=scaffold.function.name,
-            batch_size=cfg.lambda_defaults.job_batch_size,
-        )
-
-        return SynthResult(
-            resource_id=ctx.resource_id,
-            primary=scaffold.function,
-            extras=(*scaffold.as_extras(), queue, mapping),
+        return PreScaffold(
+            resources=(queue,),
             env_vars={queue_env_key: queue.url},
+            payload=queue,
         )
+
+    def _event_source(
+        self,
+        ctx: SynthContext[AwsConfig],
+        scaffold: LambdaScaffold,
+        pre: PreScaffold,
+    ) -> tuple[Any, ...]:
+        cfg = ctx.config
+        queue: aws.sqs.Queue = pre.payload
+        extras: list[Any] = []
+        if "sqs" in cfg.iam.policies:
+            extras.append(
+                aws.iam.RolePolicyAttachment(
+                    f"{ctx.pulumi_name}-sqs-consume",
+                    role=scaffold.role.name,
+                    policy_arn=cfg.iam.policies["sqs"],
+                )
+            )
+        extras.append(
+            aws.lambda_.EventSourceMapping(
+                f"{ctx.pulumi_name}-mapping",
+                event_source_arn=queue.arn,
+                function_name=scaffold.function.name,
+                batch_size=cfg.lambda_defaults.job_batch_size,
+            )
+        )
+        return tuple(extras)
 
 
 __all__ = ["SqsWorkerSynth"]
