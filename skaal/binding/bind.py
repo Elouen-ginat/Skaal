@@ -79,19 +79,13 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
 def _bound_fingerprint(plan: BoundPlan) -> str:
     """Compute the 16-hex-char fingerprint of ``plan`` (excluding itself)."""
     data = plan.model_dump(mode="json", by_alias=True, exclude={"bound_fingerprint"})
-    data["resources"] = sorted(
-        data["resources"], key=lambda r: (r["backend"], r["inferred"]["id"])
-    )
-    data["edges"] = sorted(
-        data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"])
-    )
+    data["resources"] = sorted(data["resources"], key=lambda r: (r["backend"], r["inferred"]["id"]))
+    data["edges"] = sorted(data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"]))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()[:16]
 
 
-def _bind_resource(
-    res: InferredResource, env: Environment, lock: LockFile
-) -> BoundResource:
+def _bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> BoundResource:
     pinned_backend = res.overrides.backend
     lock_entry = lock.entries.get((env.name, res.id))
     env_override = env.overrides.get(res.id)
@@ -146,9 +140,9 @@ def _bind_resource(
 
 def _validate(entry: BackendEntry, res: InferredResource, env: Environment) -> None:
     if env.target not in entry.targets:
-        raise BackendNotAvailableForTarget(entry.token.name, env.target.value)
-    if res.kind.value not in entry.token.kinds:
-        raise BackendKindMismatch(res.id, entry.token.name, res.kind.value)
+        raise BackendNotAvailableForTarget(entry.token_class.name, env.target.value)
+    if res.kind.value not in entry.token_class.kinds:
+        raise BackendKindMismatch(res.id, entry.token_class.name, res.kind.value)
 
 
 def _build(
@@ -164,12 +158,12 @@ def _build(
     external_name = res.overrides.external_name
     backend_config: BackendConfig | None
     if external and external_name is not None:
-        backend_config = env.backends.get(external_name) or env.backends.get(entry.token.name)
+        backend_config = env.backends.get(external_name) or env.backends.get(entry.token_class.name)
     else:
-        backend_config = env.backends.get(entry.token.name)
+        backend_config = env.backends.get(entry.token_class.name)
     return BoundResource(
         inferred=res,
-        backend=entry.token.name,
+        backend=entry.token_class.name,
         region=region if region is not None else env.region,
         options=dict(options or {}),
         backend_config=backend_config,

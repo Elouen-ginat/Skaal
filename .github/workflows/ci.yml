@@ -35,17 +35,18 @@ jobs:
         run: test -s notes/redesign-status.md
 
       - name: Install dev dependencies
-        run: uv sync --group dev --extra runtime --extra deploy
+        run: uv sync --group dev --extra runtime --extra deploy --extra aws --extra fastapi
 
       - uses: pre-commit/action@v3.0.1
 
   pyright:
-    # Phase 5a (ADR 033): the strict-typing gate is advisory while the
-    # `ignore` list in `pyrightconfig.json` shrinks. Phase 5b removes
-    # `continue-on-error: true` once the surface is strict-clean.
-    name: Pyright (advisory)
+    # Phase 5b (ADR 033): the strict-typing gate is now blocking. The
+    # `ignore` list in `pyrightconfig.json` still excludes 14 modules
+    # whose strict-clean sweep depends on third-party stub quality
+    # (alembic, fsspec, optional-extras SDKs); the remaining surface is
+    # pyright-strict-clean.
+    name: Pyright
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -63,7 +64,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install typecheck dependencies
-        run: uv sync --group typecheck --extra runtime --extra deploy
+        run: uv sync --group typecheck --extra runtime --extra deploy --extra aws --extra fastapi
 
       - name: Run pyright
         run: uv run pyright
@@ -100,7 +101,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dev dependencies
-        run: uv sync --group dev --extra runtime --extra deploy
+        run: uv sync --group dev --extra runtime --extra deploy --extra aws --extra fastapi
 
       - name: Run tests with coverage
         run: >-

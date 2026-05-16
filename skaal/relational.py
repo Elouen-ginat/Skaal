@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-B = TypeVar("B", bound=Backend, default=Backend)
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 
 _RELATIONAL_BACKEND_ATTR = "__skaal_relational_backend__"
 
@@ -59,13 +59,15 @@ class Relational(SQLModel, Generic[B]):
     `_extract_backend_pin` reads it from there.
     """
 
-    __skaal_backend_pin__: ClassVar[type[Backend] | None] = None
+    __skaal_backend_pin__: ClassVar[type[Backend[Any]] | None] = None
 
     def __class_getitem__(cls, params: Any) -> Any:
         sub: Any = super().__class_getitem__(params)
-        param_tuple = params if isinstance(params, tuple) else (params,)
+        param_tuple: tuple[Any, ...] = (
+            cast("tuple[Any, ...]", params) if isinstance(params, tuple) else (params,)
+        )
         if param_tuple:
-            backend_arg = param_tuple[0]
+            backend_arg: Any = param_tuple[0]
             if (
                 isinstance(backend_arg, type)
                 and issubclass(backend_arg, Backend)
@@ -88,17 +90,13 @@ class Relational(SQLModel, Generic[B]):
             NotImplementedError: If the relational model has not been
                 wired by the runtime yet.
         """
+        from skaal._native import resolve_native
+
         backend = get_backend(cls)
-        backend_native = getattr(backend, "native", None)
-        if callable(backend_native):
-            result = backend_native()
-            if hasattr(result, "__await__"):
-                return await result
-            return result
-        return backend
+        return await resolve_native(backend)
 
 
-def validate_relational_model(model_cls: type) -> None:
+def validate_relational_model(model_cls: object) -> None:
     """Raise if *model_cls* is not a concrete ``SQLModel`` table model."""
     if not isinstance(model_cls, type) or not issubclass(model_cls, SQLModel):
         raise TypeError('@app.storage(kind="relational") requires a SQLModel subclass.')

@@ -56,9 +56,7 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     return "build_fixture_pkg.app:app"
 
 
-def test_build_renders_artefacts_for_aws_env(
-    fixture_app: str, tmp_path: Path
-) -> None:
+def test_build_renders_artefacts_for_aws_env(fixture_app: str, tmp_path: Path) -> None:
     result = runner.invoke(cli_app, ["build", fixture_app, "--env", "prod"])
     assert result.exit_code == 0, result.output
     assert "Built" in result.output
@@ -77,12 +75,8 @@ def test_build_fails_for_local_env(fixture_app: str) -> None:
     assert "only supports target" in result.output or "aws" in result.output
 
 
-def test_build_respects_custom_out_dir(
-    fixture_app: str, tmp_path: Path
-) -> None:
+def test_build_respects_custom_out_dir(fixture_app: str, tmp_path: Path) -> None:
     custom = tmp_path / "custom_out"
-    result = runner.invoke(
-        cli_app, ["build", fixture_app, "--env", "prod", "--out", str(custom)]
-    )
+    result = runner.invoke(cli_app, ["build", fixture_app, "--env", "prod", "--out", str(custom)])
     assert result.exit_code == 0, result.output
     assert (custom / "manifest.json").exists()

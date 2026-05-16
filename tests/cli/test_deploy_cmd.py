@@ -75,20 +75,14 @@ def test_deploy_fails_clean_when_pulumi_missing(
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    result = runner.invoke(
-        cli_app, ["deploy", fixture_app, "--env", "prod", "--yes"]
-    )
+    result = runner.invoke(cli_app, ["deploy", fixture_app, "--env", "prod", "--yes"])
     assert result.exit_code != 0
     # The CLI's error boundary swallows the traceback; the error string
     # surfaces via the logger.
-    assert "skaal[deploy,aws]" in (result.output or "") or "Pulumi" in (
-        result.output or ""
-    )
+    assert "skaal[deploy,aws]" in (result.output or "") or "Pulumi" in (result.output or "")
 
 
 def test_deploy_rejects_local_env(fixture_app: str) -> None:
     """`skaal deploy --env local` fails before reaching Pulumi."""
-    result = runner.invoke(
-        cli_app, ["deploy", fixture_app, "--env", "local", "--yes"]
-    )
+    result = runner.invoke(cli_app, ["deploy", fixture_app, "--env", "local", "--yes"])
     assert result.exit_code != 0

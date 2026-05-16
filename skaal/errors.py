@@ -101,9 +101,7 @@ class BackendNotAvailableForTarget(SkaalConfigError):
     def __init__(self, backend: str, target: str) -> None:
         self.backend = backend
         self.target = target
-        super().__init__(
-            f"Backend {backend!r} is not available on target {target!r}."
-        )
+        super().__init__(f"Backend {backend!r} is not available on target {target!r}.")
 
 
 class UnknownBackendError(SkaalConfigError):

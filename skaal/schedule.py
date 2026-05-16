@@ -236,8 +236,8 @@ def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
     from apscheduler.triggers.interval import IntervalTrigger
 
     if isinstance(trigger, Every):
-        return IntervalTrigger(seconds=trigger.seconds, timezone=timezone)
-    return CronTrigger.from_crontab(trigger.expression, timezone=timezone)
+        return IntervalTrigger(seconds=int(trigger.seconds), timezone=timezone)
+    return cast(Any, CronTrigger).from_crontab(trigger.expression, timezone=timezone)
 
 
 def build_scheduled_job(

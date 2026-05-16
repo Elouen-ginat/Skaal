@@ -40,6 +40,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+
+def _empty_arg_lists() -> list[list[str]]:
+    return []
+
+
 # ── pyproject.toml discovery ──────────────────────────────────────────────────
 
 
@@ -131,14 +136,14 @@ class StackProfile(BaseModel):
         description="Labels applied to supporting resources (Cloud Run, SQL, Redis).",
     )
     pre_deploy: list[list[str]] = Field(
-        default_factory=list,
+        default_factory=_empty_arg_lists,
         description=(
             "Commands to run before ``pulumi up``. Each entry is an argv list, "
             'e.g. [["skaal", "migrate", "advance", "cache"]].'
         ),
     )
     post_deploy: list[list[str]] = Field(
-        default_factory=list,
+        default_factory=_empty_arg_lists,
         description=(
             "Commands to run after a successful deploy. Each entry is an argv "
             "list; Pulumi outputs are exported as SKAAL_OUTPUT_<KEY> env vars."
@@ -211,8 +216,8 @@ class SkaalSettings(BaseSettings):
     env: dict[str, str] = Field(default_factory=dict)
     invokers: list[str] = Field(default_factory=list)
     labels: dict[str, str] = Field(default_factory=dict)
-    pre_deploy: list[list[str]] = Field(default_factory=list)
-    post_deploy: list[list[str]] = Field(default_factory=list)
+    pre_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
+    post_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
 
     # ── Stack profiles ────────────────────────────────────────────────────────
     stacks: dict[str, StackProfile] = Field(

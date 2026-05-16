@@ -349,7 +349,7 @@ class Module:
                 id=InferredResource.id_for(cls),
                 kind=ResourceKind.CHANNEL,
                 source=SourceLocation.from_object(cls),
-                schema_=SchemaRef.from_class(cls),
+                schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
                 overrides=overrides,
             )
             _attach_inferred(cls, inferred)
@@ -510,13 +510,13 @@ class Module:
         share_storage: list[str] | None = None,
     ) -> ModuleExport:
         """Mount a `Module` into this `Module`, namespacing its resources."""
-        ns = namespace if namespace is not None else module.name
+        ns: str = namespace if namespace is not None else module.name
         if ns in self._submodules:
             raise ValueError(
                 f"Namespace {ns!r} is already occupied by another module. "
                 "Pass a different namespace= to app.use()."
             )
-        if ns is not None:
+        if ns:
             self._submodules[ns] = module
         else:
             for bucket in (self._storage, self._functions, self._channels):
@@ -536,7 +536,7 @@ class Module:
             storage=exp_storage,
             functions=exp_functions,
             channels=exp_channels,
-            namespace=ns or "",
+            namespace=ns,
         )
 
     # ── Inference-graph collection ─────────────────────────────────────────

@@ -38,9 +38,13 @@ class _Mocks(pulumi.runtime.Mocks):
         outputs.setdefault("name", args.name)
         outputs.setdefault("address", f"{args.name}.example.com")
         outputs.setdefault("url", f"https://{args.name}.example.com")
-        outputs.setdefault("repository_url", f"123456789012.dkr.ecr.us-east-1.amazonaws.com/{args.name}")
+        outputs.setdefault(
+            "repository_url", f"123456789012.dkr.ecr.us-east-1.amazonaws.com/{args.name}"
+        )
         outputs.setdefault("registry_id", "123456789012")
-        outputs.setdefault("master_user_secrets", [{"secret_arn": f"arn:aws:mock::{args.name}-secret"}])
+        outputs.setdefault(
+            "master_user_secrets", [{"secret_arn": f"arn:aws:mock::{args.name}-secret"}]
+        )
         outputs.setdefault("primary_endpoint_address", f"{args.name}-primary.example.com")
         outputs.setdefault("execution_arn", f"arn:aws:mock::{args.name}/execution")
         outputs.setdefault("invoke_arn", f"arn:aws:mock::{args.name}/invoke")
@@ -115,9 +119,7 @@ def test_synth_stack_store_emits_dynamodb_then_lambda(tmp_path: Path) -> None:
     store_id = next(r for r in results if "Cache" in r)
     fn_id = next(r for r in results if "hit" in r)
     assert results[store_id].primary.__class__.__name__ == "Table"
-    assert any(
-        key.startswith("SKAAL_TABLE_") for key in results[store_id].env_vars
-    )
+    assert any(key.startswith("SKAAL_TABLE_") for key in results[store_id].env_vars)
     assert results[fn_id].primary.__class__.__name__ == "Function"
 
 

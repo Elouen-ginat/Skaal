@@ -183,9 +183,13 @@ known-first-party = ["skaal"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
-warn_unused_ignores = true
+# Pyright (configured in `pyrightconfig.json`) is the strict-typing gate
+# per ADR 033. Mypy stays in default mode for the looser regression check;
+# it intentionally does not flag redundant casts or unused ignores, since
+# many narrowings that pyright requires look redundant to mypy.
+warn_unused_ignores = false
 warn_return_any = false
-warn_redundant_casts = true
+warn_redundant_casts = false
 warn_unused_configs = true
 no_implicit_optional = true
 check_untyped_defs = true
@@ -234,9 +238,10 @@ omit = [
 precision = 1
 show_missing = true
 skip_covered = false
-# ADR 029 Phase 1 temporarily relaxes the floor while large surfaces are
-# deleted; Phase 5 restores it to 60.
-fail_under = 40
+# ADR 029 Phase 1 temporarily relaxed the floor to 40 during the constraint-
+# product deletion; ADR 033 Phase 5b restores it to 60 once the typing
+# contract + stubs surface lands new tests.
+fail_under = 60
 exclude_also = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",

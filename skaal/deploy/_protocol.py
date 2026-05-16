@@ -35,6 +35,7 @@ from typing import (
     Generic,
     Protocol,
     TypeVar,
+    cast,
     runtime_checkable,
 )
 
@@ -88,7 +89,7 @@ class SynthResult:
     resource_id: str
     primary: Any
     extras: tuple[Any, ...] = ()
-    env_vars: Mapping[str, Any] = field(default_factory=dict)
+    env_vars: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
 
 
 @dataclass(frozen=True)

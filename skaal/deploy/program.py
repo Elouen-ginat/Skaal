@@ -55,9 +55,7 @@ _COMPUTE_KINDS: frozenset[ResourceKind] = frozenset(
 )
 
 
-def pulumi_program_for(
-    bound: BoundPlan, env: Environment, build_dir: Path
-) -> PulumiProgram:
+def pulumi_program_for(bound: BoundPlan, env: Environment, build_dir: Path) -> PulumiProgram:
     """Return a parameterless Pulumi program callable for `bound`.
 
     Args:
@@ -82,9 +80,7 @@ def pulumi_program_for(
     return program
 
 
-def synthesize_stack(
-    bound: BoundPlan, env: Environment, build_dir: Path
-) -> dict[str, SynthResult]:
+def synthesize_stack(bound: BoundPlan, env: Environment, build_dir: Path) -> dict[str, SynthResult]:
     """Walk `bound.resources` and dispatch each through `env.target`'s synths.
 
     Storage kinds synthesize before compute kinds so each compute synth

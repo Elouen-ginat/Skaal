@@ -24,6 +24,7 @@ import json
 import shutil
 import subprocess
 import textwrap
+from typing import Any
 
 import pytest
 
@@ -76,12 +77,19 @@ _PROBE = textwrap.dedent(
     reveal_type(signup(User(id="u1", name="Alice")))
     reveal_type(plan.model_validate_json("{}"))
     reveal_type(overrides.backend)
+
+    # Phase 5b: `.native()` exists on every primitive and resolves to the
+    # wired backend's SDK client. Phase 5a return type is `Any` (narrowing
+    # per-token is its own follow-up); the contract here is "the method
+    # exists and is awaitable" — un-pinned classes must still find it.
+    reveal_type(Users.native)
+    reveal_type(Cache.native)
     """
 ).strip()
 
 
 @pytest.fixture(scope="module")
-def pyright_diagnostics(tmp_path_factory: pytest.TempPathFactory) -> list[dict]:
+def pyright_diagnostics(tmp_path_factory: pytest.TempPathFactory) -> list[dict[str, Any]]:
     tmp = tmp_path_factory.mktemp("reveal_types")
     probe = tmp / "probe.py"
     probe.write_text(_PROBE, encoding="utf-8")
@@ -96,11 +104,11 @@ def pyright_diagnostics(tmp_path_factory: pytest.TempPathFactory) -> list[dict]:
     return [d for d in diags if d.get("severity") == "information"]
 
 
-def _messages(diags: list[dict]) -> list[str]:
+def _messages(diags: list[dict[str, Any]]) -> list[str]:
     return [d.get("message", "") for d in diags]
 
 
-def test_function_decorator_preserves_signature(pyright_diagnostics: list[dict]) -> None:
+def test_function_decorator_preserves_signature(pyright_diagnostics: list[dict[str, Any]]) -> None:
     """`signup`'s call signature survives the decoration.
 
     Per ADR 028 §6.13.3 the load-bearing property is that callers
@@ -115,7 +123,7 @@ def test_function_decorator_preserves_signature(pyright_diagnostics: list[dict])
     assert "User" in signup_msg, messages
 
 
-def test_call_site_returns_coroutine_of_user(pyright_diagnostics: list[dict]) -> None:
+def test_call_site_returns_coroutine_of_user(pyright_diagnostics: list[dict[str, Any]]) -> None:
     """`signup(User(...))` reveals a coroutine whose result is `User`."""
     messages = _messages(pyright_diagnostics)
     assert any(
@@ -124,7 +132,7 @@ def test_call_site_returns_coroutine_of_user(pyright_diagnostics: list[dict]) ->
 
 
 def test_inferred_plan_roundtrip_returns_inferred_plan(
-    pyright_diagnostics: list[dict],
+    pyright_diagnostics: list[dict[str, Any]],
 ) -> None:
     """`InferredPlan.model_validate_json(...)` is typed as `InferredPlan`."""
     messages = _messages(pyright_diagnostics)
@@ -133,9 +141,27 @@ def test_inferred_plan_roundtrip_returns_inferred_plan(
 
 
 def test_resource_overrides_backend_is_str_or_none(
-    pyright_diagnostics: list[dict],
+    pyright_diagnostics: list[dict[str, Any]],
 ) -> None:
     """`ResourceOverrides.backend` reveals `str | None`, not `Any`."""
     messages = _messages(pyright_diagnostics)
     backend_msg = next((m for m in messages if "overrides.backend" in m), "")
     assert "str" in backend_msg and "None" in backend_msg, messages
+
+
+def test_native_method_exists_on_primitives(
+    pyright_diagnostics: list[dict[str, Any]],
+) -> None:
+    """`Store.native` and `BlobStore.native` are reachable as awaitables.
+
+    Phase 5b's `.native()` typing contract requires the method to exist
+    on every primitive — pinned or not. The Phase 5a return type is
+    ``Coroutine[Any, Any, Any]``; per-token narrowing to the concrete
+    SDK client (`redis.asyncio.Redis`, `aiosqlite.Connection`, …) is a
+    deferred polish item once each backend token gains a typed
+    ``NativeClient`` declaration.
+    """
+    messages = _messages(pyright_diagnostics)
+    native_messages = [m for m in messages if "native" in m.lower()]
+    assert any("Users.native" in m for m in native_messages), messages
+    assert any("Cache.native" in m for m in native_messages), messages

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from skaal.backends.base import BlobBackend
 
 
-B = TypeVar("B", bound=Backend, default=Backend)
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 
 
 def is_blob_model(obj: Any) -> bool:
@@ -54,7 +54,7 @@ def is_blob_model(obj: Any) -> bool:
     return isinstance(inferred, InferredResource) and inferred.kind == ResourceKind.BLOB
 
 
-def validate_blob_model(store_cls: type) -> None:
+def validate_blob_model(store_cls: object) -> None:
     """Validate that `store_cls` is a concrete `BlobStore` subclass.
 
     Args:
@@ -124,15 +124,11 @@ class BlobStore(Generic[B]):
         unwraps `backend.native()` when defined, else returns the backend
         instance itself.
         """
+        from skaal._native import resolve_native
+
         cls._ensure_wired()
         assert cls._backend is not None
-        backend_native = getattr(cls._backend, "native", None)
-        if callable(backend_native):
-            result = backend_native()
-            if hasattr(result, "__await__"):
-                return await result
-            return result
-        return cls._backend
+        return await resolve_native(cls._backend)
 
     @classmethod
     async def put_bytes(
@@ -516,7 +512,7 @@ def decode_blob_cursor(cursor: str | None, *, prefix: str) -> str | None:
     decoded = _decode_cursor(cursor)
     if decoded.get("mode") != "blob" or decoded.get("prefix") != prefix:
         raise ValueError("Cursor does not match this blob listing")
-    last_key = decoded.get("last_key")
+    last_key: Any = decoded.get("last_key")
     if last_key is None:
         return None
     if not isinstance(last_key, str):

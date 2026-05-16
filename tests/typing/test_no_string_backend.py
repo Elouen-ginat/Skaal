@@ -69,7 +69,7 @@ def test_no_string_backend_declaration(path: Path) -> None:
     instead.
     """
     text = path.read_text(encoding="utf-8")
-    matches = []
+    matches: list[str] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         stripped = line.lstrip()
         if stripped.startswith("#"):

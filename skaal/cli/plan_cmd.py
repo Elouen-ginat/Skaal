@@ -27,8 +27,7 @@ def plan(
     target: str = typer.Argument(
         ...,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. "
-            "`examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
     env_name: str = typer.Option(

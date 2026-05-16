@@ -81,9 +81,7 @@ class RuntimeState:
     scheduler_started: bool = False
     scheduler: Any = None
     invokables: dict[str, Callable[..., Awaitable[Any]]] = field(default_factory=dict)
-    invokable_streams: dict[str, Callable[..., AsyncIterator[Any]]] = field(
-        default_factory=dict
-    )
+    invokable_streams: dict[str, Callable[..., AsyncIterator[Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -109,8 +107,8 @@ class LocalRuntime:
         runtime: LocalRuntime = cls(bound=bound, app=app)
         for resource in bound.resources:
             target: Any = runtime._resolve(resource)
-            adapter: Callable[[LocalRuntime, BoundResource, Any], None] = (
-                dispatch_for(resource.inferred.kind)
+            adapter: Callable[[LocalRuntime, BoundResource, Any], None] = dispatch_for(
+                resource.inferred.kind
             )
             adapter(runtime, resource, target)
         return runtime

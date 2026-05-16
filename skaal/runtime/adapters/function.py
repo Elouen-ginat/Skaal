@@ -59,9 +59,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
         runtime.state.invokable_streams[qualified] = stream_handler
         return
 
-    policies: ResiliencePolicies = (
-        bound.inferred.overrides.resilience or ResiliencePolicies()
-    )
+    policies: ResiliencePolicies = bound.inferred.overrides.resilience or ResiliencePolicies()
     handler: Callable[..., Awaitable[Any]] = _coerce_async(target)
     wrapped: Callable[..., Awaitable[Any]] = wrap_resilience(
         handler,

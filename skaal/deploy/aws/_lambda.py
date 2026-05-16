@@ -25,7 +25,7 @@ from __future__ import annotations
 from abc import ABC
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import pulumi
 import pulumi_aws as aws
@@ -84,7 +84,7 @@ class PreScaffold:
     """
 
     resources: tuple[Any, ...] = ()
-    env_vars: Mapping[str, Any] = field(default_factory=dict)
+    env_vars: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
     payload: Any = None
 
 
@@ -181,9 +181,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
 
     # -- Internal Pulumi resource builders ------------------------------------
 
-    def _build_repository(
-        self, ctx: SynthContext[AwsConfig], cfg: AwsConfig
-    ) -> aws.ecr.Repository:
+    def _build_repository(self, ctx: SynthContext[AwsConfig], cfg: AwsConfig) -> aws.ecr.Repository:
         return aws.ecr.Repository(
             f"{ctx.pulumi_name}-repo",
             force_delete=cfg.ecr.force_delete,
@@ -215,9 +213,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
             ),
         )
 
-    def _build_role(
-        self, ctx: SynthContext[AwsConfig], cfg: AwsConfig
-    ) -> aws.iam.Role:
+    def _build_role(self, ctx: SynthContext[AwsConfig], cfg: AwsConfig) -> aws.iam.Role:
         role = aws.iam.Role(
             f"{ctx.pulumi_name}-role",
             assume_role_policy=cfg.iam.lambda_trust_policy,
@@ -268,18 +264,13 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         )
 
     @staticmethod
-    def _policy_keys_for_plan(
-        bound: BoundPlan, policies: Mapping[str, str]
-    ) -> tuple[str, ...]:
+    def _policy_keys_for_plan(bound: BoundPlan, policies: Mapping[str, str]) -> tuple[str, ...]:
         """Return the unique storage backend names present in `bound`."""
         seen: set[str] = set()
         for resource in bound.resources:
             if resource.external:
                 continue
-            if (
-                resource.inferred.kind in _STORAGE_KINDS
-                and resource.backend in policies
-            ):
+            if resource.inferred.kind in _STORAGE_KINDS and resource.backend in policies:
                 seen.add(resource.backend)
         return tuple(sorted(seen))
 
@@ -295,11 +286,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
             "SKAAL_FINGERPRINT": ctx.bound.bound_fingerprint,
         }
         merged.update(
-            {
-                key: value
-                for peer in ctx.peers.values()
-                for key, value in peer.env_vars.items()
-            }
+            {key: value for peer in ctx.peers.values() for key, value in peer.env_vars.items()}
         )
         if extra:
             merged.update(extra)

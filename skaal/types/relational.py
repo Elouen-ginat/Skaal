@@ -65,6 +65,14 @@ class RelationalRevision:
     is_applied: bool
 
 
+def _empty_steps() -> list[RelationalMigrationStep]:
+    return []
+
+
+def _empty_revisions() -> list[RelationalRevision]:
+    return []
+
+
 @dataclass(frozen=True)
 class RelationalMigrationPlan:
     """Output of ``upgrade --dry-run`` / ``downgrade --dry-run`` / ``check``."""
@@ -73,7 +81,7 @@ class RelationalMigrationPlan:
     direction: Literal["upgrade", "downgrade"]
     from_revision: str | None
     to_revision: str
-    steps: list[RelationalMigrationStep] = field(default_factory=list)
+    steps: list[RelationalMigrationStep] = field(default_factory=_empty_steps)
     is_empty: bool = False
 
 
@@ -84,8 +92,8 @@ class RelationalMigrationStatus:
     backend_name: str
     current_revision: str | None
     head_revision: str | None
-    pending: list[RelationalRevision] = field(default_factory=list)
-    applied: list[RelationalRevision] = field(default_factory=list)
+    pending: list[RelationalRevision] = field(default_factory=_empty_revisions)
+    applied: list[RelationalRevision] = field(default_factory=_empty_revisions)
 
     @property
     def is_at_head(self) -> bool:

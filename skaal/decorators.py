@@ -106,7 +106,7 @@ class FunctionRef(Generic[P, R]):
         return inspect.signature(self.__wrapped__)
 
 
-def _extract_backend_pin(cls: type) -> type[Backend] | None:
+def _extract_backend_pin(cls: type) -> type[Backend[Any]] | None:
     """Return the `Backend` subclass pinned via the class's parameterised base.
 
     Two capture paths share the same return contract:
@@ -124,22 +124,22 @@ def _extract_backend_pin(cls: type) -> type[Backend] | None:
     (``Store[User]``) report no pin. Returns ``None`` when no pin is
     present.
     """
-    pinned = getattr(cls, "__skaal_backend_pin__", None)
+    pinned: Any = getattr(cls, "__skaal_backend_pin__", None)
     if isinstance(pinned, type) and issubclass(pinned, Backend) and pinned is not Backend:
-        return pinned
+        return cast("type[Backend[Any]]", pinned)
 
     bases: tuple[Any, ...] = getattr(cls, "__orig_bases__", ())
     for base in bases:
         args = get_args(base)
         for arg in args:
             origin = get_origin(arg)
-            candidate = origin if isinstance(origin, type) else arg
+            candidate: Any = origin if isinstance(origin, type) else arg
             if (
                 isinstance(candidate, type)
                 and issubclass(candidate, Backend)
                 and candidate is not Backend
             ):
-                return candidate
+                return cast("type[Backend[Any]]", candidate)
     return None
 
 
@@ -200,7 +200,7 @@ def storage(
             id=InferredResource.id_for(cls),
             kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
             source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),
+            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
             indexes=idx,
             overrides=overrides,
         )
@@ -253,7 +253,7 @@ def external(
             id=InferredResource.id_for(cls),
             kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
             source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),
+            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
             overrides=overrides,
         )
         cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]

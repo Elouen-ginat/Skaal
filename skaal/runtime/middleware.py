@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import pybreaker
 import tenacity
@@ -103,9 +103,7 @@ def wrap_resilience(
 
 def _with_bulkhead(handler: Handler[R], policy: Bulkhead) -> Handler[R]:
     sem: asyncio.Semaphore = asyncio.Semaphore(policy.max_concurrent_calls)
-    timeout: float | None = (
-        policy.max_wait_ms / 1000.0 if policy.max_wait_ms > 0 else None
-    )
+    timeout: float | None = policy.max_wait_ms / 1000.0 if policy.max_wait_ms > 0 else None
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
         if timeout is None:
@@ -156,7 +154,8 @@ def _with_circuit_breaker(handler: Handler[R], policy: CircuitBreaker) -> Handle
             result: R = await handler(*args, **kwargs)
         except Exception as exc:
             breaker._state_storage.increment_counter()
-            for fail_listener in breaker.listeners:
+            listeners: list[Any] = cast(Any, breaker).listeners
+            for fail_listener in listeners:
                 fail_listener.failure(breaker, exc)
             try:
                 state.on_failure(exc)
@@ -164,7 +163,8 @@ def _with_circuit_breaker(handler: Handler[R], policy: CircuitBreaker) -> Handle
                 raise RuntimeError("circuit breaker open") from breaker_exc
             raise
         breaker._state_storage.reset_counter()
-        for success_listener in breaker.listeners:
+        listeners = cast(Any, breaker).listeners
+        for success_listener in listeners:
             success_listener.success(breaker)
         state.on_success()
         return result

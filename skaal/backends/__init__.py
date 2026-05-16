@@ -18,10 +18,17 @@ Two surfaces coexist in this package:
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from skaal.backends.base import StorageBackend
 from skaal.backends.local_backend import LocalMap
+
+if TYPE_CHECKING:  # pragma: no cover - import-time-only stubs for pyright
+    from skaal.backends.dynamodb_backend import DynamoBackend
+    from skaal.backends.postgres_backend import PostgresBackend
+    from skaal.backends.redis_backend import RedisBackend
+    from skaal.backends.redis_channel import RedisStreamChannel
+    from skaal.backends.sqlite_backend import SqliteBackend
 
 __all__ = [
     "DynamoBackend",

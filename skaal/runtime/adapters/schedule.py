@@ -10,7 +10,7 @@ Cloud Scheduler synth.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from skaal.binding.model import BoundResource
@@ -46,12 +46,14 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
             timezone: str = overrides.schedule_timezone or "UTC"
             aps_trigger: Any
             if isinstance(trigger, Every):
-                aps_trigger = IntervalTrigger(seconds=trigger.seconds, timezone=timezone)
+                aps_trigger = IntervalTrigger(seconds=int(trigger.seconds), timezone=timezone)
             elif isinstance(trigger, Cron):
-                aps_trigger = CronTrigger.from_crontab(trigger.expression, timezone=timezone)
+                aps_trigger = cast(Any, CronTrigger).from_crontab(
+                    trigger.expression, timezone=timezone
+                )
             else:
                 continue
-            sched.add_job(fn, trigger=aps_trigger, id=resource.inferred.id)
+            cast(Any, sched).add_job(fn, trigger=aps_trigger, id=resource.inferred.id)
         sched.start()
         runtime.state.scheduler = sched
 

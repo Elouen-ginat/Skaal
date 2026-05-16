@@ -140,18 +140,14 @@ def test_conflicting_backend_registration_raises() -> None:
         kinds = frozenset({"store"})
 
     with pytest.raises(SkaalConfigError, match="already registered"):
-        register_backend(
-            BackendEntry(token=FakeRedis, targets=frozenset({Target.AWS}))
-        )
+        register_backend(BackendEntry(token=FakeRedis, targets=frozenset({Target.AWS})))
 
 
 def test_idempotent_re_registration_of_same_token() -> None:
     """Registering the exact same `BackendEntry` twice is a silent no-op."""
     from skaal.binding.registry import register_backend
 
-    entry = BackendEntry(
-        token=_FakeBackend, targets=frozenset({Target.AWS})
-    )
+    entry = BackendEntry(token=_FakeBackend, targets=frozenset({Target.AWS}))
     register_backend(entry)
     register_backend(entry)
     assert lookup("fake-backend").token is _FakeBackend

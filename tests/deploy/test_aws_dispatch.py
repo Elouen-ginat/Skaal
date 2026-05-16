@@ -36,11 +36,7 @@ def test_aws_target_registered_in_registry() -> None:
 
 def test_aws_target_covers_every_aws_backend() -> None:
     """Every backend whose `targets` include `aws` has a synth entry."""
-    aws_backends = {
-        entry.token.name
-        for entry in REGISTRY
-        if Target.AWS in entry.targets
-    }
+    aws_backends = {entry.token.name for entry in REGISTRY if Target.AWS in entry.targets}
     missing = aws_backends - TARGET.supported_backends()
     assert not missing, f"AWS backends without a synth module: {sorted(missing)}"
 
@@ -121,8 +117,15 @@ def test_aws_synth_classes_satisfy_the_module_contract() -> None:
     from skaal.deploy.aws.sqs_worker import SqsWorkerSynth
 
     synth_classes = [
-        ApigwLambdaSynth, DynamoDBSynth, EventBridgeLambdaSynth, PlainLambdaSynth,
-        PostgresSynth, RedisSynth, S3Synth, SecretsManagerSynth, SqsChannelSynth,
+        ApigwLambdaSynth,
+        DynamoDBSynth,
+        EventBridgeLambdaSynth,
+        PlainLambdaSynth,
+        PostgresSynth,
+        RedisSynth,
+        S3Synth,
+        SecretsManagerSynth,
+        SqsChannelSynth,
         SqsWorkerSynth,
     ]
     for cls in synth_classes:

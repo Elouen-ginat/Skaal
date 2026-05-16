@@ -43,9 +43,7 @@ class RedisSynth(SynthModule[AwsConfig]):
             tags=ctx.tags,
         )
         scheme = "rediss" if cfg.transit_encryption else "redis"
-        url = pulumi.Output.concat(
-            f"{scheme}://", rg.primary_endpoint_address, f":{cfg.port}"
-        )
+        url = pulumi.Output.concat(f"{scheme}://", rg.primary_endpoint_address, f":{cfg.port}")
         env_key = f"{cfg.env_var_prefix}{ctx.slug_key}{cfg.env_var_suffix}"
         return SynthResult(
             resource_id=ctx.resource_id,

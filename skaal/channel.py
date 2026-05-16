@@ -17,7 +17,7 @@ from typing_extensions import TypeVar
 from skaal.backends._base import Backend
 
 T = TypeVar("T")
-B = TypeVar("B", bound=Backend, default=Backend)
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 
 
 class Channel(Generic[T, B]):
@@ -55,18 +55,14 @@ class Channel(Generic[T, B]):
         Raises:
             NotImplementedError: If the channel has not been wired yet.
         """
+        from skaal._native import resolve_native
+
         if self._backend is None:
             raise NotImplementedError(
                 "Channel.native() has no backend wired yet. The runtime wires "
                 "channels through the bound plan in Phase 4 of ADR 028."
             )
-        backend_native = getattr(self._backend, "native", None)
-        if callable(backend_native):
-            result = backend_native()
-            if hasattr(result, "__await__"):
-                return await result
-            return result
-        return self._backend
+        return await resolve_native(self._backend)
 
     def __repr__(self) -> str:
         status = "wired" if self._wired else "unwired"

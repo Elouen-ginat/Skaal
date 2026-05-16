@@ -11,7 +11,7 @@ from __future__ import annotations
 import tomllib
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
@@ -38,24 +38,26 @@ def load_lock(path: Path) -> LockFile:
         msg = f"{path}: 'version' must be an integer"
         raise SkaalConfigError(msg)
 
-    entries_section = raw.get("entries", {}) or {}
+    entries_section: Any = raw.get("entries") or {}
     if not isinstance(entries_section, dict):
         msg = f"{path}: 'entries' must be a table"
         raise SkaalConfigError(msg)
 
+    sections = cast(dict[str, Any], entries_section)
     entries: dict[tuple[str, str], LockEntry] = {}
-    for env_name, per_env in entries_section.items():
+    for env_name_raw, per_env in sections.items():
+        env_name = str(env_name_raw)
         if not isinstance(per_env, dict):
             msg = f"{path}: [entries.{env_name}] must be a table"
             raise SkaalConfigError(msg)
-        for resource_id, entry_data in per_env.items():
+        per_env_section = cast(dict[str, Any], per_env)
+        for resource_id_raw, entry_data in per_env_section.items():
+            resource_id = str(resource_id_raw)
             if not isinstance(entry_data, dict):
-                msg = (
-                    f"{path}: [entries.{env_name}.{resource_id!r}] must be a table"
-                )
+                msg = f"{path}: [entries.{env_name}.{resource_id!r}] must be a table"
                 raise SkaalConfigError(msg)
             try:
-                entries[(env_name, resource_id)] = LockEntry(**entry_data)
+                entries[(env_name, resource_id)] = LockEntry(**cast(dict[str, Any], entry_data))
             except ValidationError as exc:
                 msg = (
                     f"{path}: [entries.{env_name}.{resource_id!r}] failed "
