@@ -145,6 +145,8 @@ def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint
         details.append(
             f"region {display_optional(entry.region)} -> {display_optional(resource.region)}"
         )
-    if entry.fingerprint != bound_fingerprint:
+    if entry.fingerprint is None:
+        details.append(f"fingerprint unrecorded -> {bound_fingerprint}")
+    elif entry.fingerprint != bound_fingerprint:
         details.append(f"fingerprint {display_optional(entry.fingerprint)} -> {bound_fingerprint}")
     return "; ".join(details)

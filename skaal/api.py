@@ -36,7 +36,7 @@ def plan(
         The diff between the current bound plan and the lock file.
     """
     loaded = load_plan(
-        _coerce_app(target),
+        _resolve_app_target(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -65,7 +65,7 @@ def map(
         The validated resource map for the bound plan.
     """
     loaded = load_plan(
-        _coerce_app(target),
+        _resolve_app_target(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -98,7 +98,7 @@ def trace(
         The resolved trace hit.
     """
     loaded = load_plan(
-        _coerce_app(target),
+        _resolve_app_target(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -106,7 +106,7 @@ def trace(
     return resolve_trace(needle, loaded.bound)
 
 
-def _coerce_app(target: AppTarget) -> App:
+def _resolve_app_target(target: AppTarget) -> App:
     """Resolve `target` to a live `App` instance.
 
     Args:
