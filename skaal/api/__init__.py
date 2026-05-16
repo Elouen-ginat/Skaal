@@ -8,13 +8,26 @@ from typing import TypeAlias
 from skaal.app import App
 from skaal.binding import load_lock
 from skaal.cli._load import load_app, load_plan
-from skaal.plan_diff import PlanDiff, diff_plan
-from skaal.resource_map import ResourceMap
-from skaal.traceability import TraceHit, resolve_trace
+
+from ._plan import PlanChange, PlanDiff, diff_plan
+from ._resource_map import ResourceMap, ResourceMapEntry
+from ._trace import TraceHit, resolve_trace
 
 AppTarget: TypeAlias = App | str
 
-__all__ = ["AppTarget", "PlanDiff", "ResourceMap", "TraceHit", "map", "plan", "trace"]
+__all__ = [
+    "AppTarget",
+    "PlanChange",
+    "PlanDiff",
+    "ResourceMap",
+    "ResourceMapEntry",
+    "TraceHit",
+    "diff_plan",
+    "map",
+    "plan",
+    "resolve_trace",
+    "trace",
+]
 
 
 def plan(

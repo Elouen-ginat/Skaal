@@ -13,10 +13,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from skaal.api import PlanDiff, diff_plan
 from skaal.binding import load_lock
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
-from skaal.plan_diff import PlanDiff, diff_plan
 
 app = typer.Typer(
     help="Render the diff between the current app and `skaal.lock`.",

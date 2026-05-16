@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from skaal.api import ResourceMap
 from skaal.cli.main import app as cli_app
-from skaal.resource_map import ResourceMap
 
 runner = CliRunner()
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
+from skaal.api import TraceHit, resolve_trace
 from skaal.binding.model import BoundPlan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
-from skaal.traceability import TraceHit, resolve_trace
 
 app = typer.Typer(
     help="Resolve a resource id or log line back to the declaring source location.",

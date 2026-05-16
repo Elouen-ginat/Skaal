@@ -64,7 +64,7 @@ Checklist:
 
 Phase 1 made several deletions beyond the table above so the remaining tree could compile cleanly without a partial constraint stack:
 
-- `skaal/plan.py` and the old `skaal/deploy/` surface were deleted; `skaal/api.py` was removed in Phase 1 and is now being restored incrementally as thin CLI-parity wrappers on `BoundPlan`-based flows.
+- `skaal/plan.py` and the old `skaal/deploy/` surface were deleted; `skaal/api/` was removed in Phase 1 and is now being restored incrementally as thin CLI-parity wrappers on `BoundPlan`-based flows.
 - `skaal/runtime/` deleted (Phase 4 rebuilds the local runtime on top of the new bound plan).
 - `skaal/cli/migrate/` CLI subgroup deleted (the `skaal/migrate/` engine survives; Phase 6 brings the verbs back).
 - `skaal/cli/_utils.py` deleted (its loaders depended on the now-removed `skaal.api` surface).

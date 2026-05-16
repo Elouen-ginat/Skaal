@@ -9,9 +9,9 @@ import typer
 from rich.console import Console
 from rich.tree import Tree
 
+from skaal.api import ResourceMap, ResourceMapEntry
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
-from skaal.resource_map import ResourceMap, ResourceMapEntry
 
 app = typer.Typer(
     help="Print the source-to-resource tree and emit `.skaal/map.json`.",

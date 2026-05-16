@@ -10,6 +10,7 @@ surface is a strict subset of the eventual `__all__` in ADR 028 §8.
 
 from skaal import api, types
 from skaal._logging import ensure_null_handler as _ensure_null_handler
+from skaal.api import PlanChange, PlanDiff, TraceHit
 from skaal.app import App
 from skaal.backends._base import Backend
 from skaal.binding import (
@@ -49,7 +50,6 @@ from skaal.inference import (
     infer,
 )
 from skaal.module import Module, ModuleExport
-from skaal.plan_diff import PlanChange, PlanDiff
 from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
 from skaal.relational import Relational
 from skaal.relational import ensure_schema as ensure_relational_schema
@@ -57,7 +57,6 @@ from skaal.relational import open_session as open_relational_session
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.secrets import Secret, SecretRegistry
 from skaal.storage import Store
-from skaal.traceability import TraceHit
 from skaal.types import (
     TTL,
     BeforeInvoke,
