@@ -124,7 +124,11 @@ def test_where_resolves_resource_console_url(
         ]
     }
 
-    monkeypatch.setattr(_where, "_load_stack_deployment", lambda *args, **kwargs: fake_state)
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: fake_state,
+    )
 
     hit = api.where("api_fixture_pkg.app:Sessions", target)
 

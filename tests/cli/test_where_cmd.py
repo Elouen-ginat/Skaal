@@ -64,7 +64,11 @@ def test_where_renders_console_url(
             }
         ]
     }
-    monkeypatch.setattr(_where, "_load_stack_deployment", lambda *args, **kwargs: fake_state)
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: fake_state,
+    )
 
     result = runner.invoke(
         cli_app,

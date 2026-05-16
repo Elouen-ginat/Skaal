@@ -142,7 +142,7 @@ def resolve_where(resource_id: str, bound: BoundPlan, env: Environment) -> Where
         raise ValueError(msg)
     if env.target is not Target.AWS:
         msg = (
-            f"`skaal where` currently supports target {Target.AWS.value!r} only; "
+            f"`skaal where` currently supports {Target.AWS.value!r} only; "
             f"env {env.name!r} targets {env.target.value!r}."
         )
         raise ValueError(msg)
@@ -269,7 +269,7 @@ def _aws_console_url(state: StackMapping, *, region: str | None) -> str:
     resolver = _AWS_CONSOLE_URLS.get(resource_type)
     if resolver is not None:
         return resolver(outputs, actual_region)
-    msg = f"`skaal where` does not yet know how to open console URLs for {resource_type!r}."
+    msg = f"`skaal where` does not support generating console URLs for {resource_type!r}."
     raise ValueError(msg)
 
 
