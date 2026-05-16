@@ -14,9 +14,17 @@ from typing import Any, ClassVar
 import pulumi
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthSpec
+from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
+from skaal.deploy.aws._where import (
+    AWS_APIGW_API,
+    AWS_LAMBDA_FUNCTION,
+    WHERE_FALLBACK,
+    WHERE_PRIMARY,
+    apigw_console_url,
+    lambda_console_url,
+)
 from skaal.inference.model import ResourceKind
 
 
@@ -27,6 +35,24 @@ class ApigwLambdaSynth(LambdaSynth):
         backends=("apigw-lambda",),
         kinds=frozenset({ResourceKind.ASGI_SERVICE}),
         description="API Gateway HTTPv2 fronting a Lambda container.",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.ASGI_SERVICE,
+                    provider_type=AWS_APIGW_API,
+                    priority=WHERE_PRIMARY,
+                ),
+                WherePreference(
+                    kind=ResourceKind.ASGI_SERVICE,
+                    provider_type=AWS_LAMBDA_FUNCTION,
+                    priority=WHERE_FALLBACK,
+                ),
+            ),
+            console_url_resolvers={
+                AWS_APIGW_API: apigw_console_url,
+                AWS_LAMBDA_FUNCTION: lambda_console_url,
+            },
+        ),
     )
 
     def _timeout_s(self, ctx: SynthContext[AwsConfig]) -> int:

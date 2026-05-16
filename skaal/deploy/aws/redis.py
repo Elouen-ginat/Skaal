@@ -13,8 +13,20 @@ from typing import ClassVar
 import pulumi
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import (
+    AWS_ELASTICACHE_REPLICATION_GROUP,
+    WHERE_FALLBACK,
+    elasticache_console_url,
+)
 from skaal.inference.model import ResourceKind
 
 
@@ -25,6 +37,23 @@ class RedisSynth(SynthModule[AwsConfig]):
         backends=("redis", "redis-channel"),
         kinds=frozenset({ResourceKind.STORE, ResourceKind.CHANNEL}),
         description="ElastiCache Redis replication group (store + channel forms).",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.STORE,
+                    provider_type=AWS_ELASTICACHE_REPLICATION_GROUP,
+                    priority=WHERE_FALLBACK,
+                ),
+                WherePreference(
+                    kind=ResourceKind.CHANNEL,
+                    provider_type=AWS_ELASTICACHE_REPLICATION_GROUP,
+                    priority=WHERE_FALLBACK,
+                ),
+            ),
+            console_url_resolvers={
+                AWS_ELASTICACHE_REPLICATION_GROUP: elasticache_console_url,
+            },
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:

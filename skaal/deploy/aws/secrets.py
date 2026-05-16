@@ -10,8 +10,16 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import AWS_SECRETSMANAGER_SECRET, secret_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -22,6 +30,15 @@ class SecretsManagerSynth(SynthModule[AwsConfig]):
         backends=("aws-secrets-manager",),
         kinds=frozenset({ResourceKind.SECRET}),
         description="AWS Secrets Manager container (value supplied out-of-band).",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.SECRET,
+                    provider_type=AWS_SECRETSMANAGER_SECRET,
+                ),
+            ),
+            console_url_resolvers={AWS_SECRETSMANAGER_SECRET: secret_console_url},
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:

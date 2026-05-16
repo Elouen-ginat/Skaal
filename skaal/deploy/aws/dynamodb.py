@@ -10,8 +10,16 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import AWS_DYNAMODB_TABLE, WHERE_PRIMARY, dynamodb_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -22,6 +30,16 @@ class DynamoDBSynth(SynthModule[AwsConfig]):
         backends=("dynamodb",),
         kinds=frozenset({ResourceKind.STORE}),
         description="DynamoDB table for KV stores.",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.STORE,
+                    provider_type=AWS_DYNAMODB_TABLE,
+                    priority=WHERE_PRIMARY,
+                ),
+            ),
+            console_url_resolvers={AWS_DYNAMODB_TABLE: dynamodb_console_url},
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:

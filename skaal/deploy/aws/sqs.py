@@ -10,8 +10,16 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import AWS_SQS_QUEUE, WHERE_PRIMARY, sqs_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -22,6 +30,16 @@ class SqsChannelSynth(SynthModule[AwsConfig]):
         backends=("sqs",),
         kinds=frozenset({ResourceKind.CHANNEL}),
         description="SQS standard queue for pub/sub channels.",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(
+                    kind=ResourceKind.CHANNEL,
+                    provider_type=AWS_SQS_QUEUE,
+                    priority=WHERE_PRIMARY,
+                ),
+            ),
+            console_url_resolvers={AWS_SQS_QUEUE: sqs_console_url},
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:

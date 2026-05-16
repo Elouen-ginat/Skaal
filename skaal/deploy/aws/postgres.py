@@ -12,8 +12,16 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.deploy._protocol import (
+    SynthContext,
+    SynthModule,
+    SynthResult,
+    SynthSpec,
+    WherePreference,
+    WhereSpec,
+)
 from skaal.deploy.aws._config import AwsConfig
+from skaal.deploy.aws._where import AWS_RDS_INSTANCE, rds_console_url
 from skaal.inference.model import ResourceKind
 
 
@@ -24,6 +32,12 @@ class PostgresSynth(SynthModule[AwsConfig]):
         backends=("postgres",),
         kinds=frozenset({ResourceKind.RELATIONAL}),
         description="RDS Postgres instance with managed master credentials.",
+        where=WhereSpec(
+            preferences=(
+                WherePreference(kind=ResourceKind.RELATIONAL, provider_type=AWS_RDS_INSTANCE),
+            ),
+            console_url_resolvers={AWS_RDS_INSTANCE: rds_console_url},
+        ),
     )
 
     def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:

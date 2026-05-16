@@ -199,6 +199,45 @@ def test_where_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
         api.where("missing-resource", target)
 
 
+def test_where_builtin_target_metadata_survives_reset(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+    from skaal.plugins import _reset_for_tests as reset_plugins
+
+    fake_state = {
+        "resources": [
+            {
+                "type": "aws:dynamodb/table:Table",
+                "outputs": {
+                    "name": "built-in-store",
+                    "id": "built-in-store",
+                    "tags": {
+                        "skaal:resource_id": "api_fixture_pkg.app:Sessions",
+                    },
+                },
+            }
+        ]
+    }
+
+    reset_plugins()
+    _where._reset_for_tests()
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: fake_state,
+    )
+
+    try:
+        hit = api.where("api_fixture_pkg.app:Sessions", target)
+    finally:
+        reset_plugins()
+        _where._reset_for_tests()
+
+    assert hit.provider_type == "aws:dynamodb/table:Table"
+    assert hit.console_url.endswith("#table?name=built-in-store")
+
+
 class _WherePlugin(SkaalPlugin):
     name = "where-plugin"
 

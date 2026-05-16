@@ -39,7 +39,7 @@ from typing import (
     runtime_checkable,
 )
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from skaal.binding.model import Target
 from skaal.deploy.models import SkaalTags
@@ -63,6 +63,7 @@ class TargetConfig(BaseModel):
 
 
 ConfigT = TypeVar("ConfigT", bound=TargetConfig)
+ConsoleUrlResolver = Callable[[Mapping[str, Any], str | None], str]
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,36 @@ class SynthResult:
     primary: Any
     extras: tuple[Any, ...] = ()
     env_vars: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
+
+
+class WherePreference(BaseModel):
+    """One ordered deployed-resource preference for `skaal where`.
+
+    When a synth emits multiple Pulumi resources for one Skaal resource,
+    `skaal where` needs a stable way to pick which exported provider type
+    should represent that resource in console lookups. Higher `priority`
+    wins; ties keep registration order.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ResourceKind
+    provider_type: str
+    priority: int = 0
+
+
+class WhereSpec(BaseModel):
+    """Optional `skaal where` metadata exported by a `SynthModule`.
+
+    `preferences` tells `where` which Pulumi resource types should be
+    preferred for each Skaal `ResourceKind`. `console_url_resolvers`
+    converts a provider type's exported Pulumi outputs into a console URL.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    preferences: tuple[WherePreference, ...] = ()
+    console_url_resolvers: Mapping[str, ConsoleUrlResolver] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -164,6 +195,7 @@ class SynthSpec(BaseModel):
     backends: tuple[str, ...]
     kinds: frozenset[ResourceKind]
     description: str = ""
+    where: WhereSpec | None = None
 
 
 class SynthModule(Generic[ConfigT], ABC):
@@ -241,9 +273,18 @@ class DeployTarget(Protocol):
         """Importable module names this target needs (for clean errors)."""
         ...
 
+    def where_console_url_resolvers(self) -> Mapping[str, ConsoleUrlResolver]:
+        """Built-in `skaal where` console URL resolvers keyed by provider type."""
+        ...
+
+    def where_resource_type_preferences(self) -> Mapping[ResourceKind, tuple[str, ...]]:
+        """Built-in `skaal where` provider-type orderings keyed by resource kind."""
+        ...
+
 
 __all__ = [
     "ConfigT",
+    "ConsoleUrlResolver",
     "DeployTarget",
     "SynthContext",
     "SynthFn",
@@ -251,4 +292,6 @@ __all__ = [
     "SynthResult",
     "SynthSpec",
     "TargetConfig",
+    "WherePreference",
+    "WhereSpec",
 ]
