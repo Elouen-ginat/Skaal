@@ -45,6 +45,7 @@ from skaal.backends._base import Backend
 from skaal.binding.model import Target
 from skaal.binding.registry import lookup, lookup_token
 from skaal.deploy.models import SkaalTags
+from skaal.errors import UnknownBackendError
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
@@ -183,6 +184,33 @@ class SynthContext(Generic[ConfigT]):
 SynthFn = Callable[[SynthContext[Any]], SynthResult]
 
 
+def _backend_name_for_token(token: type[Backend[Any]]) -> str:
+    """Return the canonical backend name for `token`.
+
+    Built-in and already-registered plugin backends resolve through the
+    binding registry; late-bound plugin synths can still fall back to the
+    token's class metadata before registration happens.
+    """
+    try:
+        return lookup_token(token).name
+    except UnknownBackendError:
+        return token.name
+
+
+def _kinds_for_token(token: type[Backend[Any]]) -> frozenset[ResourceKind]:
+    """Return the `ResourceKind`s hosted by `token`.
+
+    Prefer the binding registry when the backend is registered so deploy and
+    binding metadata share one source of truth. Late-bound plugin synths keep
+    working by falling back to the token class until the plugin registers the
+    corresponding `BackendEntry`.
+    """
+    try:
+        return lookup_token(token).kinds
+    except UnknownBackendError:
+        return frozenset(ResourceKind(kind) for kind in token.kinds)
+
+
 def _normalize_synth_tokens(
     raw: object,
 ) -> tuple[type[Backend[Any]], ...]:
@@ -208,7 +236,7 @@ def _normalize_synth_tokens(
 
 def _kinds_for_synth_tokens(tokens: tuple[type[Backend[Any]], ...]) -> frozenset[ResourceKind]:
     """Return the union of `ResourceKind`s hosted by `tokens`."""
-    return frozenset(kind for token in tokens for kind in lookup_token(token).kinds)
+    return frozenset(kind for token in tokens for kind in _kinds_for_token(token))
 
 
 class SynthSpec(BaseModel):
@@ -269,7 +297,7 @@ class SynthSpec(BaseModel):
     @property
     def backends(self) -> tuple[str, ...]:
         """Return the backend names derived from `tokens`."""
-        return tuple(lookup_token(token).name for token in self.token_classes)
+        return tuple(_backend_name_for_token(token) for token in self.token_classes)
 
     @property
     def kinds(self) -> frozenset[ResourceKind]:
