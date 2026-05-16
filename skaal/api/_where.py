@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeAlias, cast
 from urllib.parse import quote
 
 from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
@@ -13,6 +13,7 @@ from skaal.errors import MissingExtraError, SkaalDeployError
 from skaal.inference.model import ResourceKind
 
 _DEFAULT_AWS_REGION = "us-east-1"
+StackMapping: TypeAlias = Mapping[str, Any]
 _AWS_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ResourceKind.STORE: (
         "aws:dynamodb/table:Table",
@@ -38,6 +39,73 @@ _AWS_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
         "aws:lambda/function:Function",
     ),
     ResourceKind.SECRET: ("aws:secretsmanager/secret:Secret",),
+}
+
+
+def _dynamodb_url(outputs: StackMapping, region: str) -> str:
+    name = _string_value(outputs, "name", "id")
+    return (
+        f"https://{region}.console.aws.amazon.com/dynamodbv2/home"
+        f"?region={region}#table?name={quote(name)}"
+    )
+
+
+def _s3_url(outputs: StackMapping, region: str) -> str:
+    bucket = _string_value(outputs, "bucket", "id")
+    return f"https://s3.console.aws.amazon.com/s3/buckets/{quote(bucket)}?region={region}&tab=objects"
+
+
+def _rds_url(outputs: StackMapping, region: str) -> str:
+    identifier = _string_value(outputs, "identifier", "id")
+    return (
+        f"https://{region}.console.aws.amazon.com/rds/home"
+        f"?region={region}#database:id={quote(identifier)};is-cluster=false"
+    )
+
+
+def _elasticache_url(outputs: StackMapping, region: str) -> str:
+    group = _string_value(outputs, "replicationGroupId", "id")
+    return f"https://{region}.console.aws.amazon.com/elasticache/home?region={region}#/redis/{quote(group)}"
+
+
+def _lambda_url(outputs: StackMapping, region: str) -> str:
+    name = _string_value(outputs, "name", "functionName", "id")
+    return f"https://{region}.console.aws.amazon.com/lambda/home?region={region}#/functions/{quote(name)}"
+
+
+def _apigw_url(outputs: StackMapping, region: str) -> str:
+    api_id = _string_value(outputs, "apiId", "id")
+    return f"https://{region}.console.aws.amazon.com/apigateway/home?region={region}#/apis/{quote(api_id)}"
+
+
+def _eventbridge_url(outputs: StackMapping, region: str) -> str:
+    name = _string_value(outputs, "name", "id")
+    return f"https://{region}.console.aws.amazon.com/events/home?region={region}#/rules/{quote(name)}"
+
+
+def _sqs_url(outputs: StackMapping, region: str) -> str:
+    queue_url = _string_value(outputs, "url", "id")
+    return f"https://{region}.console.aws.amazon.com/sqs/v3/home?region={region}#/queues/{quote(queue_url, safe='')}"
+
+
+def _secret_url(outputs: StackMapping, region: str) -> str:
+    name = _string_value(outputs, "name", "id")
+    return (
+        f"https://{region}.console.aws.amazon.com/secretsmanager/secret"
+        f"?region={region}&name={quote(name)}"
+    )
+
+
+_AWS_CONSOLE_URLS: dict[str, Callable[[StackMapping, str], str]] = {
+    "aws:dynamodb/table:Table": _dynamodb_url,
+    "aws:s3/bucketV2:BucketV2": _s3_url,
+    "aws:rds/instance:Instance": _rds_url,
+    "aws:elasticache/replicationGroup:ReplicationGroup": _elasticache_url,
+    "aws:lambda/function:Function": _lambda_url,
+    "aws:apigatewayv2/api:Api": _apigw_url,
+    "aws:cloudwatch/eventRule:EventRule": _eventbridge_url,
+    "aws:sqs/queue:Queue": _sqs_url,
+    "aws:secretsmanager/secret:Secret": _secret_url,
 }
 
 
@@ -114,7 +182,7 @@ def _stack_name(bound: BoundPlan, env: Environment) -> str:
 
 def _load_stack_deployment(
     bound: BoundPlan, env: Environment, *, stack_name: str
-) -> Mapping[str, Any] | object:
+) -> StackMapping:
     try:
         from pulumi import automation as auto
     except ImportError as exc:
@@ -140,13 +208,11 @@ def _load_stack_deployment(
     except Exception as exc:  # pragma: no cover - integration path
         raise SkaalDeployError(f"Could not export Pulumi stack {stack_name!r}: {exc}") from exc
 
-    deployment = _field(exported, "deployment")
-    return deployment if deployment is not None else exported
+    deployment = _field(_coerce_mapping(exported), "deployment")
+    return _coerce_mapping(deployment if deployment is not None else exported)
 
 
-def _select_deployed_resource(
-    resource: BoundResource, deployment: Mapping[str, Any] | object
-) -> Mapping[str, Any] | object:
+def _select_deployed_resource(resource: BoundResource, deployment: StackMapping) -> StackMapping:
     resources = _deployment_resources(deployment)
     candidates = [
         state
@@ -168,97 +234,47 @@ def _select_deployed_resource(
     return candidates[0]
 
 
-def _deployment_resources(deployment: Mapping[str, Any] | object) -> tuple[Mapping[str, Any] | object, ...]:
+def _deployment_resources(deployment: StackMapping) -> tuple[StackMapping, ...]:
     resources = _field(deployment, "resources")
     if isinstance(resources, Sequence) and not isinstance(resources, (str, bytes, bytearray)):
-        return tuple(resources)
+        return tuple(_coerce_mapping(resource) for resource in resources)
     nested = _field(deployment, "deployment")
     if nested is not None:
-        return _deployment_resources(nested)
+        return _deployment_resources(_coerce_mapping(nested))
     return ()
 
 
-def _skaal_resource_id(state: Mapping[str, Any] | object) -> str | None:
+def _skaal_resource_id(state: StackMapping) -> str | None:
     for container_name in ("outputs", "inputProperties", "inputs"):
-        container = _field(state, container_name)
-        tags = _field(container, "tags")
+        resource_id = _tagged_resource_id(_coerce_mapping(_field(state, container_name)))
+        if resource_id is not None:
+            return resource_id
+    return None
+
+
+def _tagged_resource_id(container: StackMapping) -> str | None:
+    for tag_field in ("tags", "tagsAll"):
+        tags = _field(container, tag_field)
         if isinstance(tags, Mapping):
             resource_id = tags.get("skaal:resource_id")
-            if isinstance(resource_id, str):
-                return resource_id
-        tags_all = _field(container, "tagsAll")
-        if isinstance(tags_all, Mapping):
-            resource_id = tags_all.get("skaal:resource_id")
             if isinstance(resource_id, str):
                 return resource_id
     return None
 
 
-def _aws_console_url(state: Mapping[str, Any] | object, *, region: str | None) -> str:
+def _aws_console_url(state: StackMapping, *, region: str | None) -> str:
     actual_region = region or _DEFAULT_AWS_REGION
     resource_type = str(_field(state, "type") or "")
-    outputs = _field(state, "outputs")
-
-    if resource_type == "aws:dynamodb/table:Table":
-        name = _string_value(outputs, "name", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/dynamodbv2/home"
-            f"?region={actual_region}#table?name={quote(name)}"
-        )
-    if resource_type == "aws:s3/bucketV2:BucketV2":
-        bucket = _string_value(outputs, "bucket", "id")
-        return (
-            "https://s3.console.aws.amazon.com/s3/buckets/"
-            f"{quote(bucket)}?region={actual_region}&tab=objects"
-        )
-    if resource_type == "aws:rds/instance:Instance":
-        identifier = _string_value(outputs, "identifier", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/rds/home"
-            f"?region={actual_region}#database:id={quote(identifier)};is-cluster=false"
-        )
-    if resource_type == "aws:elasticache/replicationGroup:ReplicationGroup":
-        group = _string_value(outputs, "replicationGroupId", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/elasticache/home"
-            f"?region={actual_region}#/redis/{quote(group)}"
-        )
-    if resource_type == "aws:lambda/function:Function":
-        name = _string_value(outputs, "name", "functionName", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/lambda/home"
-            f"?region={actual_region}#/functions/{quote(name)}"
-        )
-    if resource_type == "aws:apigatewayv2/api:Api":
-        api_id = _string_value(outputs, "apiId", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/apigateway/home"
-            f"?region={actual_region}#/apis/{quote(api_id)}"
-        )
-    if resource_type == "aws:cloudwatch/eventRule:EventRule":
-        name = _string_value(outputs, "name", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/events/home"
-            f"?region={actual_region}#/rules/{quote(name)}"
-        )
-    if resource_type == "aws:sqs/queue:Queue":
-        queue_url = _string_value(outputs, "url", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/sqs/v3/home"
-            f"?region={actual_region}#/queues/{quote(queue_url, safe='')}"
-        )
-    if resource_type == "aws:secretsmanager/secret:Secret":
-        name = _string_value(outputs, "name", "id")
-        return (
-            f"https://{actual_region}.console.aws.amazon.com/secretsmanager/secret"
-            f"?region={actual_region}&name={quote(name)}"
-        )
+    outputs = _coerce_mapping(_field(state, "outputs"))
+    resolver = _AWS_CONSOLE_URLS.get(resource_type)
+    if resolver is not None:
+        return resolver(outputs, actual_region)
     msg = f"`skaal where` does not yet know how to open console URLs for {resource_type!r}."
     raise ValueError(msg)
 
 
-def _physical_id(state: Mapping[str, Any] | object) -> str | None:
-    outputs = _field(state, "outputs")
+def _physical_id(state: StackMapping) -> str | None:
+    outputs = _coerce_mapping(_field(state, "outputs"))
     for key in ("id", "name", "arn", "url"):
         value = _field(outputs, key)
         if isinstance(value, str) and value:
@@ -267,7 +283,7 @@ def _physical_id(state: Mapping[str, Any] | object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _string_value(container: object, *keys: str) -> str:
+def _string_value(container: StackMapping, *keys: str) -> str:
     for key in keys:
         value = _field(container, key)
         if isinstance(value, str) and value:
@@ -275,10 +291,16 @@ def _string_value(container: object, *keys: str) -> str:
     raise ValueError(f"Pulumi stack state is missing the expected fields: {', '.join(keys)}.")
 
 
-def _field(container: object, key: str) -> Any:
-    if isinstance(container, Mapping):
-        return container.get(key)
-    return getattr(container, key, None)
+def _coerce_mapping(value: object) -> StackMapping:
+    if isinstance(value, Mapping):
+        return cast(StackMapping, value)
+    if hasattr(value, "__dict__"):
+        return cast(StackMapping, vars(value))
+    return {}
+
+
+def _field(container: StackMapping, key: str) -> Any:
+    return container.get(key)
 
 
 __all__ = ["WhereHit", "resolve_where"]

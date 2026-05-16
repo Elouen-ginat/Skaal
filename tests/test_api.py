@@ -11,6 +11,7 @@ from typing import Any, cast
 import pytest
 
 from skaal import api
+from skaal.api import _where
 from skaal.app import App
 from skaal.cli._load import AppSpec
 
@@ -123,7 +124,7 @@ def test_where_resolves_resource_console_url(
         ]
     }
 
-    monkeypatch.setattr("skaal.api._where._load_stack_deployment", lambda *args, **kwargs: fake_state)
+    monkeypatch.setattr(_where, "_load_stack_deployment", lambda *args, **kwargs: fake_state)
 
     hit = api.where("api_fixture_pkg.app:Sessions", target)
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from skaal.api import _where
 from skaal.cli.main import app as cli_app
 
 runner = CliRunner()
@@ -63,7 +64,7 @@ def test_where_renders_console_url(
             }
         ]
     }
-    monkeypatch.setattr("skaal.api._where._load_stack_deployment", lambda *args, **kwargs: fake_state)
+    monkeypatch.setattr(_where, "_load_stack_deployment", lambda *args, **kwargs: fake_state)
 
     result = runner.invoke(
         cli_app,
