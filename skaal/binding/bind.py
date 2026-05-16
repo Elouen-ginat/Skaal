@@ -28,7 +28,6 @@ from __future__ import annotations
 import hashlib
 import json
 
-from skaal.binding.defaults import DEFAULTS
 from skaal.binding.model import (
     BackendConfig,
     BoundPlan,
@@ -36,7 +35,7 @@ from skaal.binding.model import (
     Environment,
     LockFile,
 )
-from skaal.binding.registry import BackendEntry, lookup
+from skaal.binding.registry import BackendEntry, default_entry_for, lookup
 from skaal.errors import (
     BackendKindMismatch,
     BackendNotAvailableForTarget,
@@ -138,8 +137,7 @@ def _bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> B
             options=env_override.options,
         )
 
-    token = DEFAULTS[res.kind][env.target]
-    entry = lookup(token.name)
+    entry = default_entry_for(res.kind, env.target)
     _validate(entry, res, env)
     return _build(res, entry, env, pinned=False)
 

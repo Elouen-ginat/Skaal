@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from skaal.backends._tokens import DynamoDB, Redis, RedisChannel
+from skaal.binding.registry import lookup_token
 from skaal.deploy._protocol import SynthSpec
 from skaal.inference.model import ResourceKind
 
@@ -13,16 +14,18 @@ def test_synth_spec_derives_backend_names_and_kinds_from_tokens() -> None:
     spec = SynthSpec(tokens=(Redis, RedisChannel), description="Redis-backed store + channel.")
 
     assert spec.token_classes == (Redis, RedisChannel)
-    assert spec.backends == ("redis", "redis-channel")
-    assert spec.kinds == frozenset({ResourceKind.STORE, ResourceKind.CHANNEL})
+    assert spec.backends == tuple(lookup_token(token).name for token in (Redis, RedisChannel))
+    assert spec.kinds == frozenset(
+        kind for token in (Redis, RedisChannel) for kind in lookup_token(token).kinds
+    )
 
 
 def test_synth_spec_accepts_legacy_backend_names() -> None:
     spec = SynthSpec(backends=("dynamodb",), kinds=frozenset({ResourceKind.STORE}))
 
     assert spec.token_classes == (DynamoDB,)
-    assert spec.backends == ("dynamodb",)
-    assert spec.kinds == frozenset({ResourceKind.STORE})
+    assert spec.backends == (lookup_token(DynamoDB).name,)
+    assert spec.kinds == frozenset(lookup_token(DynamoDB).kinds)
 
 
 def test_synth_spec_rejects_mismatched_legacy_kinds() -> None:

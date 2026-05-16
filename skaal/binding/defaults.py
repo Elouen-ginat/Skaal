@@ -1,13 +1,9 @@
-"""The per-`(ResourceKind, Target)` defaults table (ADR 028 §6.3, ADR 031 §3.5).
+"""The per-`(ResourceKind, Target)` defaults projection (ADR 028 §6.3, ADR 031 §3.5).
 
-Pure data: one cell per `(ResourceKind, Target)` slot, naming the typed
-`Backend` token Skaal picks when the resource is un-pinned and no env
-override or lock entry supplies one. The table is wrapped in
-``MappingProxyType`` so it cannot be mutated by a misbehaving import.
-
-Changing a cell is an ADR-gated decision (per CLAUDE.md "Adding a new
-backend"); the binding tests assert every cell is registered and every
-slot is populated.
+`DEFAULTS` is now derived from the backend registry's `BackendEntry.default_for`
+metadata so binding defaults, backend capabilities/targets, and deploy-side
+backend metadata stay in lock-step. The projection remains wrapped in
+`MappingProxyType` so consumers keep the same read-only table shape.
 """
 
 from __future__ import annotations
@@ -17,53 +13,24 @@ from types import MappingProxyType
 from typing import Any
 
 from skaal.backends._base import Backend
-from skaal.backends._tokens import (
-    S3,
-    ApigwLambda,
-    Apscheduler,
-    Asyncio,
-    AwsSecretsManager,
-    CloudRun,
-    CloudSchedulerCloudRun,
-    CloudTasksCloudRun,
-    DotenvSecret,
-    DynamoDB,
-    EventBridgeLambda,
-    FilesystemBlob,
-    Firestore,
-    GcpSecretManager,
-    Gcs,
-    InProcessChannel,
-    Lambda,
-    Postgres,
-    Pubsub,
-    Sqlite,
-    Sqs,
-    SqsLambdaWorker,
-    Uvicorn,
-)
 from skaal.binding.model import Target
+from skaal.binding.registry import REGISTRY
 from skaal.inference.model import ResourceKind
 
 
-def _row(
-    local: type[Backend[Any]],
-    aws: type[Backend[Any]],
-    gcp: type[Backend[Any]],
-) -> Mapping[Target, type[Backend[Any]]]:
-    return MappingProxyType({Target.LOCAL: local, Target.AWS: aws, Target.GCP: gcp})
-
-
-DEFAULTS: Mapping[ResourceKind, Mapping[Target, type[Backend[Any]]]] = MappingProxyType(
-    {
-        ResourceKind.STORE: _row(Sqlite, DynamoDB, Firestore),
-        ResourceKind.RELATIONAL: _row(Sqlite, Postgres, Postgres),
-        ResourceKind.BLOB: _row(FilesystemBlob, S3, Gcs),
-        ResourceKind.CHANNEL: _row(InProcessChannel, Sqs, Pubsub),
-        ResourceKind.FUNCTION: _row(Asyncio, Lambda, CloudRun),
-        ResourceKind.ASGI_SERVICE: _row(Uvicorn, ApigwLambda, CloudRun),
-        ResourceKind.SCHEDULE: _row(Apscheduler, EventBridgeLambda, CloudSchedulerCloudRun),
-        ResourceKind.JOB: _row(Apscheduler, SqsLambdaWorker, CloudTasksCloudRun),
-        ResourceKind.SECRET: _row(DotenvSecret, AwsSecretsManager, GcpSecretManager),
+def _build_defaults() -> Mapping[ResourceKind, Mapping[Target, type[Backend[Any]]]]:
+    rows: dict[ResourceKind, dict[Target, type[Backend[Any]]]] = {
+        kind: {} for kind in ResourceKind
     }
-)
+    for entry in REGISTRY:
+        for default in entry.default_for:
+            rows[default.kind][default.target] = entry.token_class
+    return MappingProxyType(
+        {
+            kind: MappingProxyType({target: rows[kind][target] for target in Target})
+            for kind in ResourceKind
+        }
+    )
+
+
+DEFAULTS: Mapping[ResourceKind, Mapping[Target, type[Backend[Any]]]] = _build_defaults()

@@ -43,7 +43,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from skaal.backends._base import Backend
 from skaal.binding.model import Target
-from skaal.binding.registry import lookup
+from skaal.binding.registry import lookup, lookup_token
 from skaal.deploy.models import SkaalTags
 from skaal.inference.model import ResourceKind
 
@@ -208,7 +208,7 @@ def _normalize_synth_tokens(
 
 def _kinds_for_synth_tokens(tokens: tuple[type[Backend[Any]], ...]) -> frozenset[ResourceKind]:
     """Return the union of `ResourceKind`s hosted by `tokens`."""
-    return frozenset(ResourceKind(kind) for token in tokens for kind in token.kinds)
+    return frozenset(kind for token in tokens for kind in lookup_token(token).kinds)
 
 
 class SynthSpec(BaseModel):
@@ -269,7 +269,7 @@ class SynthSpec(BaseModel):
     @property
     def backends(self) -> tuple[str, ...]:
         """Return the backend names derived from `tokens`."""
-        return tuple(token.name for token in self.token_classes)
+        return tuple(lookup_token(token).name for token in self.token_classes)
 
     @property
     def kinds(self) -> frozenset[ResourceKind]:
