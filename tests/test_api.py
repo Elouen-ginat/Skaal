@@ -6,7 +6,7 @@ import importlib
 import sys
 import textwrap
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -121,7 +121,7 @@ def test_deploy_returns_lock_update_without_pulumi(
 
     calls: list[tuple[bool, bool]] = []
 
-    def fake_run_pulumi(**kwargs: object) -> None:
+    def fake_run_pulumi(**kwargs: Any) -> None:
         calls.append((bool(kwargs["preview"]), bool(kwargs["yes"])))
 
     monkeypatch.setattr("skaal.api._commands._run_pulumi", fake_run_pulumi)

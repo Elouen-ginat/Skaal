@@ -88,7 +88,7 @@ def doctor() -> DoctorReport:
     """
     try:
         skaal_version = version("skaal")
-    except PackageNotFoundError as exc:  # pragma: no cover - packaging edge case
+    except PackageNotFoundError as exc:  # pragma: no cover
         raise RuntimeError("Skaal package metadata is not available.") from exc
 
     return DoctorReport(
@@ -260,7 +260,7 @@ def _resolve_build_target(target: App | str) -> tuple[AppSpec, App]:
 def _resolve_app_target(target: App | str) -> App:
     """Resolve a CLI/API target into a live `App`."""
     if isinstance(target, str):
-        resolved = load_app(target)
+        resolved = load_app(AppSpec.parse(target))
         if not isinstance(resolved, App):
             msg = f"`{target}` did not resolve to a Skaal `App` instance."
             raise TypeError(msg)
