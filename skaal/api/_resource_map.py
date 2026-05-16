@@ -68,6 +68,8 @@ class ResourceMap(BaseModel):
     def for_bound_plan(cls, bound: BoundPlan) -> ResourceMap:
         """Build the resource map from a bound plan."""
         entries = [ResourceMapEntry.for_resource(resource) for resource in bound.resources]
+        # Sort by source location first, then by symbol name, then by id so the
+        # rendered tree and JSON stay deterministic across runs.
         resources = tuple(sorted(entries, key=_resource_sort_key))
         return cls(
             app=bound.app,
