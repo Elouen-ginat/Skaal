@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeAlias, cast
 from urllib.parse import quote
@@ -14,7 +14,7 @@ from skaal.inference.model import ResourceKind
 
 _DEFAULT_AWS_REGION = "us-east-1"
 StackMapping: TypeAlias = Mapping[str, Any]
-_AWS_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
+_AWS_RESOURCE_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ResourceKind.STORE: (
         "aws:dynamodb/table:Table",
         "aws:elasticache/replicationGroup:ReplicationGroup",
@@ -226,7 +226,7 @@ def _select_deployed_resource(resource: BoundResource, deployment: StackMapping)
             f"`skaal:resource_id={resource.inferred.id}`."
         )
 
-    preferred = _AWS_TYPE_PREFERENCE.get(resource.inferred.kind, ())
+    preferred = _AWS_RESOURCE_TYPE_PREFERENCE.get(resource.inferred.kind, ())
     for preferred_type in preferred:
         for state in candidates:
             if _field(state, "type") == preferred_type:
@@ -236,7 +236,7 @@ def _select_deployed_resource(resource: BoundResource, deployment: StackMapping)
 
 def _deployment_resources(deployment: StackMapping) -> tuple[StackMapping, ...]:
     resources = _field(deployment, "resources")
-    if isinstance(resources, Sequence) and not isinstance(resources, (str, bytes, bytearray)):
+    if isinstance(resources, (list, tuple)):
         return tuple(_coerce_mapping(resource) for resource in resources)
     nested = _field(deployment, "deployment")
     if nested is not None:
@@ -264,7 +264,8 @@ def _tagged_resource_id(container: StackMapping) -> str | None:
 
 def _aws_console_url(state: StackMapping, *, region: str | None) -> str:
     actual_region = region or _DEFAULT_AWS_REGION
-    resource_type = str(_field(state, "type") or "")
+    raw_resource_type = _field(state, "type")
+    resource_type = str(raw_resource_type) if raw_resource_type is not None else ""
     outputs = _coerce_mapping(_field(state, "outputs"))
     resolver = _AWS_CONSOLE_URLS.get(resource_type)
     if resolver is not None:
@@ -292,6 +293,13 @@ def _string_value(container: StackMapping, *keys: str) -> str:
 
 
 def _coerce_mapping(value: object) -> StackMapping:
+    """Best-effort mapping view for Pulumi export values.
+
+    Pulumi's export surface may hand back plain dicts or lightweight objects.
+    Returning an empty dict for unsupported values keeps downstream lookups
+    deterministic and lets the caller surface one domain-specific error rather
+    than an attribute/type failure from the normalisation layer.
+    """
     if isinstance(value, Mapping):
         return cast(StackMapping, value)
     if hasattr(value, "__dict__"):

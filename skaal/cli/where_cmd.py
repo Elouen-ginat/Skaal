@@ -42,9 +42,10 @@ def where(
 def _render(hit: WhereHit) -> None:
     """Render `hit` to the terminal."""
     console = Console()
+    source = hit.resource.inferred.source
+    app_name = source.top_package or source.module or hit.resource.inferred.id
     console.print(
-        f"[bold]{hit.resource.inferred.source.top_package}[/bold] "
-        f"/ stack=[cyan]{hit.stack_name}[/cyan]"
+        f"[bold]{app_name}[/bold] / stack=[cyan]{hit.stack_name}[/cyan]"
     )
     console.print(f"resource [magenta]{hit.resource.inferred.id}[/magenta]")
     console.print(f"type     [green]{hit.provider_type}[/green]")
