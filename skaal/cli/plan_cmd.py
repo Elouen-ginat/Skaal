@@ -7,8 +7,6 @@ and `where` / `trace` land in follow-ups.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -16,40 +14,14 @@ from rich.console import Console
 from rich.table import Table
 
 from skaal.binding import load_lock
-from skaal.binding.model import BoundPlan, BoundResource, LockEntry, LockFile
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+from skaal.plan_diff import PlanDiff, diff_plan
 
 app = typer.Typer(
     help="Render the diff between the current app and `skaal.lock`.",
     context_settings={"allow_interspersed_args": True},
 )
-# Display marker when the lock contains per-resource fingerprints that do not
-# collapse to one plan-wide deployed fingerprint.
-MIXED_FINGERPRINT_MARKER = "mixed"
-
-
-@dataclass(frozen=True)
-class PlanChange:
-    """One create / update / delete row in the rendered plan diff."""
-
-    action: str
-    resource_id: str
-    kind: str
-    backend: str
-    region: str | None
-    details: str
-
-
-@dataclass(frozen=True)
-class PlanDiff:
-    """The current bound plan plus its changes against `skaal.lock`."""
-
-    bound: BoundPlan
-    deployed_fingerprint: str | None
-    changes: tuple[PlanChange, ...]
-
-
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
@@ -69,108 +41,7 @@ def plan(
     skaal_app = load_app(target)
     loaded_plan = load_plan(skaal_app, env_name)
     lock = load_lock(Path("skaal.lock"))
-    _render(_diff(loaded_plan.bound, lock))
-
-
-def _diff(bound: BoundPlan, lock: LockFile) -> PlanDiff:
-    """Return the current-vs-locked diff for deployable resources."""
-    current = {
-        resource.inferred.id: resource
-        for resource in bound.resources
-        if not resource.external
-    }
-    locked = {
-        resource_id: entry
-        for (env_name, resource_id), entry in lock.entries.items()
-        if env_name == bound.environment
-    }
-
-    changes: list[PlanChange] = []
-
-    for resource_id in sorted(current.keys() - locked.keys()):
-        resource = current[resource_id]
-        changes.append(
-            PlanChange(
-                action="create",
-                resource_id=resource_id,
-                kind=resource.inferred.kind.value,
-                backend=resource.backend,
-                region=resource.region,
-                details="new resource",
-            )
-        )
-
-    for resource_id in sorted(current.keys() & locked.keys()):
-        resource = current[resource_id]
-        entry = locked[resource_id]
-        details = _update_details(resource, entry, bound.bound_fingerprint)
-        if details:
-            changes.append(
-                PlanChange(
-                    action="update",
-                    resource_id=resource_id,
-                    kind=resource.inferred.kind.value,
-                    backend=resource.backend,
-                    region=resource.region,
-                    details=details,
-                )
-            )
-
-    for resource_id in sorted(locked.keys() - current.keys()):
-        entry = locked[resource_id]
-        changes.append(
-            PlanChange(
-                action="delete",
-                resource_id=resource_id,
-                kind="-",
-                backend=entry.backend,
-                region=entry.region,
-                details="resource no longer exists in code",
-            )
-        )
-
-    return PlanDiff(
-        bound=bound,
-        deployed_fingerprint=_deployed_fingerprint(locked.values()),
-        changes=tuple(changes),
-    )
-
-
-def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint: str) -> str:
-    """Describe how `resource` differs from its locked snapshot."""
-    details: list[str] = []
-    if entry.backend != resource.backend:
-        details.append(f"backend {entry.backend} -> {resource.backend}")
-    if entry.region != resource.region:
-        details.append(
-            f"region {_display_optional(entry.region)} -> {_display_optional(resource.region)}"
-        )
-    if entry.fingerprint is None:
-        details.append(f"fingerprint unrecorded -> {bound_fingerprint}")
-    elif entry.fingerprint != bound_fingerprint:
-        details.append(
-            f"fingerprint {_display_optional(entry.fingerprint)} -> {bound_fingerprint}"
-        )
-    return "; ".join(details)
-
-
-def _deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
-    """Collapse per-resource lock fingerprints into one display value."""
-    first: str | None = None
-    for entry in entries:
-        if not entry.fingerprint:
-            continue
-        if first is None:
-            first = entry.fingerprint
-            continue
-        if entry.fingerprint != first:
-            return MIXED_FINGERPRINT_MARKER
-    return first
-
-
-def _display_optional(value: str | None) -> str:
-    """Render optional CLI values consistently."""
-    return value or "-"
+    _render(diff_plan(loaded_plan.bound, lock))
 
 
 def _render(diff: PlanDiff) -> None:

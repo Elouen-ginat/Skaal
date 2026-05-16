@@ -2,27 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import typer
 from rich.console import Console
 
-from skaal.binding.model import BoundPlan, BoundResource
+from skaal.binding.model import BoundPlan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+from skaal.traceability import TraceHit, resolve_trace
 
 app = typer.Typer(
     help="Resolve a resource id or log line back to the declaring source location.",
     context_settings={"allow_interspersed_args": True},
 )
-
-
-@dataclass(frozen=True)
-class TraceHit:
-    """One resolved trace result."""
-
-    resource: BoundResource
-    matched_text: str
 
 
 @app.callback(invoke_without_command=True)
@@ -53,26 +44,10 @@ def trace(
 
 def _resolve(needle: str, bound: BoundPlan) -> TraceHit:
     """Resolve `needle` against the current bound plan."""
-    resources = bound.resources
-    best_match: BoundResource | None = None
-    for resource in resources:
-        if needle == resource.inferred.id:
-            return TraceHit(resource=resource, matched_text=resource.inferred.id)
-
-    matches = [resource for resource in resources if resource.inferred.id in needle]
-    if matches:
-        best_match = max(matches, key=lambda resource: len(resource.inferred.id))
-    if best_match is not None:
-        return TraceHit(resource=best_match, matched_text=best_match.inferred.id)
-
-    known_ids = ", ".join(
-        [resource.inferred.id for resource in resources[:5]]
-        + (["..."] if len(resources) > 5 else [])
-    )
-    raise typer.BadParameter(
-        "Could not resolve that input to a known resource id. "
-        f"Expected one of: {known_ids or '(no resources)'}."
-    )
+    try:
+        return resolve_trace(needle, bound)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def _render(hit: TraceHit, bound: BoundPlan) -> None:
