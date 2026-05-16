@@ -21,7 +21,7 @@ from ._commands import (
     run,
     stubs,
 )
-from ._plan import PlanChange, PlanDiff, diff_plan
+from ._plan import PlanChange, PlanDiff, diff_bound_plans, diff_plan, render_plan_diff_markdown
 from ._resource_map import ResourceMap, ResourceMapEntry
 from ._trace import TraceHit, resolve_trace
 from ._where import WhereHit, resolve_where
@@ -42,11 +42,13 @@ __all__ = [
     "WhereHit",
     "build",
     "deploy",
+    "diff_bound_plans",
     "diff_plan",
     "doctor",
     "init",
     "map",
     "plan",
+    "render_plan_diff_markdown",
     "resolve_trace",
     "run",
     "stubs",

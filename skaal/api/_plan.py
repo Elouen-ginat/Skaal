@@ -1,4 +1,4 @@
-"""Shared `BoundPlan` diff shapes used by the CLI and Python API."""
+"""Shared `BoundPlan` diff shapes used by the CLI, API, and PR comments."""
 
 from __future__ import annotations
 
@@ -103,6 +103,79 @@ def diff_plan(bound: BoundPlan, lock: LockFile) -> PlanDiff:
     )
 
 
+def diff_bound_plans(current: BoundPlan, baseline: BoundPlan) -> PlanDiff:
+    """Return the structural diff between two bound plans.
+
+    Args:
+        current: Bound plan for the current checkout / ref.
+        baseline: Bound plan for the comparison checkout / ref.
+
+    Returns:
+        A diff whose `changes` describe creates, updates, and deletes needed
+        to move from `baseline` to `current`.
+    """
+    current_resources = {
+        resource.inferred.id: resource
+        for resource in current.resources
+        if not resource.external
+    }
+    baseline_resources = {
+        resource.inferred.id: resource
+        for resource in baseline.resources
+        if not resource.external
+    }
+
+    changes: list[PlanChange] = []
+
+    for resource_id in sorted(current_resources.keys() - baseline_resources.keys()):
+        resource = current_resources[resource_id]
+        changes.append(
+            PlanChange(
+                action="create",
+                resource_id=resource_id,
+                kind=resource.inferred.kind.value,
+                backend=resource.backend,
+                region=resource.region,
+                details="new resource in head",
+            )
+        )
+
+    for resource_id in sorted(current_resources.keys() & baseline_resources.keys()):
+        resource = current_resources[resource_id]
+        baseline_resource = baseline_resources[resource_id]
+        details = _update_bound_details(resource, baseline_resource)
+        if details:
+            changes.append(
+                PlanChange(
+                    action="update",
+                    resource_id=resource_id,
+                    kind=resource.inferred.kind.value,
+                    backend=resource.backend,
+                    region=resource.region,
+                    details=details,
+                )
+            )
+
+    for resource_id in sorted(baseline_resources.keys() - current_resources.keys()):
+        resource = baseline_resources[resource_id]
+        changes.append(
+            PlanChange(
+                action="delete",
+                resource_id=resource_id,
+                kind=resource.inferred.kind.value,
+                backend=resource.backend,
+                region=resource.region,
+                details="resource only exists in base",
+            )
+        )
+
+    return PlanDiff(
+        bound=current,
+        deployed_fingerprint=baseline.bound_fingerprint or None,
+        changes=tuple(changes),
+    )
+
+
 def deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
     """Collapse per-resource lock fingerprints into one display value.
 
@@ -136,6 +209,60 @@ def display_optional(value: str | None) -> str:
     return value or "-"
 
 
+def render_plan_diff_markdown(
+    diff: PlanDiff,
+    *,
+    compared_label: str = "deployed",
+) -> str:
+    """Render `diff` as GitHub-flavored markdown.
+
+    Args:
+        diff: Diff to render.
+        compared_label: Human label for `diff.deployed_fingerprint`.
+
+    Returns:
+        A markdown summary suitable for CLI output or PR comments.
+    """
+    lines = [
+        f"- app: `{_escape_inline(diff.bound.app)}`",
+        f"- env: `{_escape_inline(diff.bound.environment)}`",
+        f"- current: `{_escape_inline(diff.bound.bound_fingerprint or '-')}`",
+        f"- {compared_label}: `{_escape_inline(diff.deployed_fingerprint or '-')}`",
+        "",
+    ]
+
+    if not diff.bound.resources:
+        lines.append("No resources discovered.")
+        return "\n".join(lines) + "\n"
+
+    if not diff.changes:
+        lines.append("No infrastructure changes.")
+        return "\n".join(lines) + "\n"
+
+    lines.extend(
+        [
+            "| Action | Resource | Kind | Backend | Region | Details |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    lines.extend(
+        "| "
+        + " | ".join(
+            [
+                _escape_cell(change.action),
+                _escape_code_cell(change.resource_id),
+                _escape_code_cell(change.kind),
+                _escape_code_cell(change.backend),
+                _escape_code_cell(change.region or "-"),
+                _escape_cell(change.details),
+            ]
+        )
+        + " |"
+        for change in diff.changes
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint: str) -> str:
     """Describe how `resource` differs from its locked snapshot."""
     details: list[str] = []
@@ -150,3 +277,32 @@ def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint
     elif entry.fingerprint != bound_fingerprint:
         details.append(f"fingerprint {display_optional(entry.fingerprint)} -> {bound_fingerprint}")
     return "; ".join(details)
+
+
+def _update_bound_details(resource: BoundResource, baseline: BoundResource) -> str:
+    """Describe how `resource` differs from `baseline`."""
+    details: list[str] = []
+    if baseline.inferred.kind != resource.inferred.kind:
+        details.append(f"kind {baseline.inferred.kind.value} -> {resource.inferred.kind.value}")
+    if baseline.backend != resource.backend:
+        details.append(f"backend {baseline.backend} -> {resource.backend}")
+    if baseline.region != resource.region:
+        details.append(
+            f"region {display_optional(baseline.region)} -> {display_optional(resource.region)}"
+        )
+    return "; ".join(details)
+
+
+def _escape_inline(value: str) -> str:
+    """Escape inline-code content used in markdown summaries."""
+    return value.replace("`", "\\`")
+
+
+def _escape_cell(value: str) -> str:
+    """Escape markdown table cell content."""
+    return value.replace("|", "\\|").replace("\n", "<br>")
+
+
+def _escape_code_cell(value: str) -> str:
+    """Escape markdown table cell content wrapped in backticks."""
+    return f"`{_escape_cell(_escape_inline(value))}`"

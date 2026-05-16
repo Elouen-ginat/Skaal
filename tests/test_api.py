@@ -75,6 +75,57 @@ def test_plan_accepts_reference_and_returns_diff(fixture_app: tuple[str, App]) -
     assert [change.action for change in diff.changes] == ["create", "create"]
 
 
+def test_render_plan_diff_markdown_returns_github_table(fixture_app: tuple[str, App]) -> None:
+    target, _ = fixture_app
+
+    markdown = api.render_plan_diff_markdown(api.plan(target))
+
+    assert "| Action | Resource | Kind | Backend | Region | Details |" in markdown
+    assert "`api_fixture_pkg.app:Sessions`" in markdown
+    assert "- app: `api-fixture`" in markdown
+
+
+def test_diff_bound_plans_reports_structural_changes(
+    fixture_app: tuple[str, App], tmp_path: Path
+) -> None:
+    target, _ = fixture_app
+    baseline = api.plan(target).bound
+
+    app_file = tmp_path / "api_fixture_pkg" / "app.py"
+    app_file.write_text(
+        textwrap.dedent(
+            """
+            from skaal import App, Store
+
+
+            app = App("api-fixture")
+
+
+            @app.storage()
+            class Sessions(Store[dict]):
+                pass
+
+
+            @app.function()
+            async def greet(name: str) -> dict[str, str]:
+                return {"hello": name}
+
+
+            @app.storage()
+            class Tokens(Store[dict]):
+                pass
+            """
+        )
+    )
+    sys.modules.pop("api_fixture_pkg.app", None)
+
+    current = api.plan(target).bound
+    diff = api.diff_bound_plans(current, baseline)
+
+    assert [change.action for change in diff.changes] == ["create"]
+    assert diff.changes[0].resource_id == "api_fixture_pkg.app:Tokens"
+
+
 def test_map_accepts_app_object_and_writes_json(
     fixture_app: tuple[str, App], tmp_path: Path
 ) -> None:
