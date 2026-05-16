@@ -1,4 +1,9 @@
-"""Typed source-to-resource map emitted by `skaal map`."""
+"""Typed source-to-resource map emitted by `skaal map`.
+
+The map sidecar lives at `.skaal/map.json` by default and gives editor or
+automation integrations a stable, validated view of what source symbols became
+which bound resources in a given environment.
+"""
 
 from __future__ import annotations
 
