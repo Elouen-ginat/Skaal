@@ -134,15 +134,19 @@ def _diff(bound: BoundPlan, lock: LockFile) -> PlanDiff:
     )
 
 
-def _update_details(resource: BoundResource, entry: LockEntry, fingerprint: str) -> str:
+def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint: str) -> str:
     """Describe how `resource` differs from its locked snapshot."""
     details: list[str] = []
     if entry.backend != resource.backend:
         details.append(f"backend {entry.backend} -> {resource.backend}")
     if entry.region != resource.region:
-        details.append(f"region {_display(entry.region)} -> {_display(resource.region)}")
-    if entry.fingerprint != fingerprint:
-        details.append(f"fingerprint {_display(entry.fingerprint)} -> {fingerprint}")
+        details.append(
+            f"region {_display_optional(entry.region)} -> {_display_optional(resource.region)}"
+        )
+    if entry.fingerprint != bound_fingerprint:
+        details.append(
+            f"fingerprint {_display_optional(entry.fingerprint)} -> {bound_fingerprint}"
+        )
     return "; ".join(details)
 
 
@@ -156,7 +160,7 @@ def _deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
     return None
 
 
-def _display(value: str | None) -> str:
+def _display_optional(value: str | None) -> str:
     """Render optional CLI values consistently."""
     return value or "-"
 

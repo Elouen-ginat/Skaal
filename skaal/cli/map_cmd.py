@@ -67,9 +67,10 @@ def _render(resource_map: ResourceMap, out_path: Path) -> None:
         return
 
     tree = Tree(resource_map.app)
+    cwd = Path.cwd().resolve()
     by_file: dict[str, list[ResourceMapEntry]] = defaultdict(list)
     for entry in resource_map.resources:
-        by_file[_display_file(entry.file)].append(entry)
+        by_file[_display_file(entry.file, cwd)].append(entry)
 
     for file_name in sorted(by_file):
         file_branch = tree.add(file_name)
@@ -80,12 +81,14 @@ def _render(resource_map: ResourceMap, out_path: Path) -> None:
     console.print(f"Wrote [cyan]{out_path}[/cyan]")
 
 
-def _display_file(raw: str) -> str:
+def _display_file(raw: str, cwd: Path) -> str:
     """Display `raw` relative to cwd when possible."""
     path = Path(raw)
     try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
+        return str(path.resolve().relative_to(cwd))
     except ValueError:
+        # Different roots (or already-synthetic paths like "<unknown>") cannot
+        # be relativised; falling back to the basename keeps the tree compact.
         return path.name if path.name else raw
 
 

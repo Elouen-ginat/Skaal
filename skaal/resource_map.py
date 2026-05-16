@@ -62,9 +62,10 @@ class ResourceMap(BaseModel):
     @classmethod
     def for_bound_plan(cls, bound: BoundPlan) -> ResourceMap:
         """Build the resource map from a bound plan."""
+        entries = [ResourceMapEntry.for_resource(resource) for resource in bound.resources]
         resources = tuple(
             sorted(
-                (ResourceMapEntry.for_resource(resource) for resource in bound.resources),
+                entries,
                 key=lambda entry: (entry.file, entry.line, entry.qualname, entry.resource_id),
             )
         )
