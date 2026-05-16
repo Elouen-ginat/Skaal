@@ -273,6 +273,83 @@ def test_where_loads_plugin_contributed_resolver(
     assert hit.console_url == "https://plugins.example.test/plugin-store?region=us-east-1"
 
 
+def test_where_plugin_resolver_handles_missing_region(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+
+    class _WherePlugin(SkaalPlugin):
+        name = "where-plugin"
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_where_resource_preference(
+                Target.AWS,
+                ResourceKind.STORE,
+                "aws:custom/service:Thing",
+            )
+            registry.add_where_console_url(
+                Target.AWS,
+                "aws:custom/service:Thing",
+                lambda outputs, region: (
+                    f"https://plugins.example.test/{outputs['id']}?region={region or 'missing'}"
+                ),
+            )
+
+    class _FakeEntryPoint:
+        def __init__(self, name: str, plugin_type: type[SkaalPlugin]) -> None:
+            self.name = name
+            self._plugin_type = plugin_type
+
+        def load(self) -> type[SkaalPlugin]:
+            return self._plugin_type
+
+    fake_state = {
+        "resources": [
+            {
+                "type": "aws:custom/service:Thing",
+                "outputs": {
+                    "id": "plugin-store",
+                    "tags": {
+                        "skaal:resource_id": "api_fixture_pkg.app:Sessions",
+                    },
+                },
+            }
+        ]
+    }
+
+    def fake_entry_points(
+        group: str | None = None,
+        **_: object,
+    ) -> tuple[_FakeEntryPoint, ...]:
+        if group == "skaal.plugins":
+            return (_FakeEntryPoint("where-plugin", _WherePlugin),)
+        return ()
+
+    from skaal.binding.model import Environment
+    from skaal.plugins import _reset_for_tests as reset_plugins
+
+    reset_plugins()
+    _where._reset_for_tests()
+    monkeypatch.setattr("importlib.metadata.entry_points", fake_entry_points)
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: fake_state,
+    )
+
+    try:
+        hit = _where.resolve_where(
+            "api_fixture_pkg.app:Sessions",
+            api.plan(target).bound,
+            Environment(name="prod", target=Target.AWS, region=None),
+        )
+    finally:
+        reset_plugins()
+        _where._reset_for_tests()
+
+    assert hit.console_url == "https://plugins.example.test/plugin-store?region=missing"
+
+
 def test_build_accepts_reference_and_returns_manifest(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 

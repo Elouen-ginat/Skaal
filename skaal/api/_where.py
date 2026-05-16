@@ -369,7 +369,7 @@ def register_console_url(
     """Register a console URL resolver for one provider resource type."""
     _ensure_plugins_loaded()
     with _WHERE_LOCK:
-        _CONSOLE_URLS.setdefault(target, {}).update({provider_type: resolver})
+        _CONSOLE_URLS.setdefault(target, {})[provider_type] = resolver
 
 
 def register_resource_type_preference(
