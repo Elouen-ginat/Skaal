@@ -51,8 +51,7 @@ class AppSpec:
         """
         if ":" not in raw:
             raise ValueError(
-                f"`{raw}` is not a `module:attribute` reference. "
-                "Example: `examples.todo_api:app`."
+                f"`{raw}` is not a `module:attribute` reference. Example: `examples.todo_api:app`."
             )
         module, attribute = raw.split(":", 1)
         return cls(module=module, attribute=attribute)
@@ -138,9 +137,7 @@ def load_bound_plan(
     lock_path: Path = Path("skaal.lock"),
 ) -> BoundPlan:
     """Walk ``infer → load env / lock → bind`` for ``skaal_app`` against ``env_name``."""
-    return load_plan(
-        skaal_app, env_name, toml_path=toml_path, lock_path=lock_path
-    ).bound
+    return load_plan(skaal_app, env_name, toml_path=toml_path, lock_path=lock_path).bound
 
 
 def load_plan(

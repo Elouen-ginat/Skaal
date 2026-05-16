@@ -161,9 +161,7 @@ def build_artefacts(
     return resolved_out
 
 
-def _render_resource(
-    template_env: _Jinja2, context: BuildContext, resource_dir: Path
-) -> None:
+def _render_resource(template_env: _Jinja2, context: BuildContext, resource_dir: Path) -> None:
     """Render each template in `_TEMPLATE_OUTPUTS` into ``resource_dir``."""
     render_kwargs: dict[str, Any] = context.model_dump(mode="json")
     for template_name, output_name in _TEMPLATE_OUTPUTS:
@@ -217,9 +215,7 @@ def _template_root(target: Target) -> Path:
     ``importlib.resources`` returns a `Path` traversable for both
     development checkouts and installed wheels.
     """
-    with resources.as_file(
-        resources.files("skaal.deploy.templates") / target.value
-    ) as path:
+    with resources.as_file(resources.files("skaal.deploy.templates") / target.value) as path:
         if not path.is_dir():
             raise BuildError(
                 f"No deploy templates packaged for target {target.value!r}. "
@@ -239,8 +235,7 @@ class _Jinja2:
             from jinja2 import Environment, FileSystemLoader, StrictUndefined
         except ImportError as exc:  # pragma: no cover - exercised in CI matrix
             raise MissingExtraError(
-                "`skaal build` requires jinja2. Install it via the "
-                "`skaal[deploy]` extra."
+                "`skaal build` requires jinja2. Install it via the `skaal[deploy]` extra."
             ) from exc
         # Autoescape is intentionally disabled: the templates render
         # Dockerfiles, Python source, and TOML — not HTML. Escaping would

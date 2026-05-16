@@ -15,6 +15,12 @@ the decorator reads the parameterised base and populates
 connection lookup. The legacy per-decorator dunders (`storage`, `function`,
 `schedule`, `channel`, `job`, `secrets`) are gone: every consumer reads
 ``__skaal_inferred__``.
+
+Phase 5 (ADR 033) tightens the `@function` decorator's signature so the
+wrapped callable's `ParamSpec` and return `TypeVar` flow into
+``FunctionRef[P, R]``. Call sites preserve type information through the
+decoration, satisfying the ADR 028 §6.13.3 "decorator preserves
+signatures" row.
 """
 
 from __future__ import annotations
@@ -61,6 +67,12 @@ class FunctionRef(Generic[P, R]):
     Attribute access falls through to ``__wrapped__`` so callers that
     read ``__name__`` / ``__module__`` / ``__doc__`` keep working without
     the runtime having to special-case `FunctionRef`.
+
+    Phase 5 (ADR 033) lets ``P`` and ``R`` flow through the decorator
+    factory so ``__call__`` preserves the wrapped callable's parameter
+    list and return type. For an ``async def signup(user: User) -> User``,
+    ``R`` resolves to ``Coroutine[Any, Any, User]`` and
+    ``await signup(user)`` reveals ``User``.
     """
 
     __slots__ = ("__skaal_inferred__", "__wrapped__", "id", "overrides")
@@ -78,8 +90,8 @@ class FunctionRef(Generic[P, R]):
         self.overrides = overrides
         self.__skaal_inferred__ = inferred
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
-        return self.__wrapped__(*args, **kwargs)
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
+        return cast(R, self.__wrapped__(*args, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
         # Slots block direct setattr but __getattr__ is only invoked when
@@ -94,7 +106,7 @@ class FunctionRef(Generic[P, R]):
         return inspect.signature(self.__wrapped__)
 
 
-def _extract_backend_pin(cls: type) -> type[Backend] | None:
+def _extract_backend_pin(cls: type) -> type[Backend[Any]] | None:
     """Return the `Backend` subclass pinned via the class's parameterised base.
 
     Two capture paths share the same return contract:
@@ -112,22 +124,22 @@ def _extract_backend_pin(cls: type) -> type[Backend] | None:
     (``Store[User]``) report no pin. Returns ``None`` when no pin is
     present.
     """
-    pinned = getattr(cls, "__skaal_backend_pin__", None)
+    pinned: Any = getattr(cls, "__skaal_backend_pin__", None)
     if isinstance(pinned, type) and issubclass(pinned, Backend) and pinned is not Backend:
-        return pinned
+        return cast("type[Backend[Any]]", pinned)
 
     bases: tuple[Any, ...] = getattr(cls, "__orig_bases__", ())
     for base in bases:
         args = get_args(base)
         for arg in args:
             origin = get_origin(arg)
-            candidate = origin if isinstance(origin, type) else arg
+            candidate: Any = origin if isinstance(origin, type) else arg
             if (
                 isinstance(candidate, type)
                 and issubclass(candidate, Backend)
                 and candidate is not Backend
             ):
-                return candidate
+                return cast("type[Backend[Any]]", candidate)
     return None
 
 
@@ -188,7 +200,7 @@ def storage(
             id=InferredResource.id_for(cls),
             kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
             source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),
+            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
             indexes=idx,
             overrides=overrides,
         )
@@ -241,7 +253,7 @@ def external(
             id=InferredResource.id_for(cls),
             kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
             source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),
+            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
             overrides=overrides,
         )
         cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
@@ -256,7 +268,7 @@ def function(
     circuit_breaker: CircuitBreaker | None = None,
     rate_limit: RateLimitPolicy | None = None,
     bulkhead: Bulkhead | None = None,
-) -> Callable[[Callable[..., Any]], FunctionRef[..., Any]]:
+) -> Callable[[Callable[P, R]], FunctionRef[P, R]]:
     """Declare a Skaal compute function with optional resilience policies.
 
     Resilience policies (`retry`, `circuit_breaker`, `rate_limit`,
@@ -265,9 +277,15 @@ def function(
     carrying ``id``, ``overrides``, and ``__skaal_inferred__`` for
     runtime / deploy consumers; no per-decorator legacy dunder is
     written.
+
+    The decorator factory's return type is
+    ``Callable[[Callable[P, R]], FunctionRef[P, R]]`` — Pyright infers
+    ``P`` and ``R`` from each decorated function, so call sites preserve
+    the underlying signature (ADR 028 §6.13.3 "decorator preserves
+    signatures").
     """
 
-    def decorator(fn: Callable[..., Any]) -> FunctionRef[..., Any]:
+    def decorator(fn: Callable[P, R]) -> FunctionRef[P, R]:
         import contextlib
 
         overrides = ResourceOverrides(

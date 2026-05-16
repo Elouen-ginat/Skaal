@@ -24,9 +24,7 @@ def _sample_inferred(rid: str = "acme.users:Users") -> InferredResource:
     return InferredResource(
         id=rid,
         kind=ResourceKind.STORE,
-        source=SourceLocation(
-            module="acme.users", qualname="Users", file="acme/users.py", line=10
-        ),
+        source=SourceLocation(module="acme.users", qualname="Users", file="acme/users.py", line=10),
     )
 
 
@@ -53,9 +51,7 @@ def test_environment_rejects_extra_keys() -> None:
 
 def test_resource_override_round_trips() -> None:
     override = ResourceOverride(backend="redis", region="us-east-1")
-    assert (
-        ResourceOverride.model_validate_json(override.model_dump_json()) == override
-    )
+    assert ResourceOverride.model_validate_json(override.model_dump_json()) == override
 
 
 def test_lock_entry_carries_pin_metadata() -> None:

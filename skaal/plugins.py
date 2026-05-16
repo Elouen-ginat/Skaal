@@ -60,7 +60,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from threading import Lock
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast, runtime_checkable
 
 if TYPE_CHECKING:
     from skaal.binding.model import Target
@@ -119,9 +119,7 @@ class PluginRegistry:
         """
         from skaal.deploy._registry import register_target
 
-        _LOG.debug(
-            "plugin %r adding deploy target %r", self._plugin_name, target.target.value
-        )
+        _LOG.debug("plugin %r adding deploy target %r", self._plugin_name, target.target.value)
         register_target(target)
 
     def add_synth(self, target: Target, synth: type | object) -> None:
@@ -150,9 +148,9 @@ class PluginRegistry:
 
         instance: SynthModule[Any]
         if isinstance(synth, type) and issubclass(synth, SynthModule):
-            instance = synth()
+            instance = cast("SynthModule[Any]", synth())
         elif isinstance(synth, SynthModule):
-            instance = synth
+            instance = cast("SynthModule[Any]", synth)
         else:
             raise SkaalDeployError(
                 f"Plugin {self._plugin_name!r} passed {synth!r} to "
@@ -172,9 +170,7 @@ class PluginRegistry:
         """Register a `BackendEntry` in the binding registry."""
         from skaal.binding.registry import register_backend
 
-        _LOG.debug(
-            "plugin %r adding backend %r", self._plugin_name, entry.token.name
-        )
+        _LOG.debug("plugin %r adding backend %r", self._plugin_name, entry.token_class.name)
         register_backend(entry)
 
 

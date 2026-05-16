@@ -85,9 +85,7 @@ def test_external_resource_without_pin_raises() -> None:
     resource = InferredResource(
         id="acme:NoPinExternal",
         kind=ResourceKind.STORE,
-        source=SourceLocation(
-            module="acme", qualname="NoPinExternal", file="acme/x.py", line=1
-        ),
+        source=SourceLocation(module="acme", qualname="NoPinExternal", file="acme/x.py", line=1),
         overrides=ResourceOverrides(external=True, external_name="x"),
     )
     plan = _plan(resource)

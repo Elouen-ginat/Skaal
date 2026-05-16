@@ -188,7 +188,9 @@ class RedisBackend:
         loop = asyncio.get_running_loop()
         loop_id = id(loop)
         if loop_id not in self._clients:
-            self._clients[loop_id] = aioredis.from_url(self.url, decode_responses=True)
+            self._clients[loop_id] = aioredis.from_url(  # type: ignore[no-untyped-call]
+                self.url, decode_responses=True
+            )
         return self._clients[loop_id]
 
     async def get(self, key: str) -> Any | None:
@@ -232,7 +234,7 @@ class RedisBackend:
         if not keys:
             return []
         values = await client.mget(*[self._key(key) for key in keys])
-        result = []
+        result: list[tuple[str, Any]] = []
         stale_keys: list[str] = []
         for k, v in zip(keys, values, strict=True):
             if v is not None:

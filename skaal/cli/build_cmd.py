@@ -34,8 +34,7 @@ def build(
     target: str = typer.Argument(
         ...,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. "
-            "`examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
     env_name: str = typer.Option(
@@ -48,10 +47,7 @@ def build(
         None,
         "--out",
         "-o",
-        help=(
-            "Destination directory for rendered artefacts. "
-            "Defaults to `./.skaal/build/<env>`."
-        ),
+        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
     ),
     python_version: str = typer.Option(
         "3.11",

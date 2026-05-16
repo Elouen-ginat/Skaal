@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
 from skaal.backends._base import Backend
 from skaal.backends._tokens import (
@@ -45,11 +46,15 @@ from skaal.binding.model import Target
 from skaal.inference.model import ResourceKind
 
 
-def _row(local: type[Backend], aws: type[Backend], gcp: type[Backend]) -> Mapping[Target, type[Backend]]:
+def _row(
+    local: type[Backend[Any]],
+    aws: type[Backend[Any]],
+    gcp: type[Backend[Any]],
+) -> Mapping[Target, type[Backend[Any]]]:
     return MappingProxyType({Target.LOCAL: local, Target.AWS: aws, Target.GCP: gcp})
 
 
-DEFAULTS: Mapping[ResourceKind, Mapping[Target, type[Backend]]] = MappingProxyType(
+DEFAULTS: Mapping[ResourceKind, Mapping[Target, type[Backend[Any]]]] = MappingProxyType(
     {
         ResourceKind.STORE: _row(Sqlite, DynamoDB, Firestore),
         ResourceKind.RELATIONAL: _row(Sqlite, Postgres, Postgres),

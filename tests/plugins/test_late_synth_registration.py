@@ -67,9 +67,7 @@ class _MyDatabasePlugin(SkaalPlugin):
     name = "my-database"
 
     def register(self, registry: PluginRegistry) -> None:
-        registry.add_backend(
-            BackendEntry(token=_MyDatabase, targets=frozenset({Target.AWS}))
-        )
+        registry.add_backend(BackendEntry(token=_MyDatabase, targets=frozenset({Target.AWS})))
         registry.add_synth(Target.AWS, _MyDatabaseSynth)
 
 
@@ -83,9 +81,7 @@ class _FakeEntryPoint:
 
 
 class _Mocks(pulumi.runtime.Mocks):
-    def new_resource(
-        self, args: pulumi.runtime.MockResourceArgs
-    ) -> tuple[str, dict[str, Any]]:
+    def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:
         outputs = dict(args.inputs)
         outputs.setdefault("name", args.name)
         outputs.setdefault("arn", f"arn:aws:mock::{args.name}")

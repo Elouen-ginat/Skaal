@@ -45,8 +45,7 @@ def deploy(
     target: str = typer.Argument(
         ...,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. "
-            "`examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
     env_name: str = typer.Option(
@@ -59,10 +58,7 @@ def deploy(
         None,
         "--out",
         "-o",
-        help=(
-            "Destination directory for rendered artefacts. "
-            "Defaults to `./.skaal/build/<env>`."
-        ),
+        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
     ),
     preview: bool = typer.Option(
         False,
@@ -90,9 +86,7 @@ def deploy(
 
     written = build_artefacts(loaded.bound, loaded.env, app_spec, out_dir=out_dir)
     console = Console()
-    console.print(
-        f"Rendered artefacts for [cyan]{env_name}[/cyan] → {written}"
-    )
+    console.print(f"Rendered artefacts for [cyan]{env_name}[/cyan] → {written}")
 
     program = pulumi_program_for(loaded.bound, loaded.env, written)
     _run_pulumi(
@@ -140,9 +134,7 @@ def _run_pulumi(
 
     project_name = bound.app or "skaal"
     stack_name = target.stack_name(bound, env)
-    console.print(
-        f"Pulumi stack [bold]{stack_name}[/bold] (project=[cyan]{project_name}[/cyan])"
-    )
+    console.print(f"Pulumi stack [bold]{stack_name}[/bold] (project=[cyan]{project_name}[/cyan])")
 
     stack = auto.create_or_select_stack(
         stack_name=stack_name,
@@ -166,9 +158,7 @@ def _run_pulumi(
         raise SkaalDeployError(f"Pulumi {('preview' if preview else 'up')} failed: {exc}") from exc
 
 
-def _write_lock_pins(
-    bound: BoundPlan, env: Environment, *, lock_path: Path
-) -> None:
+def _write_lock_pins(bound: BoundPlan, env: Environment, *, lock_path: Path) -> None:
     """Pin every non-external bound resource into `skaal.lock`.
 
     First-deploy runs convert the binder's defaults / overrides into

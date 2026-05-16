@@ -25,9 +25,7 @@ def _build_ref(*, overrides: ResourceOverrides | None = None) -> FunctionRef[...
         source=SourceLocation.from_object(_example),
         overrides=overrides,
     )
-    return FunctionRef(
-        _example, id="m:_example", overrides=overrides, inferred=inferred
-    )
+    return FunctionRef(_example, id="m:_example", overrides=overrides, inferred=inferred)
 
 
 def test_function_ref_is_callable_and_forwards_to_wrapped() -> None:

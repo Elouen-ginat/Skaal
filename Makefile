@@ -1,4 +1,4 @@
-.PHONY: install dev lint format typecheck test test-cov test-storage test-schema \
+.PHONY: install dev lint format typecheck pyright test test-cov test-storage test-schema \
         hooks audit ci clean help docs docs-serve docs-build
 
 # ── Environment ────────────────────────────────────────────────────────────────
@@ -7,6 +7,7 @@ PIP     ?= pip
 PYTEST  ?= pytest
 RUFF    ?= ruff
 MYPY    ?= mypy
+PYRIGHT ?= pyright
 
 help:
 	@echo "Skaal — common dev tasks"
@@ -17,6 +18,7 @@ help:
 	@echo "  make lint        run ruff check"
 	@echo "  make format      run ruff format (writes changes)"
 	@echo "  make typecheck   run mypy on skaal/"
+	@echo "  make pyright     run pyright (strict via pyrightconfig.json)"
 	@echo "  make hooks       run all pre-commit hooks against the working tree"
 	@echo "  make audit       run pip-audit against installed deps"
 	@echo ""
@@ -47,6 +49,9 @@ format:
 
 typecheck:
 	$(MYPY) skaal
+
+pyright:
+	$(PYRIGHT)
 
 hooks:
 	pre-commit run --all-files

@@ -115,8 +115,7 @@ class BaseDeployTarget(DeployTarget):
         spec = getattr(synth, "SPEC", None)
         if spec is None or not hasattr(synth, "synthesize"):
             raise SkaalDeployError(
-                f"{synth!r} is not a valid SynthModule: missing `SPEC` "
-                "or `synthesize`."
+                f"{synth!r} is not a valid SynthModule: missing `SPEC` or `synthesize`."
             )
         synthesize = synth.synthesize
         for backend in spec.backends:

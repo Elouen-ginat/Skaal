@@ -14,6 +14,8 @@ sees the concrete SDK type on `.native()` calls.
 
 from __future__ import annotations
 
+from typing import Any
+
 from skaal.backends._base import Backend
 
 
@@ -142,7 +144,7 @@ class GcpSecretManager(Backend[object]):
     kinds = frozenset({"secret"})
 
 
-ALL_TOKENS: tuple[type[Backend], ...] = (
+ALL_TOKENS: tuple[type[Backend[Any]], ...] = (
     Sqlite,
     Postgres,
     Redis,

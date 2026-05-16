@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -65,7 +65,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
             payload = {}
         if not isinstance(payload, dict):
             payload = {"value": payload}
-        await queue.put(payload)
+        await queue.put(cast(dict[str, Any], payload))
         return JSONResponse({"enqueued": bare})
 
     runtime.add_route(f"/_jobs/{bare}/enqueue", endpoint, method="POST")

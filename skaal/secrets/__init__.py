@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+from typing import Any, cast
 
 from skaal.errors import SecretMissingError
 from skaal.types.secret import (
@@ -215,9 +216,10 @@ def _apply_json_field(spec: SecretSpec, resolved: ResolvedSecret) -> ResolvedSec
             spec.provider,
             detail=f"json_field={spec.json_field!r} not present in payload",
         )
+    mapping = cast(dict[str, Any], payload)
     return ResolvedSecret(
         name=spec.name,
-        value=str(payload[spec.json_field]),
+        value=str(mapping[spec.json_field]),
         provider=spec.provider,
     )
 

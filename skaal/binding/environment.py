@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
@@ -69,12 +69,14 @@ def load_environments(path: Path | None = None) -> dict[str, Environment]:
         msg = f"{resolved}: top-level 'env' must be a table"
         raise SkaalConfigError(msg)
 
+    sections = cast(dict[str, Any], env_section)
     result: dict[str, Environment] = {}
-    for name, block in env_section.items():
+    for raw_name, block in sections.items():
+        name = str(raw_name)
         if not isinstance(block, dict):
             msg = f"{resolved}: [env.{name}] must be a table"
             raise SkaalConfigError(msg)
-        result[name] = _build_environment(name, block, resolved)
+        result[name] = _build_environment(name, cast(dict[str, Any], block), resolved)
     return result
 
 
@@ -100,29 +102,34 @@ def _build_environment(name: str, block: dict[str, Any], source: Path) -> Enviro
         msg = f"{source}: [env.{name}].target = {target_raw!r} (expected one of: {valid})"
         raise SkaalConfigError(msg) from exc
 
-    overrides_raw = block.get("overrides", {}) or {}
+    overrides_raw: Any = block.get("overrides") or {}
     if not isinstance(overrides_raw, dict):
         msg = f"{source}: [env.{name}.overrides] must be a table"
         raise SkaalConfigError(msg)
-    overrides = {
-        res_id: _build_override(name, res_id, value, source)
-        for res_id, value in overrides_raw.items()
+    overrides_section = cast(dict[str, Any], overrides_raw)
+    overrides: dict[str, ResourceOverride] = {
+        str(res_id): _build_override(name, str(res_id), value, source)
+        for res_id, value in overrides_section.items()
     }
 
-    backends_raw = block.get("backends", {}) or {}
+    backends_raw: Any = block.get("backends") or {}
     if not isinstance(backends_raw, dict):
         msg = f"{source}: [env.{name}.backends] must be a table"
         raise SkaalConfigError(msg)
-    backends = {
-        backend_name: _build_backend_config(name, backend_name, value, source)
-        for backend_name, value in backends_raw.items()
+    backends_section = cast(dict[str, Any], backends_raw)
+    backends: dict[str, BackendConfig] = {
+        str(backend_name): _build_backend_config(name, str(backend_name), value, source)
+        for backend_name, value in backends_section.items()
     }
+
+    region_value = block.get("region")
+    region: str | None = region_value if isinstance(region_value, str) else None
 
     try:
         return Environment(
             name=name,
             target=target,
-            region=block.get("region"),
+            region=region,
             overrides=overrides,
             backends=backends,
         )
@@ -131,14 +138,13 @@ def _build_environment(name: str, block: dict[str, Any], source: Path) -> Enviro
         raise SkaalConfigError(msg) from exc
 
 
-def _build_override(
-    env_name: str, res_id: str, value: Any, source: Path
-) -> ResourceOverride:
+def _build_override(env_name: str, res_id: str, value: Any, source: Path) -> ResourceOverride:
     if isinstance(value, str):
         return ResourceOverride(backend=value)
     if isinstance(value, dict):
+        payload = cast(dict[str, Any], value)
         try:
-            return ResourceOverride(**value)
+            return ResourceOverride(**payload)
         except ValidationError as exc:
             msg = (
                 f"{source}: [env.{env_name}.overrides] entry {res_id!r} "
@@ -156,20 +162,18 @@ def _build_backend_config(
     env_name: str, backend_name: str, value: Any, source: Path
 ) -> BackendConfig:
     if not isinstance(value, dict):
-        msg = (
-            f"{source}: [env.{env_name}.backends.{backend_name}] must be a table"
-        )
+        msg = f"{source}: [env.{env_name}.backends.{backend_name}] must be a table"
         raise SkaalConfigError(msg)
+    section = cast(dict[str, Any], value)
     known = {"region", "project", "dataset", "emulator", "table_prefix"}
-    payload: dict[str, Any] = {k: v for k, v in value.items() if k in known}
-    extra = {k: v for k, v in value.items() if k not in known}
+    payload: dict[str, Any] = {str(k): v for k, v in section.items() if k in known}
+    extra: dict[str, Any] = {str(k): v for k, v in section.items() if k not in known}
     if extra:
         payload["options"] = extra
     try:
         return BackendConfig(**payload)
     except ValidationError as exc:
         msg = (
-            f"{source}: [env.{env_name}.backends.{backend_name}] failed "
-            f"validation: {exc.errors()}"
+            f"{source}: [env.{env_name}.backends.{backend_name}] failed validation: {exc.errors()}"
         )
         raise SkaalConfigError(msg) from exc

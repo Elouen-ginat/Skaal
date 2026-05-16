@@ -10,14 +10,14 @@ Redis Streams regardless of the active environment's defaults.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Generic
+from typing import Any, Generic
 
 from typing_extensions import TypeVar
 
 from skaal.backends._base import Backend
 
 T = TypeVar("T")
-B = TypeVar("B", bound=Backend, default=Backend)
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 
 
 class Channel(Generic[T, B]):
@@ -31,6 +31,7 @@ class Channel(Generic[T, B]):
 
     def __init__(self, buffer: int = 1000) -> None:
         self.buffer = buffer
+        self._backend: Any | None = None
         self._backend_name: str | None = None
         self._wired: bool = False
 
@@ -43,6 +44,25 @@ class Channel(Generic[T, B]):
     async def receive(self) -> AsyncIterator[T]:
         raise NotImplementedError("Channel.receive() has no backend wired yet.")
         yield  # pragma: no cover
+
+    async def native(self) -> Any:
+        """Return the native SDK client for the wired channel backend.
+
+        For type-pinned channels (``class Events(Channel[Order, RedisChannel])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b.
+
+        Raises:
+            NotImplementedError: If the channel has not been wired yet.
+        """
+        from skaal._native import resolve_native
+
+        if self._backend is None:
+            raise NotImplementedError(
+                "Channel.native() has no backend wired yet. The runtime wires "
+                "channels through the bound plan in Phase 4 of ADR 028."
+            )
+        return await resolve_native(self._backend)
 
     def __repr__(self) -> str:
         status = "wired" if self._wired else "unwired"

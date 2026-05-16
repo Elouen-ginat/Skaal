@@ -73,9 +73,7 @@ class App(Module):
                     "pass the ASGI callable positionally as the second arg."
                 )
             if not target.startswith("/"):
-                raise ValueError(
-                    f"mount path must start with '/': {target!r}"
-                )
+                raise ValueError(f"mount path must start with '/': {target!r}")
             if target == "/_skaal" or target.startswith("/_skaal/"):
                 raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
             if not hasattr(self, "_asgi_path_mounts"):
@@ -86,9 +84,7 @@ class App(Module):
             return None
 
         if prefix is None:
-            raise TypeError(
-                "app.mount(module, prefix=...) requires the prefix keyword arg."
-            )
+            raise TypeError("app.mount(module, prefix=...) requires the prefix keyword arg.")
         normalized = prefix if prefix.startswith("/") else f"/{prefix}"
         if normalized == "/_skaal" or normalized.startswith("/_skaal/"):
             raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
@@ -121,7 +117,5 @@ class App(Module):
 
     def __repr__(self) -> str:
         return (
-            f"App({self.name!r}, "
-            f"storage={list(self._storage)}, "
-            f"functions={list(self._functions)})"
+            f"App({self.name!r}, storage={list(self._storage)}, functions={list(self._functions)})"
         )

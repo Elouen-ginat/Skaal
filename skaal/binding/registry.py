@@ -15,6 +15,7 @@ overlay; third-party backends re-enter through a separate
 from __future__ import annotations
 
 from threading import Lock
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -81,14 +82,31 @@ class BackendEntry(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
-    token: type[Backend]
+    # Pydantic's schema generator rejects already-parametrised generics in
+    # `type[...]` fields, so we keep the bare `Backend` here. The runtime
+    # check `isinstance(token, type) and issubclass(token, Backend)` is
+    # the contract; the `token_class` property below exposes a fully-typed
+    # `type[Backend[Any]]` for static-typing consumers.
+    token: type[Backend]  # pyright: ignore[reportMissingTypeArgument]
     targets: frozenset[Target]
     capabilities: BackendCapabilities = BackendCapabilities()
     options_schema: type[BaseModel] = BackendOptions
 
+    @property
+    def token_class(self) -> type[Backend[Any]]:
+        """Return ``token`` typed as a fully-parametrised `Backend[Any]`.
+
+        Pyright reports `type[Backend]` (the field's storage type) as
+        partially unknown because `Backend` has an unbound `NativeClientT`.
+        Consumers that read identity / kinds / name should go through
+        ``token_class`` to retain strict-typing cleanliness; the runtime
+        value is identical to ``token``.
+        """
+        return self.token  # type: ignore[return-value]
+
 
 def _entry(
-    token: type[Backend],
+    token: type[Backend[Any]],
     targets: frozenset[Target],
     *,
     capabilities: BackendCapabilities | None = None,
@@ -166,11 +184,11 @@ REGISTRY: tuple[BackendEntry, ...] = (
 _LOCK: Lock = Lock()
 _EXTRA: list[BackendEntry] = []
 _EXTRA_BY_NAME: dict[str, BackendEntry] = {}
-_EXTRA_BY_TOKEN: dict[type[Backend], BackendEntry] = {}
+_EXTRA_BY_TOKEN: dict[type[Backend[Any]], BackendEntry] = {}
 
 
-_BY_NAME: dict[str, BackendEntry] = {entry.token.name: entry for entry in REGISTRY}
-_BY_TOKEN: dict[type[Backend], BackendEntry] = {entry.token: entry for entry in REGISTRY}
+_BY_NAME: dict[str, BackendEntry] = {entry.token_class.name: entry for entry in REGISTRY}
+_BY_TOKEN: dict[type[Backend[Any]], BackendEntry] = {entry.token_class: entry for entry in REGISTRY}
 
 
 def all_entries() -> tuple[BackendEntry, ...]:
@@ -190,24 +208,25 @@ def register_backend(entry: BackendEntry) -> None:
     Raises:
         SkaalConfigError: If a different token already owns this name.
     """
-    name = entry.token.name
+    token = entry.token_class
+    name = token.name
     with _LOCK:
         existing_builtin = _BY_NAME.get(name)
         existing_extra = _EXTRA_BY_NAME.get(name)
         existing = existing_builtin or existing_extra
         if existing is not None:
-            if existing.token is entry.token:
+            if existing.token_class is token:
                 return
             from skaal.errors import SkaalConfigError
 
             raise SkaalConfigError(
                 f"Backend name {name!r} is already registered to "
-                f"{existing.token.__name__!r}; cannot re-register to "
-                f"{entry.token.__name__!r}."
+                f"{existing.token_class.__name__!r}; cannot re-register to "
+                f"{token.__name__!r}."
             )
         _EXTRA.append(entry)
         _EXTRA_BY_NAME[name] = entry
-        _EXTRA_BY_TOKEN[entry.token] = entry
+        _EXTRA_BY_TOKEN[token] = entry
 
 
 def lookup(name: str) -> BackendEntry:
@@ -227,7 +246,7 @@ def lookup(name: str) -> BackendEntry:
     raise UnknownBackendError(name, valid)
 
 
-def lookup_token(token: type[Backend]) -> BackendEntry:
+def lookup_token(token: type[Backend[Any]]) -> BackendEntry:
     """Return the registry entry for a `Backend` subclass identity."""
     _ensure_plugins_loaded()
     with _LOCK:
@@ -246,9 +265,7 @@ def tokens_for(kind: str, target: Target) -> tuple[BackendEntry, ...]:
     with _LOCK:
         merged = REGISTRY + tuple(_EXTRA)
     return tuple(
-        entry
-        for entry in merged
-        if target in entry.targets and kind in entry.token.kinds
+        entry for entry in merged if target in entry.targets and kind in entry.token_class.kinds
     )
 
 
@@ -276,12 +293,13 @@ def _reset_for_tests() -> None:
 
 def _registry_consistency_check() -> None:
     """Assert at import time that every token is registered exactly once."""
-    seen: set[type[Backend]] = set()
+    seen: set[type[Backend[Any]]] = set()
     for entry in REGISTRY:
-        if entry.token in seen:
-            msg = f"backend token {entry.token.__name__} registered twice"
+        token = entry.token_class
+        if token in seen:
+            msg = f"backend token {token.__name__} registered twice"
             raise RuntimeError(msg)
-        seen.add(entry.token)
+        seen.add(token)
     missing = set(ALL_TOKENS) - seen
     if missing:
         names = ", ".join(sorted(t.__name__ for t in missing))

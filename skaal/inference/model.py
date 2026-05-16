@@ -110,7 +110,7 @@ class SchemaRef(BaseModel):
     fingerprint: str
 
     @classmethod
-    def from_class(cls, target: type) -> SchemaRef | None:
+    def from_class(cls, target: object) -> SchemaRef | None:
         """Build a `SchemaRef` from a pydantic-shaped class, or return ``None``.
 
         The schema fingerprint is the first 16 hex chars of
@@ -237,12 +237,8 @@ def _canonical_payload(plan: InferredPlan) -> bytes:
     `fingerprint.py`) so model-layer tests can assert on it directly.
     """
     data = plan.model_dump(mode="json", by_alias=True, exclude={"fingerprint"})
-    data["resources"] = sorted(
-        data["resources"], key=lambda r: (r["kind"], r["id"])
-    )
-    data["edges"] = sorted(
-        data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"])
-    )
+    data["resources"] = sorted(data["resources"], key=lambda r: (r["kind"], r["id"]))
+    data["edges"] = sorted(data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"]))
     return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
