@@ -24,6 +24,7 @@ app = typer.Typer(
     help="Render the diff between the current app and `skaal.lock`.",
     context_settings={"allow_interspersed_args": True},
 )
+_MIXED_FINGERPRINT = "mixed"
 
 
 @dataclass(frozen=True)
@@ -64,9 +65,9 @@ def plan(
     ),
 ) -> None:
     skaal_app = load_app(target)
-    loaded = load_plan(skaal_app, env_name)
+    loaded_plan = load_plan(skaal_app, env_name)
     lock = load_lock(Path("skaal.lock"))
-    _render(_diff(loaded.bound, lock))
+    _render(_diff(loaded_plan.bound, lock))
 
 
 def _diff(bound: BoundPlan, lock: LockFile) -> PlanDiff:
@@ -139,12 +140,9 @@ def _update_details(resource: BoundResource, entry: LockEntry, fingerprint: str)
     if entry.backend != resource.backend:
         details.append(f"backend {entry.backend} -> {resource.backend}")
     if entry.region != resource.region:
-        details.append(f"region {entry.region or '-'} -> {resource.region or '-'}")
+        details.append(f"region {_display(entry.region)} -> {_display(resource.region)}")
     if entry.fingerprint != fingerprint:
-        if entry.fingerprint:
-            details.append(f"fingerprint {entry.fingerprint} -> {fingerprint}")
-        else:
-            details.append(f"fingerprint - -> {fingerprint}")
+        details.append(f"fingerprint {_display(entry.fingerprint)} -> {fingerprint}")
     return "; ".join(details)
 
 
@@ -154,8 +152,13 @@ def _deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
     if len(values) == 1:
         return next(iter(values))
     if len(values) > 1:
-        return "mixed"
+        return _MIXED_FINGERPRINT
     return None
+
+
+def _display(value: str | None) -> str:
+    """Render optional CLI values consistently."""
+    return value or "-"
 
 
 def _render(diff: PlanDiff) -> None:

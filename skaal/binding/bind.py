@@ -79,9 +79,11 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
 def _bound_fingerprint(plan: BoundPlan) -> str:
     """Compute the 16-hex-char fingerprint of ``plan`` (excluding itself)."""
     data = plan.model_dump(mode="json", by_alias=True, exclude={"bound_fingerprint"})
-    for resource in data["resources"]:
-        resource.pop("pinned", None)
-    data["resources"] = sorted(data["resources"], key=lambda r: (r["backend"], r["inferred"]["id"]))
+    resources = [
+        {key: value for key, value in resource.items() if key != "pinned"}
+        for resource in data["resources"]
+    ]
+    data["resources"] = sorted(resources, key=lambda r: (r["backend"], r["inferred"]["id"]))
     data["edges"] = sorted(data["edges"], key=lambda e: (e["source_id"], e["target_id"], e["kind"]))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()[:16]
