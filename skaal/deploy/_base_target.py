@@ -33,7 +33,7 @@ from skaal.deploy._protocol import (
     WherePreference,
     WhereSpec,
 )
-from skaal.errors import SkaalDeployError
+from skaal.errors import SkaalDeployError, UnknownBackendError
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
@@ -128,17 +128,19 @@ class BaseDeployTarget(DeployTarget):
         for token in spec.token_classes:
             try:
                 entry = lookup_token(token)
-            except Exception as exc:
+            except UnknownBackendError as exc:
                 raise SkaalDeployError(
                     f"{type(synth).__name__!r} declares backend token "
                     f"{token.__name__!r}, but that token is not registered in the "
-                    "binding registry. Register the backend before the synth."
+                    "binding registry. Register the backend before the synth "
+                    f"(lookup failed with {type(exc).__name__})."
                 ) from exc
             if self.target not in entry.targets:
+                supported = ", ".join(sorted(t.value for t in entry.targets)) or "(none)"
                 raise SkaalDeployError(
                     f"{type(synth).__name__!r} declares backend token "
-                    f"{token.__name__!r}, but backend {entry.token_class.name!r} does "
-                    f"not target {self.target.value!r}."
+                    f"{token.__name__!r} ({entry.token_class.name!r}), but that backend does "
+                    f"not target {self.target.value!r}. Supported targets: {supported}."
                 )
             backend = entry.token_class.name
             existing_instance = self._synth_instances.get(backend)

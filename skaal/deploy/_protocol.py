@@ -187,7 +187,7 @@ def _normalize_synth_tokens(
     raw: object,
 ) -> tuple[type[Backend[Any]], ...]:
     """Normalize legacy backend names or backend tokens into backend tokens."""
-    if not isinstance(raw, tuple | list):
+    if not isinstance(raw, (tuple, list)):
         raise TypeError("`SynthSpec.tokens` must be a sequence of backend tokens.")
     tokens: list[type[Backend[Any]]] = []
     for item in raw:
@@ -195,11 +195,11 @@ def _normalize_synth_tokens(
             tokens.append(lookup(item).token_class)
             continue
         if isinstance(item, type) and issubclass(item, Backend):
-            tokens.append(cast("type[Backend[Any]]", item))
+            tokens.append(item)
             continue
         raise TypeError(
-            "`SynthSpec.tokens` items must be backend names or `Backend` subclasses; "
-            f"got {item!r}."
+            "`SynthSpec.tokens` items must be `Backend` subclasses or legacy "
+            f"backend name strings; got {item!r}."
         )
     if not tokens:
         raise ValueError("`SynthSpec.tokens` must name at least one backend.")
@@ -224,10 +224,15 @@ class SynthSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Pydantic rejects already-parameterised generics inside `type[...]`
-    # schema generation, so we store the bare `Backend` here and expose a
-    # fully-typed property below for static-typing consumers.
-    tokens: tuple[type[Backend], ...]  # pyright: ignore[reportMissingTypeArgument]
+    # Backend token classes this synth handles. Pydantic's schema
+    # generation rejects the parameterised `Backend[Any]` form here (same
+    # limitation handled in `skaal.binding.registry.BackendEntry`), so we
+    # store the bare `Backend` and expose the fully-typed `token_classes`
+    # property below for static-typing consumers.
+    tokens: tuple[
+        type[Backend],  # pyright: ignore[reportMissingTypeArgument] - Pydantic rejects parameterised generics in schema generation
+        ...,
+    ]
     description: str = ""
     where: WhereSpec | None = None
 
@@ -245,10 +250,14 @@ class SynthSpec(BaseModel):
             raise ValueError("`SynthSpec` requires `tokens` (or legacy `backends`).")
         tokens = _normalize_synth_tokens(raw_tokens if raw_tokens is not None else raw_backends)
         raw_kinds = data.pop("kinds", None)
-        if raw_kinds is not None and frozenset(raw_kinds) != _kinds_for_synth_tokens(tokens):
+        derived_kinds = _kinds_for_synth_tokens(tokens)
+        provided_kinds = frozenset(raw_kinds) if raw_kinds is not None else None
+        if provided_kinds is not None and provided_kinds != derived_kinds:
+            expected = ", ".join(sorted(kind.value for kind in derived_kinds))
+            provided = ", ".join(sorted(kind.value for kind in provided_kinds))
             raise ValueError(
                 "`SynthSpec.kinds` is derived from the supplied backend tokens and "
-                "must match them exactly."
+                f"must match them exactly. Expected: [{expected}]. Provided: [{provided}]."
             )
         return {**data, "tokens": tokens}
 

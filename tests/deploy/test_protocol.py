@@ -26,5 +26,25 @@ def test_synth_spec_accepts_legacy_backend_names() -> None:
 
 
 def test_synth_spec_rejects_mismatched_legacy_kinds() -> None:
-    with pytest.raises(ValueError, match="derived"):
+    with pytest.raises(ValueError, match=r"kinds.*derived.*tokens.*match.*Expected.*Provided"):
         SynthSpec(backends=("dynamodb",), kinds=frozenset({ResourceKind.BLOB}))
+
+
+def test_synth_spec_rejects_both_tokens_and_backends() -> None:
+    with pytest.raises(ValueError, match="only one"):
+        SynthSpec(tokens=(DynamoDB,), backends=("dynamodb",))
+
+
+def test_synth_spec_requires_tokens_or_backends() -> None:
+    with pytest.raises(ValueError, match="requires `tokens`"):
+        SynthSpec()
+
+
+def test_synth_spec_rejects_empty_backend_sequences() -> None:
+    with pytest.raises(ValueError, match="at least one backend"):
+        SynthSpec(tokens=())
+
+
+def test_synth_spec_rejects_invalid_backend_items() -> None:
+    with pytest.raises(TypeError, match="Backend"):
+        SynthSpec(tokens=(object(),))
