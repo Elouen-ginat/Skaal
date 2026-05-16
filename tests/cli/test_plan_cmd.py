@@ -12,13 +12,13 @@ from typer.testing import CliRunner
 
 from skaal.binding.lock import write_lock
 from skaal.binding.model import LockEntry, LockFile
-from skaal.cli._load import load_app, load_bound_plan
+from skaal.cli._load import load_app, load_plan
 from skaal.cli.main import app
 
 runner = CliRunner()
 
 
-def _fixture(app_name: str = "plan-fixture") -> str:
+def _make_fixture_app_source(app_name: str = "plan-fixture") -> str:
     return textwrap.dedent(
         f"""
         from skaal import App, Store
@@ -39,7 +39,7 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     pkg_dir = tmp_path / "plan_fixture_pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").write_text("")
-    (pkg_dir / "app.py").write_text(_fixture())
+    (pkg_dir / "app.py").write_text(_make_fixture_app_source())
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.chdir(tmp_path)
     sys.modules.pop("plan_fixture_pkg", None)
@@ -75,7 +75,7 @@ def test_plan_reports_no_resources_for_empty_app(
 
 def test_plan_reports_no_changes_when_lock_matches(fixture_app: str, tmp_path: Path) -> None:
     skaal_app = load_app(fixture_app)
-    bound = load_bound_plan(skaal_app, "local")
+    bound = load_plan(skaal_app, "local").bound
     write_lock(
         tmp_path / "skaal.lock",
         LockFile(
@@ -104,7 +104,7 @@ def test_plan_reports_updates_when_code_changes_after_lock(
     fixture_app: str, tmp_path: Path
 ) -> None:
     skaal_app = load_app(fixture_app)
-    bound = load_bound_plan(skaal_app, "local")
+    bound = load_plan(skaal_app, "local").bound
     write_lock(
         tmp_path / "skaal.lock",
         LockFile(
@@ -123,7 +123,7 @@ def test_plan_reports_updates_when_code_changes_after_lock(
     )
 
     app_file = tmp_path / "plan_fixture_pkg" / "app.py"
-    app_file.write_text(_fixture("plan-fixture-v2"))
+    app_file.write_text(_make_fixture_app_source("plan-fixture-v2"))
     sys.modules.pop("plan_fixture_pkg.app", None)
 
     result = runner.invoke(app, ["plan", fixture_app])

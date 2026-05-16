@@ -24,7 +24,9 @@ app = typer.Typer(
     help="Render the diff between the current app and `skaal.lock`.",
     context_settings={"allow_interspersed_args": True},
 )
-_MIXED_FINGERPRINT = "mixed"
+# Display marker when the lock contains per-resource fingerprints that do not
+# collapse to one plan-wide deployed fingerprint.
+MIXED_FINGERPRINT_MARKER = "mixed"
 
 
 @dataclass(frozen=True)
@@ -143,7 +145,9 @@ def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint
         details.append(
             f"region {_display_optional(entry.region)} -> {_display_optional(resource.region)}"
         )
-    if entry.fingerprint != bound_fingerprint:
+    if entry.fingerprint is None:
+        details.append(f"fingerprint unrecorded -> {bound_fingerprint}")
+    elif entry.fingerprint != bound_fingerprint:
         details.append(
             f"fingerprint {_display_optional(entry.fingerprint)} -> {bound_fingerprint}"
         )
@@ -152,12 +156,16 @@ def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint
 
 def _deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
     """Collapse per-resource lock fingerprints into one display value."""
-    values = {entry.fingerprint for entry in entries if entry.fingerprint}
-    if len(values) == 1:
-        return next(iter(values))
-    if len(values) > 1:
-        return _MIXED_FINGERPRINT
-    return None
+    first: str | None = None
+    for entry in entries:
+        if not entry.fingerprint:
+            continue
+        if first is None:
+            first = entry.fingerprint
+            continue
+        if entry.fingerprint != first:
+            return MIXED_FINGERPRINT_MARKER
+    return first
 
 
 def _display_optional(value: str | None) -> str:

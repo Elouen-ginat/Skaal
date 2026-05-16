@@ -53,17 +53,22 @@ def trace(
 
 def _resolve(needle: str, bound: BoundPlan) -> TraceHit:
     """Resolve `needle` against the current bound plan."""
-    resources = sorted(bound.resources, key=lambda resource: len(resource.inferred.id), reverse=True)
+    resources = bound.resources
+    best_match: BoundResource | None = None
     for resource in resources:
         if needle == resource.inferred.id:
             return TraceHit(resource=resource, matched_text=resource.inferred.id)
-    for resource in resources:
-        if resource.inferred.id and resource.inferred.id in needle:
-            return TraceHit(resource=resource, matched_text=resource.inferred.id)
 
-    known_ids = ", ".join(resource.inferred.id for resource in resources[:5])
-    if len(resources) > 5:
-        known_ids += ", ..."
+    matches = [resource for resource in resources if resource.inferred.id in needle]
+    if matches:
+        best_match = max(matches, key=lambda resource: len(resource.inferred.id))
+    if best_match is not None:
+        return TraceHit(resource=best_match, matched_text=best_match.inferred.id)
+
+    known_ids = ", ".join(
+        [resource.inferred.id for resource in resources[:5]]
+        + (["..."] if len(resources) > 5 else [])
+    )
     raise typer.BadParameter(
         "Could not resolve that input to a known resource id. "
         f"Expected one of: {known_ids or '(no resources)'}."

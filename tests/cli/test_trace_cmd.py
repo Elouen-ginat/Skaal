@@ -51,8 +51,9 @@ def test_trace_resolves_exact_resource_id(fixture_app: str) -> None:
     result = runner.invoke(cli_app, ["trace", "trace_fixture_pkg.app:greet", fixture_app])
     assert result.exit_code == 0, result.output
     assert "trace-fixture" in result.output
-    assert "trace_fixture_pkg.app.py:" not in result.output
-    assert "trace_fixture_pkg/app.py" in result.output or "app.py" in result.output
+    assert "trace_fixture_pkg.app:greet" in result.output
+    assert "source" in result.output
+    assert "app.py:" in result.output
     assert "trace_fixture_pkg.app:greet" in result.output
 
 

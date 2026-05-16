@@ -13,6 +13,16 @@ from skaal.binding.model import BoundPlan, BoundResource
 from skaal.inference.model import ResourceKind
 
 
+def _resource_sort_key(entry: ResourceMapEntry) -> tuple[str, int, str, str]:
+    """Return the deterministic file → line → symbol → id ordering.
+
+    This keeps nearby declarations grouped together in both the CLI tree and
+    the emitted JSON while still producing a total ordering for same-line or
+    duplicate-name edge cases.
+    """
+    return (entry.file, entry.line, entry.qualname, entry.resource_id)
+
+
 class ResourceMapEntry(BaseModel):
     """One source symbol mapped to one bound resource."""
 
@@ -63,12 +73,9 @@ class ResourceMap(BaseModel):
     def for_bound_plan(cls, bound: BoundPlan) -> ResourceMap:
         """Build the resource map from a bound plan."""
         entries = [ResourceMapEntry.for_resource(resource) for resource in bound.resources]
-        resources = tuple(
-            sorted(
-                entries,
-                key=lambda entry: (entry.file, entry.line, entry.qualname, entry.resource_id),
-            )
-        )
+        # Sort by source location first, then by symbol name, then by id so the
+        # rendered tree and JSON stay deterministic across runs.
+        resources = tuple(sorted(entries, key=_resource_sort_key))
         return cls(
             app=bound.app,
             environment=bound.environment,

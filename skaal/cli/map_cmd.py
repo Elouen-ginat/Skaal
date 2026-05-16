@@ -87,9 +87,9 @@ def _display_file(raw: str, cwd: Path) -> str:
     try:
         return str(path.resolve().relative_to(cwd))
     except ValueError:
-        # Different roots (or already-synthetic paths like "<unknown>") cannot
-        # be relativised; falling back to the basename keeps the tree compact.
-        return path.name if path.name else raw
+        # Different roots (or already-synthetic paths like `<unknown>`) cannot
+        # be relativized; falling back to the basename keeps the tree compact.
+        return path.name or path.stem or raw
 
 
 def _entry_label(entry: ResourceMapEntry) -> str:

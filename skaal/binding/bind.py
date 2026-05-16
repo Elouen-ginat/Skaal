@@ -81,6 +81,8 @@ def _bound_fingerprint(plan: BoundPlan) -> str:
     data = plan.model_dump(
         mode="json",
         by_alias=True,
+        # `pinned` reflects whether the lock already matches this binding, not
+        # the binding choice itself, so it must not perturb the plan fingerprint.
         exclude={"bound_fingerprint": True, "resources": {"__all__": {"pinned"}}},
     )
     data["resources"] = sorted(data["resources"], key=lambda r: (r["backend"], r["inferred"]["id"]))

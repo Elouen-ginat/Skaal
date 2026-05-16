@@ -66,7 +66,7 @@ class SkaalTags(BaseModel):
         return cls(
             app=inferred.source.top_package,
             resource_id=inferred.id,
-            source=inferred.id,
+            source=f"{inferred.source.module}:{inferred.source.qualname}",
             source_line=f"{inferred.source.file}:{inferred.source.line}",
             kind=inferred.kind,
             env=env.name,
