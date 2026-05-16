@@ -150,7 +150,7 @@ def _update_details(resource: BoundResource, entry: LockEntry, fingerprint: str)
 
 def _deployed_fingerprint(entries: Iterable[LockEntry]) -> str | None:
     """Collapse per-resource lock fingerprints into one display value."""
-    values = {entry.fingerprint for entry in tuple(entries) if entry.fingerprint}
+    values = {entry.fingerprint for entry in entries if entry.fingerprint}
     if len(values) == 1:
         return next(iter(values))
     if len(values) > 1:

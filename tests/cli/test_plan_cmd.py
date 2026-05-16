@@ -18,19 +18,20 @@ from skaal.cli.main import app
 runner = CliRunner()
 
 
-_FIXTURE = textwrap.dedent(
-    """
-    from skaal import App, Store
+def _fixture(app_name: str = "plan-fixture") -> str:
+    return textwrap.dedent(
+        f"""
+        from skaal import App, Store
 
 
-    app = App("plan-fixture")
+        app = App("{app_name}")
 
 
-    @app.storage()
-    class Sessions(Store[dict]):
-        pass
-    """
-)
+        @app.storage()
+        class Sessions(Store[dict]):
+            pass
+        """
+    )
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     pkg_dir = tmp_path / "plan_fixture_pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").write_text("")
-    (pkg_dir / "app.py").write_text(_FIXTURE)
+    (pkg_dir / "app.py").write_text(_fixture())
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.chdir(tmp_path)
     sys.modules.pop("plan_fixture_pkg", None)
@@ -122,7 +123,7 @@ def test_plan_reports_updates_when_code_changes_after_lock(
     )
 
     app_file = tmp_path / "plan_fixture_pkg" / "app.py"
-    app_file.write_text(_FIXTURE.replace("App(\"plan-fixture\")", "App(\"plan-fixture-v2\")"))
+    app_file.write_text(_fixture("plan-fixture-v2"))
     sys.modules.pop("plan_fixture_pkg.app", None)
 
     result = runner.invoke(app, ["plan", fixture_app])
