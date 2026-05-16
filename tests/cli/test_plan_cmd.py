@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from skaal.binding.lock import write_lock
+from skaal.binding.model import LockEntry, LockFile
+from skaal.cli._load import load_app, load_bound_plan
 from skaal.cli.main import app
 
 runner = CliRunner()
@@ -46,8 +50,8 @@ def test_plan_renders_bound_plan_table(fixture_app: str) -> None:
     result = runner.invoke(app, ["plan", fixture_app])
     assert result.exit_code == 0, result.output
     assert "plan-fixture" in result.output
-    assert "Sessions" in result.output
-    # The default `local` env binds STOREs to sqlite via the defaults table.
+    assert "create" in result.output
+    assert "store" in result.output
     assert "sqlite" in result.output
 
 
@@ -66,3 +70,62 @@ def test_plan_reports_no_resources_for_empty_app(
     result = runner.invoke(app, ["plan", "empty_app_pkg.app:app"])
     assert result.exit_code == 0, result.output
     assert "No resources discovered." in result.output
+
+
+def test_plan_reports_no_changes_when_lock_matches(fixture_app: str, tmp_path: Path) -> None:
+    skaal_app = load_app(fixture_app)
+    bound = load_bound_plan(skaal_app, "local")
+    write_lock(
+        tmp_path / "skaal.lock",
+        LockFile(
+            entries={
+                ("local", resource.inferred.id): LockEntry(
+                    backend=resource.backend,
+                    region=resource.region,
+                    pinned_at=datetime.now(UTC),
+                    pinned_by="test",
+                    fingerprint=bound.bound_fingerprint,
+                )
+                for resource in bound.resources
+                if not resource.external
+            }
+        ),
+    )
+
+    result = runner.invoke(app, ["plan", fixture_app])
+    assert result.exit_code == 0, result.output
+    assert "No changes." in result.output
+    assert "create" not in result.output
+    assert "update" not in result.output
+
+
+def test_plan_reports_updates_when_code_changes_after_lock(
+    fixture_app: str, tmp_path: Path
+) -> None:
+    skaal_app = load_app(fixture_app)
+    bound = load_bound_plan(skaal_app, "local")
+    write_lock(
+        tmp_path / "skaal.lock",
+        LockFile(
+            entries={
+                ("local", resource.inferred.id): LockEntry(
+                    backend=resource.backend,
+                    region=resource.region,
+                    pinned_at=datetime.now(UTC),
+                    pinned_by="test",
+                    fingerprint=bound.bound_fingerprint,
+                )
+                for resource in bound.resources
+                if not resource.external
+            }
+        ),
+    )
+
+    app_file = tmp_path / "plan_fixture_pkg" / "app.py"
+    app_file.write_text(_FIXTURE.replace("App(\"plan-fixture\")", "App(\"plan-fixture-v2\")"))
+    sys.modules.pop("plan_fixture_pkg.app", None)
+
+    result = runner.invoke(app, ["plan", fixture_app])
+    assert result.exit_code == 0, result.output
+    assert "update" in result.output
+    assert "fingerprint" in result.output

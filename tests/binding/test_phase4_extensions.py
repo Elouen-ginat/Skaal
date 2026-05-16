@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from skaal.binding import bind
-from skaal.binding.model import Environment, LockFile, Target
+from skaal.binding.model import Environment, LockEntry, LockFile, Target
 from skaal.errors import TypePinViolation
 from skaal.inference.model import (
     InferredPlan,
@@ -67,6 +69,28 @@ def test_bound_fingerprint_deterministic() -> None:
     a = bind(plan_a, env, LockFile())
     b = bind(plan_b, env, LockFile())
     assert a.bound_fingerprint == b.bound_fingerprint
+
+
+def test_bound_fingerprint_ignores_lock_pinned_flag() -> None:
+    plan = _plan(_store_resource())
+    env = Environment(name="local", target=Target.LOCAL)
+    unlocked = bind(plan, env, LockFile())
+    locked = bind(
+        plan,
+        env,
+        LockFile(
+            entries={
+                ("local", "acme.users:Users"): LockEntry(
+                    backend=unlocked.resources[0].backend,
+                    region=unlocked.resources[0].region,
+                    pinned_at=datetime.now(UTC),
+                    pinned_by="test",
+                    fingerprint=unlocked.bound_fingerprint,
+                )
+            }
+        ),
+    )
+    assert unlocked.bound_fingerprint == locked.bound_fingerprint
 
 
 def test_external_flag_propagates_to_bound_resource() -> None:
