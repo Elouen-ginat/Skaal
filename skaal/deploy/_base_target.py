@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping
 from threading import Lock
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from skaal.binding.registry import lookup_token
 from skaal.deploy._protocol import (
     ConsoleUrlResolver,
     DeployTarget,
@@ -88,7 +89,7 @@ class BaseDeployTarget(DeployTarget):
 
         Raises:
             SkaalDeployError: If two classes declare the same backend
-                name in their `SPEC.backends`, or a class is missing
+                name in their derived `SPEC.backends`, or a class is missing
                 `SPEC`.
         """
         instances: list[SynthModule[Any]] = []
@@ -124,7 +125,22 @@ class BaseDeployTarget(DeployTarget):
                 f"{synth!r} is not a valid SynthModule: missing `SPEC` or `synthesize`."
             )
         synthesize = synth.synthesize
-        for backend in spec.backends:
+        for token in spec.token_classes:
+            try:
+                entry = lookup_token(token)
+            except Exception as exc:
+                raise SkaalDeployError(
+                    f"{type(synth).__name__!r} declares backend token "
+                    f"{token.__name__!r}, but that token is not registered in the "
+                    "binding registry. Register the backend before the synth."
+                ) from exc
+            if self.target not in entry.targets:
+                raise SkaalDeployError(
+                    f"{type(synth).__name__!r} declares backend token "
+                    f"{token.__name__!r}, but backend {entry.token_class.name!r} does "
+                    f"not target {self.target.value!r}."
+                )
+            backend = entry.token_class.name
             existing_instance = self._synth_instances.get(backend)
             if existing_instance is synth:
                 continue

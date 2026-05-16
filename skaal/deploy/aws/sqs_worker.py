@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import SqsLambdaWorker
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
@@ -35,8 +36,7 @@ class SqsWorkerSynth(LambdaSynth):
     """SQS queue + Lambda worker (event-source mapping)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("sqs-lambda-worker",),
-        kinds=frozenset({ResourceKind.JOB}),
+        tokens=(SqsLambdaWorker,),
         description="SQS queue + Lambda worker (event-source mapping).",
         where=WhereSpec(
             preferences=(

@@ -13,6 +13,7 @@ from typing import ClassVar
 import pulumi
 import pulumi_aws as aws
 
+from skaal.backends._tokens import Redis, RedisChannel
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -34,8 +35,7 @@ class RedisSynth(SynthModule[AwsConfig]):
     """ElastiCache Redis cluster (single-node replication group, Phase 4 default)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("redis", "redis-channel"),
-        kinds=frozenset({ResourceKind.STORE, ResourceKind.CHANNEL}),
+        tokens=(Redis, RedisChannel),
         description="ElastiCache Redis replication group (store + channel forms).",
         where=WhereSpec(
             preferences=(

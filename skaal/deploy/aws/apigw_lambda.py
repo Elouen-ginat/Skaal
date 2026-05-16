@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 import pulumi
 import pulumi_aws as aws
 
+from skaal.backends._tokens import ApigwLambda
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
@@ -32,8 +33,7 @@ class ApigwLambdaSynth(LambdaSynth):
     """API Gateway HTTPv2 fronting a Lambda container."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("apigw-lambda",),
-        kinds=frozenset({ResourceKind.ASGI_SERVICE}),
+        tokens=(ApigwLambda,),
         description="API Gateway HTTPv2 fronting a Lambda container.",
         where=WhereSpec(
             preferences=(

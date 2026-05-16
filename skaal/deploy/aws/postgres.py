@@ -12,6 +12,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import Postgres
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -29,8 +30,7 @@ class PostgresSynth(SynthModule[AwsConfig]):
     """RDS Postgres instance with managed master credentials."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("postgres",),
-        kinds=frozenset({ResourceKind.RELATIONAL}),
+        tokens=(Postgres,),
         description="RDS Postgres instance with managed master credentials.",
         where=WhereSpec(
             preferences=(

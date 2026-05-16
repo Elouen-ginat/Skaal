@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import AwsSecretsManager
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -31,8 +32,7 @@ class SecretsManagerSynth(SynthModule[AwsConfig]):
     """`aws.secretsmanager.Secret` containers (values supplied out-of-band)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("aws-secrets-manager",),
-        kinds=frozenset({ResourceKind.SECRET}),
+        tokens=(AwsSecretsManager,),
         description="AWS Secrets Manager container (value supplied out-of-band).",
         where=WhereSpec(
             preferences=(

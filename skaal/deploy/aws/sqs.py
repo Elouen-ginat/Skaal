@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import Sqs
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -27,8 +28,7 @@ class SqsChannelSynth(SynthModule[AwsConfig]):
     """`aws.sqs.Queue` for pub/sub channels (`Channel[T, Sqs]`)."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("sqs",),
-        kinds=frozenset({ResourceKind.CHANNEL}),
+        tokens=(Sqs,),
         description="SQS standard queue for pub/sub channels.",
         where=WhereSpec(
             preferences=(

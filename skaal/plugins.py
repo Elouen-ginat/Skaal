@@ -40,8 +40,7 @@ class Aurora(Backend[object]):
 
 class AuroraSynth(SynthModule[AwsConfig]):
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("aurora",),
-        kinds=frozenset({ResourceKind.RELATIONAL}),
+        tokens=(Aurora,),
     )
     def synthesize(self, ctx: SynthContext) -> SynthResult: ...
 

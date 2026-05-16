@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import S3
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -27,8 +28,7 @@ class S3Synth(SynthModule[AwsConfig]):
     """`aws.s3.BucketV2` for `BLOB` resources, plus an SSE configuration."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("s3",),
-        kinds=frozenset({ResourceKind.BLOB}),
+        tokens=(S3,),
         description="S3 bucket with server-side encryption.",
         where=WhereSpec(
             preferences=(

@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import DynamoDB
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -27,8 +28,7 @@ class DynamoDBSynth(SynthModule[AwsConfig]):
     """`aws.dynamodb.Table` for KV `STORE` resources."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("dynamodb",),
-        kinds=frozenset({ResourceKind.STORE}),
+        tokens=(DynamoDB,),
         description="DynamoDB table for KV stores.",
         where=WhereSpec(
             preferences=(

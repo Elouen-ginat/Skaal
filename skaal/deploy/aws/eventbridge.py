@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 
 import pulumi_aws as aws
 
+from skaal.backends._tokens import EventBridgeLambda
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
@@ -31,8 +32,7 @@ class EventBridgeLambdaSynth(LambdaSynth):
     """EventBridge rule firing a scheduled Lambda."""
 
     SPEC: ClassVar[SynthSpec] = SynthSpec(
-        backends=("eventbridge-lambda",),
-        kinds=frozenset({ResourceKind.SCHEDULE}),
+        tokens=(EventBridgeLambda,),
         description="EventBridge rule firing a scheduled Lambda.",
         where=WhereSpec(
             preferences=(
