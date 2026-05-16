@@ -7,7 +7,7 @@ from typing import TypeAlias
 
 from skaal.app import App
 from skaal.binding import load_lock
-from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.cli._load import load_app, load_plan
 from skaal.plan_diff import PlanDiff, diff_plan
 from skaal.resource_map import ResourceMap
 from skaal.traceability import TraceHit, resolve_trace
@@ -119,7 +119,7 @@ def _coerce_app(target: AppTarget) -> App:
         TypeError: If the resolved object is not a Skaal `App`.
     """
     if isinstance(target, str):
-        resolved = load_app(AppSpec.parse(target))
+        resolved = load_app(target)
         if not isinstance(resolved, App):
             msg = f"`{target}` did not resolve to a Skaal `App` instance."
             raise TypeError(msg)

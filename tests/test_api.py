@@ -44,7 +44,11 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, A
     sys.modules.pop("api_fixture_pkg", None)
     sys.modules.pop("api_fixture_pkg.app", None)
     module = importlib.import_module("api_fixture_pkg.app")
-    return "api_fixture_pkg.app:app", cast(App, module.app)
+    try:
+        yield "api_fixture_pkg.app:app", cast(App, module.app)
+    finally:
+        sys.modules.pop("api_fixture_pkg", None)
+        sys.modules.pop("api_fixture_pkg.app", None)
 
 
 def test_plan_accepts_reference_and_returns_diff(fixture_app: tuple[str, App]) -> None:
