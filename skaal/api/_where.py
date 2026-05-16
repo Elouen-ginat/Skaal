@@ -47,17 +47,8 @@ _AWS_RESOURCE_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ResourceKind.SECRET: ("aws:secretsmanager/secret:Secret",),
 }
 _WHERE_LOCK = Lock()
-_DEFAULT_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
-    Target.AWS: {},
-}
 _DEFAULT_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
     Target.AWS: dict(_AWS_RESOURCE_TYPE_PREFERENCE),
-}
-_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
-    target: dict(resolvers) for target, resolvers in _DEFAULT_CONSOLE_URLS.items()
-}
-_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
-    target: dict(preferences) for target, preferences in _DEFAULT_RESOURCE_TYPE_PREFERENCES.items()
 }
 
 
@@ -158,8 +149,15 @@ _AWS_CONSOLE_URLS: dict[str, ConsoleUrlResolver] = {
     "aws:sqs/queue:Queue": _sqs_url,
     "aws:secretsmanager/secret:Secret": _secret_url,
 }
-_DEFAULT_CONSOLE_URLS[Target.AWS] = dict(_AWS_CONSOLE_URLS)
-_CONSOLE_URLS[Target.AWS] = dict(_AWS_CONSOLE_URLS)
+_DEFAULT_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
+    Target.AWS: dict(_AWS_CONSOLE_URLS),
+}
+_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
+    target: dict(resolvers) for target, resolvers in _DEFAULT_CONSOLE_URLS.items()
+}
+_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
+    target: dict(preferences) for target, preferences in _DEFAULT_RESOURCE_TYPE_PREFERENCES.items()
+}
 
 
 @dataclass(frozen=True)
@@ -382,13 +380,17 @@ def register_resource_type_preference(
     kind: ResourceKind,
     provider_type: str,
 ) -> None:
-    """Prefer `provider_type` when one resource kind has multiple Pulumi resources."""
+    """Prefer `provider_type` when one resource kind has multiple Pulumi resources.
+
+    Plugin-contributed preferences are prepended so the newest explicit
+    registration wins over older defaults for the same target/kind pair.
+    """
     _ensure_plugins_loaded()
     with _WHERE_LOCK:
         target_preferences = _RESOURCE_TYPE_PREFERENCES.setdefault(target, {})
         current = target_preferences.get(kind, ())
         if provider_type not in current:
-            target_preferences[kind] = (*current, provider_type)
+            target_preferences[kind] = (provider_type, *current)
 
 
 def _console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:

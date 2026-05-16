@@ -226,20 +226,33 @@ class _FakeWhereEntryPoint:
         return self._plugin_type
 
 
-def _where_plugin_state() -> dict[str, object]:
-    return {
-        "resources": [
+def _where_plugin_state(*, include_builtin_candidate: bool = False) -> dict[str, object]:
+    resources: list[dict[str, object]] = []
+    if include_builtin_candidate:
+        resources.append(
             {
-                "type": "aws:custom/service:Thing",
+                "type": "aws:dynamodb/table:Table",
                 "outputs": {
-                    "id": "plugin-store",
+                    "name": "built-in-store",
+                    "id": "built-in-store",
                     "tags": {
                         "skaal:resource_id": "api_fixture_pkg.app:Sessions",
                     },
                 },
             }
-        ]
-    }
+        )
+    resources.append(
+        {
+            "type": "aws:custom/service:Thing",
+            "outputs": {
+                "id": "plugin-store",
+                "tags": {
+                    "skaal:resource_id": "api_fixture_pkg.app:Sessions",
+                },
+            },
+        }
+    )
+    return {"resources": resources}
 
 
 def _where_plugin_entry_points(
@@ -304,6 +317,31 @@ def test_where_plugin_resolver_handles_missing_region(
         _where._reset_for_tests()
 
     assert hit.console_url == "https://plugins.example.test/plugin-store?region=missing"
+
+
+def test_where_plugin_preference_beats_builtin_candidate(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+    from skaal.plugins import _reset_for_tests as reset_plugins
+
+    reset_plugins()
+    _where._reset_for_tests()
+    monkeypatch.setattr("importlib.metadata.entry_points", _where_plugin_entry_points)
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: _where_plugin_state(include_builtin_candidate=True),
+    )
+
+    try:
+        hit = api.where("api_fixture_pkg.app:Sessions", target)
+    finally:
+        reset_plugins()
+        _where._reset_for_tests()
+
+    assert hit.provider_type == "aws:custom/service:Thing"
+    assert hit.physical_id == "plugin-store"
 
 
 def test_build_accepts_reference_and_returns_manifest(fixture_app: tuple[str, App]) -> None:
