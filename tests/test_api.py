@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import sys
 import textwrap
-import types
 from pathlib import Path
 from typing import cast
 
@@ -150,6 +149,8 @@ def test_init_matches_cli_not_implemented_error() -> None:
 def test_run_builds_runtime_and_serves(
     fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import types
+
     target, app = fixture_app
     called: dict[str, object] = {}
 

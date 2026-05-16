@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import sys
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Never, TypeAlias
 
@@ -86,14 +87,14 @@ def doctor() -> DoctorReport:
         RuntimeError: If the Skaal package cannot be imported.
     """
     try:
-        import skaal
-    except Exception as exc:  # pragma: no cover - mirrors CLI import failure path
-        raise RuntimeError(f"Skaal package failed to import: {exc}") from exc
+        skaal_version = version("skaal")
+    except PackageNotFoundError as exc:  # pragma: no cover - packaging edge case
+        raise RuntimeError("Skaal package metadata is not available.") from exc
 
     return DoctorReport(
         python_version=sys.version.split()[0],
         pulumi_path=shutil.which("pulumi"),
-        skaal_version=skaal.__version__,
+        skaal_version=skaal_version,
     )
 
 
@@ -231,8 +232,7 @@ def stubs(
     Returns:
         The output directory, package name, app name, and parsed stub manifest.
     """
-    resolved_source = Path(source)
-    skaal_app = discover_app(resolved_source)
+    skaal_app = discover_app(source)
     package = package_name or out_dir.resolve().name
     written = emit_stubs(app=skaal_app, out_dir=out_dir, package_name=package)
     manifest_path = written / "_manifest.json"
