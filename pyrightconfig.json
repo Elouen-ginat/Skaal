@@ -1,0 +1,28 @@
+{
+  "include": ["skaal", "tests/typing"],
+  "exclude": [
+    "skaal/deploy/templates",
+    "skaal/cli/templates",
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules"
+  ],
+  "ignore": [
+    "skaal/deploy/aws",
+    "skaal/secrets/aws.py",
+    "skaal/secrets/gcp.py",
+    "skaal/runtime/local.py",
+    "skaal/types/cli.py",
+    "skaal/backends/dynamodb_backend.py",
+    "skaal/backends/postgres_backend.py",
+    "skaal/backends/firestore_backend.py",
+    "skaal/backends/s3_blob_backend.py",
+    "skaal/backends/gcs_blob_backend.py"
+  ],
+  "strict": ["skaal"],
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "reportMissingTypeStubs": false,
+  "reportPrivateUsage": false,
+  "useLibraryCodeForTypes": true
+}

@@ -1,10 +1,10 @@
 """Entry point for the `skaal` CLI.
 
-The CLI surface in `0.4.0-alpha` is the Phase 1 subset of ADR 029:
+The CLI surface in `0.4.0-alpha` is:
 
-  - `init`, `run`, `plan`, `build`, `deploy`, `doctor`
+  - `init`, `run`, `plan`, `build`, `deploy`, `stubs`, `doctor`
 
-`map`, `where`, `trace`, `rebind`, `unbind`, `stubs`, `backends`, `diff`,
+`map`, `where`, `trace`, `rebind`, `unbind`, `backends`, `diff`,
 `destroy`, `infra`, `stacks`, `catalog` are scheduled for their respective
 later phases and are not registered here.
 """
@@ -18,6 +18,7 @@ from skaal.cli.doctor_cmd import app as doctor_app
 from skaal.cli.init_cmd import app as init_app
 from skaal.cli.plan_cmd import app as plan_app
 from skaal.cli.run_cmd import app as run_app
+from skaal.cli.stubs_cmd import app as stubs_app
 
 app = typer.Typer(
     name="skaal",
@@ -30,6 +31,7 @@ app.add_typer(run_app, name="run")
 app.add_typer(plan_app, name="plan")
 app.add_typer(build_app, name="build")
 app.add_typer(deploy_app, name="deploy")
+app.add_typer(stubs_app, name="stubs")
 app.add_typer(doctor_app, name="doctor")
 
 

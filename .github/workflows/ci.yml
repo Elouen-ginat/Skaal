@@ -39,6 +39,35 @@ jobs:
 
       - uses: pre-commit/action@v3.0.1
 
+  pyright:
+    # Phase 5a (ADR 033): the strict-typing gate is advisory while the
+    # `ignore` list in `pyrightconfig.json` shrinks. Phase 5b removes
+    # `continue-on-error: true` once the surface is strict-clean.
+    name: Pyright (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install typecheck dependencies
+        run: uv sync --group typecheck --extra runtime --extra deploy
+
+      - name: Run pyright
+        run: uv run pyright
+
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

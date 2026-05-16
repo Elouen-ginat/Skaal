@@ -74,6 +74,29 @@ class Relational(SQLModel, Generic[B]):
                 sub.__skaal_backend_pin__ = backend_arg
         return sub
 
+    @classmethod
+    async def native(cls) -> Any:
+        """Return the native SDK client for the wired backend (ADR 028 §6.13).
+
+        For type-pinned subclasses (``class Sales(Relational[BigQuery])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b; Phase 5a returns the
+        backend object directly (or unwraps ``backend.native()`` when
+        defined) so user-land code can run backend-specific SQL.
+
+        Raises:
+            NotImplementedError: If the relational model has not been
+                wired by the runtime yet.
+        """
+        backend = get_backend(cls)
+        backend_native = getattr(backend, "native", None)
+        if callable(backend_native):
+            result = backend_native()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+        return backend
+
 
 def validate_relational_model(model_cls: type) -> None:
     """Raise if *model_cls* is not a concrete ``SQLModel`` table model."""

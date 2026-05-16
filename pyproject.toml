@@ -126,6 +126,7 @@ lint = [
 typecheck = [
     "mypy>=1.13",
     "types-redis>=4.6",
+    "pyright>=1.1.408",
 ]
 audit = [
     "pip-audit>=2.7",

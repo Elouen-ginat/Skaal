@@ -115,6 +115,26 @@ class BlobStore(Generic[B]):
             )
 
     @classmethod
+    async def native(cls) -> Any:
+        """Return the native SDK client for the wired backend (ADR 028 §6.13).
+
+        For type-pinned subclasses (``class Reports(BlobStore[S3])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b. In Phase 5a the runtime
+        unwraps `backend.native()` when defined, else returns the backend
+        instance itself.
+        """
+        cls._ensure_wired()
+        assert cls._backend is not None
+        backend_native = getattr(cls._backend, "native", None)
+        if callable(backend_native):
+            result = backend_native()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+        return cls._backend
+
+    @classmethod
     async def put_bytes(
         cls,
         key: str,

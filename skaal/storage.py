@@ -347,11 +347,7 @@ class Store(Generic[T, B]):
 
         cls._backend = backend
         inferred = getattr(cls, "__skaal_inferred__", None)
-        indexes = (
-            list(inferred.indexes)
-            if isinstance(inferred, InferredResource)
-            else []
-        )
+        indexes = list(inferred.indexes) if isinstance(inferred, InferredResource) else []
         _configure_backend_indexes(backend, indexes)
 
     @classmethod
@@ -545,6 +541,31 @@ class Store(Generic[T, B]):
         """Release any resources held by the backend."""
         if cls._backend is not None:
             await cls._backend.close()
+
+    @classmethod
+    async def native(cls) -> Any:
+        """Return the native SDK client for the wired backend (ADR 028 §6.13).
+
+        For type-pinned subclasses (``class Cache(Store[Session, Redis])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b; in Phase 5a the runtime
+        unwraps `backend.native()` when defined, else returns the backend
+        instance itself so that backend-specific code in user-land can
+        proceed.
+
+        Raises:
+            NotImplementedError: If the class has not been wired by the
+                local runtime or a deploy step yet.
+        """
+        cls._ensure_wired()
+        assert cls._backend is not None
+        backend_native = getattr(cls._backend, "native", None)
+        if callable(backend_native):
+            result = backend_native()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+        return cls._backend
 
     @classmethod
     async def add(
