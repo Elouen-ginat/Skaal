@@ -82,8 +82,6 @@ _ensure_null_handler()
 __all__ = [
     "TTL",
     "App",
-    "PlanChange",
-    "PlanDiff",
     "Backend",
     "BackendCapabilities",
     "BackendConfig",
@@ -116,6 +114,8 @@ __all__ = [
     "Module",
     "ModuleExport",
     "Page",
+    "PlanChange",
+    "PlanDiff",
     "PluginRegistry",
     "RateLimitPolicy",
     "Relational",
