@@ -53,8 +53,12 @@ _DEFAULT_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
 _DEFAULT_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
     Target.AWS: dict(_AWS_RESOURCE_TYPE_PREFERENCE),
 }
-_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {}
-_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {}
+_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
+    target: dict(resolvers) for target, resolvers in _DEFAULT_CONSOLE_URLS.items()
+}
+_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
+    target: dict(preferences) for target, preferences in _DEFAULT_RESOURCE_TYPE_PREFERENCES.items()
+}
 
 
 def _aws_region(region: str | None) -> str:
@@ -155,6 +159,7 @@ _AWS_CONSOLE_URLS: dict[str, ConsoleUrlResolver] = {
     "aws:secretsmanager/secret:Secret": _secret_url,
 }
 _DEFAULT_CONSOLE_URLS[Target.AWS] = dict(_AWS_CONSOLE_URLS)
+_CONSOLE_URLS[Target.AWS] = dict(_AWS_CONSOLE_URLS)
 
 
 @dataclass(frozen=True)
@@ -419,9 +424,6 @@ def _reset_for_tests() -> None:
                 for target, preferences in _DEFAULT_RESOURCE_TYPE_PREFERENCES.items()
             }
         )
-
-
-_reset_for_tests()
 
 
 __all__ = [
