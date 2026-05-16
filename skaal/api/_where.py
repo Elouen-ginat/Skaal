@@ -1,9 +1,15 @@
-"""Resolve deployed resources to cloud-console URLs."""
+"""Resolve deployed resources to cloud-console URLs.
+
+The core module ships built-in AWS console URL resolvers, but the lookup
+surface is extensible so plugins can teach `skaal where` about additional
+provider resource types without patching Skaal itself.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any, TypeAlias, cast
 from urllib.parse import quote
 
@@ -12,8 +18,8 @@ from skaal.deploy import get_target
 from skaal.errors import MissingExtraError, SkaalDeployError
 from skaal.inference.model import ResourceKind
 
-_DEFAULT_AWS_REGION = "us-east-1"
 StackMapping: TypeAlias = Mapping[str, Any]
+ConsoleUrlResolver: TypeAlias = Callable[[StackMapping, str | None], str]
 _AWS_RESOURCE_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ResourceKind.STORE: (
         "aws:dynamodb/table:Table",
@@ -40,63 +46,104 @@ _AWS_RESOURCE_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ),
     ResourceKind.SECRET: ("aws:secretsmanager/secret:Secret",),
 }
+_WHERE_LOCK = Lock()
+_DEFAULT_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {
+    Target.AWS: {},
+}
+_DEFAULT_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {
+    Target.AWS: dict(_AWS_RESOURCE_TYPE_PREFERENCE),
+}
+_CONSOLE_URLS: dict[Target, dict[str, ConsoleUrlResolver]] = {}
+_RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = {}
 
 
-def _dynamodb_url(outputs: StackMapping, region: str) -> str:
+def _aws_region(region: str | None) -> str:
+    """Return a concrete AWS region for console URLs."""
+    return region or "us-east-1"
+
+
+def _dynamodb_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     name = _string_value(outputs, "name", "id")
     return (
-        f"https://{region}.console.aws.amazon.com/dynamodbv2/home"
-        f"?region={region}#table?name={quote(name)}"
+        f"https://{actual_region}.console.aws.amazon.com/dynamodbv2/home"
+        f"?region={actual_region}#table?name={quote(name)}"
     )
 
 
-def _s3_url(outputs: StackMapping, region: str) -> str:
+def _s3_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     bucket = _string_value(outputs, "bucket", "id")
-    return f"https://s3.console.aws.amazon.com/s3/buckets/{quote(bucket)}?region={region}&tab=objects"
+    return (
+        f"https://s3.console.aws.amazon.com/s3/buckets/{quote(bucket)}"
+        f"?region={actual_region}&tab=objects"
+    )
 
 
-def _rds_url(outputs: StackMapping, region: str) -> str:
+def _rds_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     identifier = _string_value(outputs, "identifier", "id")
     return (
-        f"https://{region}.console.aws.amazon.com/rds/home"
-        f"?region={region}#database:id={quote(identifier)};is-cluster=false"
+        f"https://{actual_region}.console.aws.amazon.com/rds/home"
+        f"?region={actual_region}#database:id={quote(identifier)};is-cluster=false"
     )
 
 
-def _elasticache_url(outputs: StackMapping, region: str) -> str:
+def _elasticache_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     group = _string_value(outputs, "replicationGroupId", "id")
-    return f"https://{region}.console.aws.amazon.com/elasticache/home?region={region}#/redis/{quote(group)}"
+    return (
+        f"https://{actual_region}.console.aws.amazon.com/elasticache/home"
+        f"?region={actual_region}#/redis/{quote(group)}"
+    )
 
 
-def _lambda_url(outputs: StackMapping, region: str) -> str:
+def _lambda_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     name = _string_value(outputs, "name", "functionName", "id")
-    return f"https://{region}.console.aws.amazon.com/lambda/home?region={region}#/functions/{quote(name)}"
+    return (
+        f"https://{actual_region}.console.aws.amazon.com/lambda/home"
+        f"?region={actual_region}#/functions/{quote(name)}"
+    )
 
 
-def _apigw_url(outputs: StackMapping, region: str) -> str:
+def _apigw_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     api_id = _string_value(outputs, "apiId", "id")
-    return f"https://{region}.console.aws.amazon.com/apigateway/home?region={region}#/apis/{quote(api_id)}"
+    return (
+        f"https://{actual_region}.console.aws.amazon.com/apigateway/home"
+        f"?region={actual_region}#/apis/{quote(api_id)}"
+    )
 
 
-def _eventbridge_url(outputs: StackMapping, region: str) -> str:
-    name = _string_value(outputs, "name", "id")
-    return f"https://{region}.console.aws.amazon.com/events/home?region={region}#/rules/{quote(name)}"
-
-
-def _sqs_url(outputs: StackMapping, region: str) -> str:
-    queue_url = _string_value(outputs, "url", "id")
-    return f"https://{region}.console.aws.amazon.com/sqs/v3/home?region={region}#/queues/{quote(queue_url, safe='')}"
-
-
-def _secret_url(outputs: StackMapping, region: str) -> str:
+def _eventbridge_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
     name = _string_value(outputs, "name", "id")
     return (
-        f"https://{region}.console.aws.amazon.com/secretsmanager/secret"
-        f"?region={region}&name={quote(name)}"
+        f"https://{actual_region}.console.aws.amazon.com/events/home"
+        f"?region={actual_region}#/rules/{quote(name)}"
     )
 
 
-_AWS_CONSOLE_URLS: dict[str, Callable[[StackMapping, str], str]] = {
+def _sqs_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
+    queue_url = _string_value(outputs, "url", "id")
+    return (
+        f"https://{actual_region}.console.aws.amazon.com/sqs/v3/home"
+        f"?region={actual_region}#/queues/{quote(queue_url, safe='')}"
+    )
+
+
+def _secret_url(outputs: StackMapping, region: str | None) -> str:
+    actual_region = _aws_region(region)
+    name = _string_value(outputs, "name", "id")
+    return (
+        f"https://{actual_region}.console.aws.amazon.com/secretsmanager/secret"
+        f"?region={actual_region}&name={quote(name)}"
+    )
+
+
+_AWS_CONSOLE_URLS: dict[str, ConsoleUrlResolver] = {
     "aws:dynamodb/table:Table": _dynamodb_url,
     "aws:s3/bucketV2:BucketV2": _s3_url,
     "aws:rds/instance:Instance": _rds_url,
@@ -107,6 +154,7 @@ _AWS_CONSOLE_URLS: dict[str, Callable[[StackMapping, str], str]] = {
     "aws:sqs/queue:Queue": _sqs_url,
     "aws:secretsmanager/secret:Secret": _secret_url,
 }
+_DEFAULT_CONSOLE_URLS[Target.AWS] = dict(_AWS_CONSOLE_URLS)
 
 
 @dataclass(frozen=True)
@@ -140,17 +188,11 @@ def resolve_where(resource_id: str, bound: BoundPlan, env: Environment) -> Where
     if resource.external:
         msg = f"Resource {resource_id!r} is external and has no Skaal-managed deployed resource."
         raise ValueError(msg)
-    if env.target is not Target.AWS:
-        msg = (
-            f"`skaal where` currently supports {Target.AWS.value!r} only; "
-            f"env {env.name!r} targets {env.target.value!r}."
-        )
-        raise ValueError(msg)
 
     stack_name = _stack_name(bound, env)
     deployment = _load_stack_deployment(bound, env, stack_name=stack_name)
-    deployed = _select_deployed_resource(resource, deployment)
-    console_url = _aws_console_url(deployed, region=env.region)
+    deployed = _select_deployed_resource(resource, deployment, target=env.target)
+    console_url = _console_url_for_target(deployed, target=env.target, region=env.region)
     return WhereHit(
         resource=resource,
         stack_name=stack_name,
@@ -212,7 +254,12 @@ def _load_stack_deployment(
     return _coerce_mapping(deployment if deployment is not None else exported)
 
 
-def _select_deployed_resource(resource: BoundResource, deployment: StackMapping) -> StackMapping:
+def _select_deployed_resource(
+    resource: BoundResource,
+    deployment: StackMapping,
+    *,
+    target: Target,
+) -> StackMapping:
     resources = _deployment_resources(deployment)
     candidates = [
         state
@@ -226,7 +273,7 @@ def _select_deployed_resource(resource: BoundResource, deployment: StackMapping)
             f"`skaal:resource_id={resource.inferred.id}`."
         )
 
-    preferred = _AWS_RESOURCE_TYPE_PREFERENCE.get(resource.inferred.kind, ())
+    preferred = _resource_type_preferences(target).get(resource.inferred.kind, ())
     for preferred_type in preferred:
         for state in candidates:
             if _field(state, "type") == preferred_type:
@@ -262,15 +309,18 @@ def _tagged_resource_id(container: StackMapping) -> str | None:
     return None
 
 
-def _aws_console_url(state: StackMapping, *, region: str | None) -> str:
-    actual_region = region or _DEFAULT_AWS_REGION
+def _console_url_for_target(state: StackMapping, *, target: Target, region: str | None) -> str:
     raw_resource_type = _field(state, "type")
     resource_type = str(raw_resource_type) if raw_resource_type is not None else ""
     outputs = _coerce_mapping(_field(state, "outputs"))
-    resolver = _AWS_CONSOLE_URLS.get(resource_type)
+    resolver = _console_url_resolvers(target).get(resource_type)
     if resolver is not None:
-        return resolver(outputs, actual_region)
-    msg = f"`skaal where` does not support generating console URLs for {resource_type!r}."
+        return resolver(outputs, region)
+    msg = (
+        f"`skaal where` does not support generating console URLs for "
+        f"target {target.value!r} resource type {resource_type!r}. "
+        "Import the target package or install a plugin that registers a resolver."
+    )
     raise ValueError(msg)
 
 
@@ -311,4 +361,72 @@ def _field(container: StackMapping, key: str) -> Any:
     return container.get(key)
 
 
-__all__ = ["WhereHit", "resolve_where"]
+def register_console_url(
+    target: Target,
+    provider_type: str,
+    resolver: ConsoleUrlResolver,
+) -> None:
+    """Register a console URL resolver for one provider resource type."""
+    _ensure_plugins_loaded()
+    with _WHERE_LOCK:
+        _CONSOLE_URLS.setdefault(target, {}).update({provider_type: resolver})
+
+
+def register_resource_type_preference(
+    target: Target,
+    kind: ResourceKind,
+    provider_type: str,
+) -> None:
+    """Prefer `provider_type` when one resource kind has multiple Pulumi resources."""
+    _ensure_plugins_loaded()
+    with _WHERE_LOCK:
+        target_preferences = _RESOURCE_TYPE_PREFERENCES.setdefault(target, {})
+        current = target_preferences.get(kind, ())
+        if provider_type not in current:
+            target_preferences[kind] = (*current, provider_type)
+
+
+def _console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:
+    _ensure_plugins_loaded()
+    with _WHERE_LOCK:
+        return dict(_CONSOLE_URLS.get(target, {}))
+
+
+def _resource_type_preferences(target: Target) -> dict[ResourceKind, tuple[str, ...]]:
+    _ensure_plugins_loaded()
+    with _WHERE_LOCK:
+        return dict(_RESOURCE_TYPE_PREFERENCES.get(target, {}))
+
+
+def _ensure_plugins_loaded() -> None:
+    """Trigger lazy plugin discovery so `where` extensions register themselves."""
+    from skaal.plugins import load_plugins
+
+    load_plugins()
+
+
+def _reset_for_tests() -> None:
+    """Reset plugin-contributed `where` extensions."""
+    with _WHERE_LOCK:
+        _CONSOLE_URLS.clear()
+        _CONSOLE_URLS.update(
+            {target: dict(resolvers) for target, resolvers in _DEFAULT_CONSOLE_URLS.items()}
+        )
+        _RESOURCE_TYPE_PREFERENCES.clear()
+        _RESOURCE_TYPE_PREFERENCES.update(
+            {
+                target: dict(preferences)
+                for target, preferences in _DEFAULT_RESOURCE_TYPE_PREFERENCES.items()
+            }
+        )
+
+
+_reset_for_tests()
+
+
+__all__ = [
+    "WhereHit",
+    "register_console_url",
+    "register_resource_type_preference",
+    "resolve_where",
+]

@@ -13,7 +13,10 @@ import pytest
 from skaal import api
 from skaal.api import _where
 from skaal.app import App
+from skaal.binding.model import Target
 from skaal.cli._load import AppSpec
+from skaal.inference.model import ResourceKind
+from skaal.plugins import PluginRegistry, SkaalPlugin
 
 _FIXTURE = textwrap.dedent(
     """
@@ -194,6 +197,80 @@ def test_where_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
 
     with pytest.raises(ValueError, match="Could not resolve"):
         api.where("missing-resource", target)
+
+
+def test_where_loads_plugin_contributed_resolver(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+
+    class _WherePlugin(SkaalPlugin):
+        name = "where-plugin"
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_where_resource_preference(
+                Target.AWS,
+                ResourceKind.STORE,
+                "aws:custom/service:Thing",
+            )
+            registry.add_where_console_url(
+                Target.AWS,
+                "aws:custom/service:Thing",
+                lambda outputs, region: (
+                    f"https://plugins.example.test/{outputs['id']}?region={region or 'missing'}"
+                ),
+            )
+
+    class _FakeEntryPoint:
+        def __init__(self, name: str, plugin_type: type[SkaalPlugin]) -> None:
+            self.name = name
+            self._plugin_type = plugin_type
+
+        def load(self) -> type[SkaalPlugin]:
+            return self._plugin_type
+
+    fake_state = {
+        "resources": [
+            {
+                "type": "aws:custom/service:Thing",
+                "outputs": {
+                    "id": "plugin-store",
+                    "tags": {
+                        "skaal:resource_id": "api_fixture_pkg.app:Sessions",
+                    },
+                },
+            }
+        ]
+    }
+
+    def fake_entry_points(
+        group: str | None = None,
+        **_: object,
+    ) -> tuple[_FakeEntryPoint, ...]:
+        if group == "skaal.plugins":
+            return (_FakeEntryPoint("where-plugin", _WherePlugin),)
+        return ()
+
+    from skaal.plugins import _reset_for_tests as reset_plugins
+
+    reset_plugins()
+    _where._reset_for_tests()
+    monkeypatch.setattr("importlib.metadata.entry_points", fake_entry_points)
+    monkeypatch.setattr(
+        _where,
+        "_load_stack_deployment",
+        lambda bound, env, stack_name: fake_state,
+    )
+
+    try:
+        hit = api.where("api_fixture_pkg.app:Sessions", target)
+    finally:
+        reset_plugins()
+        _where._reset_for_tests()
+
+    assert hit.provider_type == "aws:custom/service:Thing"
+    assert hit.physical_id == "plugin-store"
+    assert hit.console_url == "https://plugins.example.test/plugin-store?region=us-east-1"
 
 
 def test_build_accepts_reference_and_returns_manifest(fixture_app: tuple[str, App]) -> None:
