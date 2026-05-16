@@ -9,6 +9,18 @@ from skaal.app import App
 from skaal.binding import load_lock
 from skaal.cli._load import load_app, load_plan
 
+from ._commands import (
+    BuildResult,
+    DeployResult,
+    DoctorReport,
+    StubEmitResult,
+    build,
+    deploy,
+    doctor,
+    init,
+    run,
+    stubs,
+)
 from ._plan import PlanChange, PlanDiff, diff_plan
 from ._resource_map import ResourceMap, ResourceMapEntry
 from ._trace import TraceHit, resolve_trace
@@ -17,15 +29,25 @@ AppTarget: TypeAlias = App | str
 
 __all__ = [
     "AppTarget",
+    "BuildResult",
+    "DeployResult",
+    "DoctorReport",
     "PlanChange",
     "PlanDiff",
     "ResourceMap",
     "ResourceMapEntry",
+    "StubEmitResult",
     "TraceHit",
+    "build",
+    "deploy",
     "diff_plan",
+    "doctor",
+    "init",
     "map",
     "plan",
     "resolve_trace",
+    "run",
+    "stubs",
     "trace",
 ]
 

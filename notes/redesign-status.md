@@ -190,7 +190,7 @@ Checklist:
 - [x] `skaal plan` diffs the current `BoundPlan` against `skaal.lock` for deployable resources and reports create/update/delete rows
 - [x] `skaal map` prints the source → resource tree for an environment and emits `.skaal/map.json`
 - [x] `skaal trace <log-line-or-resource-id>` resolves back to source
-- [x] `skaal.api.plan`, `skaal.api.map`, and `skaal.api.trace` provide strongly typed Python equivalents for the landed Phase 6 CLI surfaces
+- [x] `skaal.api` provides strongly typed Python equivalents for the landed CLI surfaces (`init`, `run`, `plan`, `map`, `trace`, `build`, `deploy`, `stubs`, `doctor`)
 - [ ] `skaal where <resource>` resolves a deployed resource to its cloud-console URL
 - [ ] GitHub Action posts the rendered infra diff as a sticky PR comment
 - [ ] Tag `v0.4.0-alpha.6` pushed *(maintainer action)*
