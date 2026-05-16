@@ -5,9 +5,9 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from skaal.api import WhereHit, resolve_where
+from skaal.api import WhereHit
+from skaal.api import where as api_where
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._load import load_app, load_plan
 
 app = typer.Typer(
     help="Resolve a deployed resource id to its cloud-console URL.",
@@ -35,9 +35,7 @@ def where(
         help="Environment name from `skaal.toml`.",
     ),
 ) -> None:
-    skaal_app = load_app(target)
-    loaded = load_plan(skaal_app, env_name)
-    hit = resolve_where(resource_id, loaded.bound, loaded.env)
+    hit = api_where(resource_id, target, env_name=env_name)
     _render(hit)
 
 

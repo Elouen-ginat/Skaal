@@ -12,6 +12,7 @@ from skaal.deploy import get_target
 from skaal.errors import MissingExtraError, SkaalDeployError
 from skaal.inference.model import ResourceKind
 
+_DEFAULT_AWS_REGION = "us-east-1"
 _AWS_TYPE_PREFERENCE: dict[ResourceKind, tuple[str, ...]] = {
     ResourceKind.STORE: (
         "aws:dynamodb/table:Table",
@@ -160,9 +161,9 @@ def _select_deployed_resource(
         )
 
     preferred = _AWS_TYPE_PREFERENCE.get(resource.inferred.kind, ())
-    for resource_type in preferred:
+    for preferred_type in preferred:
         for state in candidates:
-            if _field(state, "type") == resource_type:
+            if _field(state, "type") == preferred_type:
                 return state
     return candidates[0]
 
@@ -171,10 +172,6 @@ def _deployment_resources(deployment: Mapping[str, Any] | object) -> tuple[Mappi
     resources = _field(deployment, "resources")
     if isinstance(resources, Sequence) and not isinstance(resources, (str, bytes, bytearray)):
         return tuple(resources)
-    if isinstance(deployment, Mapping):
-        nested = deployment.get("deployment")
-        if nested is not None:
-            return _deployment_resources(nested)
     nested = _field(deployment, "deployment")
     if nested is not None:
         return _deployment_resources(nested)
@@ -198,7 +195,7 @@ def _skaal_resource_id(state: Mapping[str, Any] | object) -> str | None:
 
 
 def _aws_console_url(state: Mapping[str, Any] | object, *, region: str | None) -> str:
-    actual_region = region or "us-east-1"
+    actual_region = region or _DEFAULT_AWS_REGION
     resource_type = str(_field(state, "type") or "")
     outputs = _field(state, "outputs")
 
