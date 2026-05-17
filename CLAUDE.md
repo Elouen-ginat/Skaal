@@ -60,14 +60,14 @@ skaal/
 
 During the redesign, the layer map is:
 
-- **Primitives layer** (`skaal.app`, `skaal.module`, `skaal.storage`, `skaal.blob`, `skaal.channel`, `skaal.relational`, `skaal.decorators`): typed, structural primitives the user writes.
+- **Primitives layer** (`skaal.app`, `skaal.module`, `skaal.storage`, `skaal.blob`, `skaal.topic`, `skaal.table`, `skaal.decorators`): typed, structural primitives the user writes.
 - **Inference layer** (`skaal.inference`, *Phase 2*): walks the `App` graph and produces an `InferredPlan` (pydantic, environment-independent).
 - **Binding layer** (`skaal.binding`, *Phase 3*): binds an `InferredPlan` against an `Environment` and the `skaal.lock` file using a fixed defaults table — no search, no SMT.
 - **Backend layer** (`skaal.backends`): concrete implementations registered via the in-tree backend registry; each is also a typed class token (`Postgres`, `BigQuery`, `Redis`, `DynamoDB`, …) usable as the second generic parameter on `Store[T, B]` / `Relational[T, B]` / etc.
 - **Deploy layer** (`skaal.deploy`): Jinja2-driven code generation for Pulumi programs, Dockerfiles, and handler entrypoints — driven from the `BoundPlan`.
 - **Runtime layer** (`skaal.runtime`): local execution engine built on Starlette + Uvicorn.
 
-The `skaal.solver` and `skaal.catalog` packages, the constraint primitives in `skaal.types`, and the `@app.handler` / `@app.scale` / `@app.shared` decorators are scheduled for deletion in Phase 1 (see ADR 029). They still exist on disk until that phase lands.
+The constraint-era `skaal.solver` and `skaal.catalog` packages, the constraint primitives in `skaal.types`, and the `@app.handler` / `@app.scale` / `@app.shared` decorators were removed in Phase 1 (see ADR 029).
 
 ### Development tools & commands
 

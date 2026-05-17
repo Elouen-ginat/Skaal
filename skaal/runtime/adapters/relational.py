@@ -28,7 +28,7 @@ def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None
         raise RuntimeAdapterMissing(f"relational/{bound.backend}")
 
     from skaal.backends.sqlite_backend import SqliteBackend
-    from skaal.relational import wire_relational_model
+    from skaal.table import wire_relational_model
 
     path: str = bound.options.get("path", "skaal_local.db")
     backend: SqliteBackend = SqliteBackend(path=path, namespace=target.__name__)
@@ -43,7 +43,7 @@ def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None
         if close is not None:
             await close()
 
-    # `skaal.relational.get_backend` reads `__skaal_relational_backend__`
+    # `skaal.table.get_backend` reads `__skaal_relational_backend__`
     # off the model class; `runtime.state.relational_backends` is kept
     # as a parallel registry for adapters that want to enumerate live
     # backends without walking every user class.

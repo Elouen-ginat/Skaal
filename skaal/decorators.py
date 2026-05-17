@@ -168,7 +168,7 @@ def _validate_storage_class(cls: type, *, kind: StorageKind) -> None:
         validate_blob_model(cls)
         return
     if kind == "relational":
-        from skaal.relational import validate_relational_model
+        from skaal.table import validate_relational_model
 
         validate_relational_model(cls)
 

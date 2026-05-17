@@ -44,8 +44,8 @@ from skaal.types.invoke import AuthClaims
 from skaal.types.protocols import AsyncPublishTarget
 
 if TYPE_CHECKING:
-    from skaal.channel import Topic
     from skaal.schedule import Cron, Every
+    from skaal.topic import Topic
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)

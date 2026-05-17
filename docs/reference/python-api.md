@@ -20,7 +20,7 @@ This reference is split by submodule so you can jump directly to the slice you n
 	<section class="skaal-example-card">
 		<div>
 			<h3>Data Surfaces</h3>
-			<p><code>skaal.storage</code>, <code>skaal.blob</code>, <code>skaal.relational</code>, and <code>skaal.channel</code>.</p>
+			<p><code>skaal.storage</code>, <code>skaal.blob</code>, <code>skaal.table</code>, and <code>skaal.topic</code>.</p>
 			<div class="skaal-example-links">
 				<a href="python-api-data/">Open reference</a>
 			</div>

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from skaal.migrate.engine import MigrationKind, state_dir
-from skaal.relational import get_backend, is_relational_model
+from skaal.table import get_backend, is_relational_model
 from skaal.types.relational import (
     RelationalMigrationBackend,
     RelationalMigrationOp,

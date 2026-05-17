@@ -27,7 +27,6 @@ from skaal.binding import (
     plan,
 )
 from skaal.blob import BlobStore
-from skaal.channel import Topic
 from skaal.components import ExternalQueue, ExternalStorage
 from skaal.decorators import (
     FunctionRef,
@@ -47,10 +46,11 @@ from skaal.inference import (
 )
 from skaal.module import Module, ModuleExport
 from skaal.plugins import Plugin, PluginRegistry, load_plugins
-from skaal.relational import Table
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.secrets import Secret, SecretRegistry
 from skaal.storage import Store
+from skaal.table import Table
+from skaal.topic import Topic
 from skaal.types import (
     TTL,
     BeforeInvocation,

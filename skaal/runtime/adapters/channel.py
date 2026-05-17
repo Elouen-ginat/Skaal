@@ -1,7 +1,7 @@
 """Adapter for `CHANNEL` resources.
 
 The local-defaults entry for channels is `in-process` — a thin
-asyncio-queue wrapper that ships with `skaal.channel`. The adapter is
+asyncio-queue wrapper that ships with `skaal.topic`. The adapter is
 a no-op for that case because the `Channel` subclass already self-wires
 on instantiation; richer backends (Redis Streams, SQS, Pub/Sub) live
 on the deploy side and raise `RuntimeAdapterMissing` here.
