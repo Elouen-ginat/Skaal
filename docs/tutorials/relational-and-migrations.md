@@ -51,7 +51,7 @@ async def list_comments(todo_id: str) -> dict:
         return {"comments": [row.model_dump() for row in result.all()]}
 ```
 
-This mirrors the relational slice of `examples/02_todo_api/app.py` without the rest of the application around it.
+This mirrors the relational slice of `examples/todo_api/app.py` without the rest of the application around it.
 
 ## Configure the Project App Reference
 
@@ -123,7 +123,7 @@ The repository todo example combines three storage shapes in one application:
 - `Comments` in the relational tier
 - `TodoSearchIndex` in the vector tier
 
-That makes `examples/02_todo_api/app.py` the best next reference once you are comfortable with the migration commands.
+That makes `examples/todo_api/app.py` the best next reference once you are comfortable with the migration commands.
 
 ## Reference Links
 

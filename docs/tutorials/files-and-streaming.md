@@ -75,7 +75,7 @@ List the upload prefix:
 curl -s http://127.0.0.1:8000/files
 ```
 
-The full repository example at `examples/07_file_upload_api/app.py` expands this into downloads, metadata, and cursor validation.
+The full repository example at `examples/file_upload_api/app.py` expands this into downloads, metadata, and cursor validation.
 
 ## Stream a Response
 
@@ -112,7 +112,7 @@ Call it with a client that keeps the connection open:
 curl -N "http://127.0.0.1:8000/chat?prompt=hello%20streaming%20world"
 ```
 
-This is the pattern used in `examples/06_fastapi_streaming/app.py`.
+This is the pattern used in `examples/fastapi_streaming/app.py`.
 
 ## Where To Go Next
 
