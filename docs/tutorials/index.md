@@ -1,31 +1,23 @@
 # Tutorials
 
-Skaal is easiest to learn as a sequence, not as a reference dump. The tutorials below are deliberately progressive: each one adds a single new layer to the same mental model.
-
-1. declare storage and compute
-2. run locally
-3. mount a public HTTP framework when you need one
-4. solve a target-specific plan
-5. generate and deploy artifacts from that plan
-
-Every tutorial is grounded in an existing example or public API surface from this repository.
+Skaal is easiest to learn as a sequence, not as a reference dump. Each tutorial adds one new layer to the same model: declare the app, run it locally, mount public HTTP when you need it, then bind and deploy it by environment.
 
 ## Recommended Path
 
 | Tutorial | Focus | Draws from |
 | --- | --- | --- |
-| [1. Build a Counter App](first-app.md) | `App`, `Store`, `@app.storage`, `@app.expose`, local run loop | `examples/counter.py`, `examples/hello_world/app.py` |
-| [2. Add a FastAPI Surface](http-api.md) | Mounted ASGI, `app.invoke(...)`, public routes | `examples/todo_api/app.py`, `examples/fastapi_streaming/app.py` |
-| [3. Plan, Build, and Deploy](planning-and-deployment.md) | Catalogs, `plan.skaal.lock`, build artifacts, deploy loop | `skaal/cli/*.py`, `catalogs/*.toml` |
-| [4. Relational Data and Migrations](relational-and-migrations.md) | SQLModel storage, `Table.session()`, relational CLI | `examples/todo_api/app.py`, `skaal/cli/migrate/relational_cmd.py` |
+| [1. Your first app](first-app.md) | `App`, `Store`, `@app.storage`, `@app.expose`, local run loop | `examples/counter.py` |
+| [2. Adding HTTP routes](http-api.md) | Mounted ASGI, `app.invoke(...)`, public routes | `examples/todo_api/app.py`, `examples/fastapi_streaming/app.py` |
+| [3. Planning and deploying](planning-and-deployment.md) | `skaal.toml`, `skaal.lock`, build artifacts, deploy loop | `skaal/cli/*.py`, `examples/todo_api/app.py` |
+| [4. Relational data](relational-and-migrations.md) | SQLModel storage, `Table.session()`, relational model shape | `examples/todo_api/app.py` |
 | [5. Files and Streaming](files-and-streaming.md) | `BlobStore`, pagination, `app.invoke_stream(...)` | `examples/file_upload_api/app.py`, `examples/fastapi_streaming/app.py` |
 
 ## Before You Begin
 
-Install the local run loop and runtime helpers:
+Install the local runtime:
 
 ```bash
-pip install "skaal[serve,runtime]"
+pip install "skaal[serve]"
 ```
 
 For the HTTP and upload tutorials, add FastAPI support:
@@ -34,29 +26,26 @@ For the HTTP and upload tutorials, add FastAPI support:
 pip install "skaal[fastapi]"
 ```
 
-If you want a project with the Skaal config already in place, scaffold one first:
+For the deploy tutorial, add the deploy extras for your target:
 
 ```bash
-skaal init demo
-cd demo
-pip install -e .
+pip install "skaal[deploy,aws]"
 ```
 
-That gives you a `pyproject.toml` with `[tool.skaal] app = "demo.app:app"`, which keeps later commands short.
+What you will be able to do after this track:
 
-## What This Track Covers
+- build and run a Skaal app from one file
+- mount FastAPI on top of Skaal compute
+- define named environments in `skaal.toml`
+- render and deploy artifacts for one environment
+- use `Table`, `BlobStore`, and streaming responses in realistic app shapes
 
-- stable local development with `skaal run`
-- the mounted HTTP model for FastAPI or another ASGI framework
-- the solver workflow behind `skaal plan`
-- local and cloud-shaped artifact generation through `skaal build`
-- relational migrations through `skaal migrate relational`
-- blob uploads and streaming responses
+## What this does not cover
 
-## What It Does Not Cover
-
-This track intentionally leaves out the mesh runtime and other experimental surfaces. The goal here is to teach the stable workflow that shows up across the examples, CLI commands, and tests in the repository.
+- project scaffolding through `skaal init`
+- the public migration command group
+- experimental runtime surfaces
 
 ## Start Here
 
-Begin with [Tutorial 1: Build a Counter App](first-app.md).
+Begin with [Tutorial 1: Your first app](first-app.md).

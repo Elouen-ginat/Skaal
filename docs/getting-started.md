@@ -1,89 +1,112 @@
 # Getting Started
 
-Skaal makes the most sense as one loop: declare the behavior your app needs, run it locally, solve a target-specific plan, then build and deploy from that same app model. This page gets you to that loop quickly and points you at the guided tutorials.
+This page gets you from zero to a running Skaal app with the smallest possible surface: one `Store`, one exposed function, and the local runtime.
 
 ## Install
 
-Start with the local run loop and runtime extras:
+Start with the local runtime:
 
 ```bash
-pip install "skaal[serve,runtime]"
+pip install "skaal[serve]"
 ```
 
-Add extras only when you need them:
+Add extras when you need them:
 
 ```bash
-pip install "skaal[fastapi]"   # mounted FastAPI routes and multipart uploads
-pip install "skaal[vector]"    # vector search examples and tutorials
+pip install "skaal[fastapi]"      # mounted FastAPI apps, uploads, streaming
+pip install "skaal[deploy,aws]"   # build and deploy to AWS with Pulumi
 ```
 
-## Choose Your Starting Point
+## Write a small app
 
-### Scaffold a project
+Create `counter_app.py`:
 
-If you want Skaal to configure `pyproject.toml` for you, start here:
+```python
+from skaal import App, Store
+
+app = App("counter")
+
+
+@app.storage
+class Counts(Store[int]):
+    """Simple named counters."""
+
+
+@app.expose()
+async def increment(name: str, by: int = 1) -> dict:
+    current = await Counts.get(name) or 0
+    value = current + by
+    await Counts.set(name, value)
+    return {"name": name, "value": value}
+```
+
+## Run it
 
 ```bash
-skaal init demo
-cd demo
-pip install -e .
-skaal run
+skaal run counter_app:app
 ```
 
-The scaffold writes `[tool.skaal] app = "demo.app:app"`, which means later commands like `skaal migrate relational upgrade` can resolve your app without repeating `MODULE:APP` on every call.
+What you see:
 
-### Run the bundled counter example
+- A local ASGI server on `http://127.0.0.1:8000`.
+- Generated invoke endpoints under `/_skaal/invoke/*`.
+- In-memory local storage by default.
 
-If you want the shortest path to a running app, use the repository example directly:
+What gets written:
 
-```bash
-pip install "skaal[examples]"
-skaal run examples.counter:app
-```
+- Nothing yet. `skaal run` does not render deploy artifacts.
 
-Then open a second terminal and try:
+## Call the app
+
+Increment a counter:
 
 ```bash
 curl -s http://127.0.0.1:8000/_skaal/invoke/increment \
-    -H "Content-Type: application/json" \
-    -d '{"name": "hits"}'
-
-curl -s http://127.0.0.1:8000/_skaal/invoke/list_counts \
-    -H "Content-Type: application/json" \
-    -d '{}'
+  -H "Content-Type: application/json" \
+  -d '{"name": "hits", "by": 3}'
 ```
 
-## The Progressive Tutorial Track
-
-The tutorials are intentionally simple and build one idea at a time.
-
-| Tutorial | Outcome |
-| --- | --- |
-| [1. Build a Counter App](tutorials/first-app.md) | Learn `App`, `Store`, `@app.storage`, `@app.expose`, and the local HTTP surface. |
-| [2. Add a FastAPI Surface](tutorials/http-api.md) | Mount FastAPI and route public HTTP through `app.invoke(...)`. |
-| [3. Plan, Build, and Deploy](tutorials/planning-and-deployment.md) | Use catalogs, inspect `plan.skaal.lock`, then generate and deploy artifacts. |
-| [4. Relational Data and Migrations](tutorials/relational-and-migrations.md) | Add SQLModel-backed storage and use the Alembic-powered migration commands. |
-| [5. Files and Streaming](tutorials/files-and-streaming.md) | Handle blob uploads and stream responses from Skaal functions. |
-
-If you want the overview first, read [Tutorial Overview](tutorials/index.md).
-
-## The Core Command Loop
-
-The CLI revolves around the plan file.
+Read the current value back:
 
 ```bash
-skaal plan examples.counter:app --target local --catalog catalogs/local.toml
-skaal diff
-skaal build --out artifacts
-skaal deploy --artifacts-dir artifacts
+curl -s http://127.0.0.1:8000/_skaal/invoke/get_count \
+    -H "Content-Type: application/json" \
+    -d '{"name": "hits"}'
 ```
 
-That writes `plan.skaal.lock`, generates a self-contained `artifacts/` directory, and applies the local Pulumi stack. To retarget the same app, change the target and catalog instead of rewriting your business logic.
+## Add environments when you need them
 
-## Where To Go Next
+Local development works without `skaal.toml`. When you want named environments, add one at the repo root:
 
-- Read [Tutorial Overview](tutorials/index.md) if you want the guided path.
-- Read [CLI](cli.md) for the full command surface.
-- Read [HTTP Integration](http.md) for the mounted ASGI model.
-- Read [Examples](examples.md) to jump into the full repository apps.
-- Read [Python API](reference/python-api.md) if you want to drive the planner in-process.
+```toml
+[env.local]
+target = "local"
+
+[env.prod]
+target = "aws"
+region = "us-east-1"
+```
+
+Then `skaal plan counter_app:app --env local` and `skaal deploy counter_app:app --env prod` can resolve the environment by name.
+
+## If you want a full example instead
+
+Run the repository counter app directly:
+
+```bash
+skaal run examples.counter:app
+```
+
+Or jump to [Examples](examples.md) if you prefer a mounted FastAPI API, uploads, or streaming.
+
+## Project scaffold status
+
+!!! note "`skaal init`"
+
+    The project scaffolder is planned but not yet implemented in `0.4.0a0`. For now, start from a single file or copy one of the repository examples.
+
+## Next
+
+- Continue to [Concepts](concepts.md) if you want the vocabulary first.
+- Continue to [Tutorials](tutorials/index.md) if you want the guided path.
+- Continue to [CLI commands](cli.md) if you want the full command surface.

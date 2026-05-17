@@ -30,6 +30,9 @@ _DOCS_DIR = _REPO_ROOT / "docs"
 # Tokens that are already absent from `docs/` and must stay absent. Each is
 # enforced as a hard assertion; a regression here is a real bug.
 _CLEAN_DOC_TOKENS: tuple[str, ...] = (
+    "constraint",
+    "Constraint",
+    "Latency",
     "Durability",
     "AccessPattern",
     "Throughput",
@@ -43,15 +46,6 @@ _CLEAN_DOC_TOKENS: tuple[str, ...] = (
     "Outbox",
     "Saga",
     "Projection",
-)
-
-# Tokens that still appear in the prose pages and will be removed by the
-# Phase 7 §7.2 page-by-page rewrite. Marked `xfail`; each one flips to
-# `_CLEAN_DOC_TOKENS` in the same commit that retires its last call site.
-_DIRTY_DOC_TOKENS: tuple[str, ...] = (
-    "constraint",
-    "Constraint",
-    "Latency",
 )
 
 # Subset that *signatures* and *CLI help* must never contain (no
@@ -93,21 +87,6 @@ def test_constraint_token_stays_absent_from_docs(token: str) -> None:
         f"Constraint-era token {token!r} was reintroduced in: {', '.join(hits)}. "
         "ADR 028 §12 criterion 8 forbids it in user-facing docs."
     )
-
-
-@pytest.mark.parametrize("token", _DIRTY_DOC_TOKENS)
-@pytest.mark.xfail(
-    reason="Phase 7 §7.2 docs rewrite still pending (ADR 035 Decision 1).",
-    strict=True,
-)
-def test_dirty_constraint_token_clears_from_docs(token: str) -> None:
-    """Token still appears in prose; flips green once §7.2 retires it.
-
-    `strict=True` means a passing test is reported as `XPASS` and fails the
-    suite — that's the signal to move the token to `_CLEAN_DOC_TOKENS`.
-    """
-    hits = _scan_docs(token)
-    assert not hits, f"Constraint-era token {token!r} still appears in: {', '.join(hits)}."
 
 
 @pytest.mark.parametrize(

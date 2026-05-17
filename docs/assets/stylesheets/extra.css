@@ -1,6 +1,8 @@
 :root > *{
   --skaal-layout-max: 1600px;
   --skaal-sidebar-width: 11rem;
+  --skaal-primary-sidebar-width: calc(var(--skaal-sidebar-width) + 4rem);
+  --skaal-primary-sidebar-width-mobile: 12.1rem;
   --skaal-panel-bg: rgba(255, 255, 255, 0.92);
   --skaal-panel-border: var(--border-1);
   --skaal-panel-strong: rgba(14, 23, 38, 0.08);
@@ -29,6 +31,10 @@
   --md-code-hl-comment-color: var(--fg-on-dark-3);
   --md-code-hl-generic-color: var(--fg-on-dark-2);
   --md-code-hl-variable-color: #9ed0ff;
+}
+
+.md-container {
+  padding-inline: 1rem
 }
 
 body {
@@ -131,7 +137,6 @@ button {
 [dir=ltr] .md-header__title {
   margin-left: 0 !important;
   margin-right: .4rem;
-  flex-grow: 0.5;
 }
 
 .md-header__button.md-logo img {
@@ -970,9 +975,9 @@ article hr {
 }
 
 .md-sidebar--primary {
-  width: calc(var(--skaal-sidebar-width) + 4rem) !important;
-  max-width: calc(var(--skaal-sidebar-width) + 4rem);
-  flex: 0 0 calc(var(--skaal-sidebar-width) + 4rem) !important;
+  width: var(--skaal-primary-sidebar-width) !important;
+  max-width: var(--skaal-primary-sidebar-width);
+  flex: 0 0 var(--skaal-primary-sidebar-width) !important;
 }
 
 .md-sidebar--secondary {
@@ -1020,6 +1025,51 @@ article hr {
 
   .skaal-split-callout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--primary {
+    width: var(--skaal-primary-sidebar-width-mobile) !important;
+    max-width: var(--skaal-primary-sidebar-width-mobile);
+    flex: 0 0 var(--skaal-primary-sidebar-width-mobile) !important;
+  }
+
+  [dir=ltr] .md-sidebar--primary {
+    left: calc(-1 * var(--skaal-primary-sidebar-width-mobile));
+  }
+
+  [dir=rtl] .md-sidebar--primary {
+    right: calc(-1 * var(--skaal-primary-sidebar-width-mobile));
+  }
+
+  [data-md-toggle="drawer"]:checked ~ .md-container .md-sidebar--primary {
+    transform: translateX(var(--skaal-primary-sidebar-width-mobile));
+    margin: 0.5em;
+    border-radius: var(--radius-panel)
+  }
+
+  [dir=rtl] [data-md-toggle="drawer"]:checked ~ .md-container .md-sidebar--primary {
+    transform: translateX(calc(-1 * var(--skaal-primary-sidebar-width-mobile)));
+  }
+
+  .md-sidebar--primary .md-sidebar__scrollwrap {
+    margin: 0;
+    border: none;
+    border-radius: inherit;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .md-sidebar--primary .md-sidebar__inner {
+    padding: 0 !important;
+  }
+
+  .md-nav--primary .md-nav__title .md-logo {
+      display: block;
+      margin-bottom: 10%;
+      padding: 0;
+      position: relative;
   }
 }
 

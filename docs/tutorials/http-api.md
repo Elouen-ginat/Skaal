@@ -1,4 +1,4 @@
-# Tutorial 2: Add a FastAPI Surface
+# Tutorial 2: Adding HTTP routes
 
 The first tutorial used Skaal's generated local HTTP endpoints directly. That is useful for learning, but real applications usually want a proper public HTTP framework for routing, validation, auth, and OpenAPI generation. Skaal's job is to execute the application work behind those routes.
 
@@ -72,7 +72,7 @@ async def http_create_todo(payload: CreateTodoRequest) -> dict:
     return result
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)
 ```
 
 Two boundaries matter here:
@@ -83,10 +83,8 @@ Two boundaries matter here:
 ## Run the API
 
 ```bash
-skaal run todo_api:app --persist
+skaal run todo_api:app --env local
 ```
-
-Using `--persist` here is helpful because the todo list survives restarts while you iterate.
 
 ## Call the Public Routes
 
@@ -113,14 +111,19 @@ Calling the decorated function directly can still be valid for in-process code, 
 
 Skaal also reserves `/_skaal/*` for internal runtime traffic. Your mounted ASGI app owns the public paths outside that namespace.
 
-## Compare With the Full Example
+## Compare with the full example
 
 The repository version at `examples/todo_api/app.py` grows this pattern into a more complete application:
 
 - key-value storage for todo items
 - relational storage for comments
-- vector search for semantic lookup
 - FastAPI routes that call Skaal compute
+
+## What this does not cover
+
+- named deploy environments
+- relational model declarations in detail
+- uploads or streaming responses
 
 That is the example this tutorial sequence builds toward.
 
@@ -132,4 +135,4 @@ That is the example this tutorial sequence builds toward.
 
 ## Continue
 
-Next: [Tutorial 3: Plan, Build, and Deploy](planning-and-deployment.md).
+Next: [Tutorial 3: Planning and deploying](planning-and-deployment.md).

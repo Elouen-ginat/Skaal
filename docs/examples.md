@@ -1,12 +1,12 @@
 # Example Apps
 
-The repository includes example apps that cover the shapes Skaal is meant to support in practice: simple services, mounted HTTP APIs, streaming responses, and uploads.
+The repository examples are the fastest way to see the framework in real application shapes instead of isolated snippets.
 
 <div class="skaal-example-grid">
   <section class="skaal-example-card">
     <div>
       <h3>Hello World</h3>
-      <p>The smallest end-to-end app model for learning how <code>App</code>, typed storage, and the local run loop fit together.</p>
+      <p>The smallest possible app model for learning how <code>App</code>, <code>Store</code>, and the local run loop fit together.</p>
       <div class="skaal-example-links">
         <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/hello_world">Browse example</a>
       </div>
@@ -15,7 +15,7 @@ The repository includes example apps that cover the shapes Skaal is meant to sup
   <section class="skaal-example-card">
     <div>
       <h3>Todo API</h3>
-      <p>A practical CRUD API shape that shows Skaal alongside a mounted HTTP framework.</p>
+      <p>A mounted FastAPI service with key-value and relational storage.</p>
       <div class="skaal-example-links">
         <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/todo_api">Browse example</a>
       </div>
@@ -33,8 +33,8 @@ The repository includes example apps that cover the shapes Skaal is meant to sup
   </section>
   <section class="skaal-example-card">
     <div>
-      <h3>Top-level single-file examples</h3>
-      <p>Smaller single-module examples — <code>counter.py</code>, <code>session_cache.py</code>, and <code>team_directory.py</code> — sit at the top of <code>examples/</code> for direct entry-point inspection.</p>
+      <h3>Single-file app declarations</h3>
+      <p><code>counter.py</code>, <code>session_cache.py</code>, and <code>team_directory.py</code> show compact patterns for counters, Redis-pinned sessions, and secondary-index queries.</p>
       <div class="skaal-example-links">
         <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples">Browse examples directory</a>
       </div>
@@ -44,8 +44,11 @@ The repository includes example apps that cover the shapes Skaal is meant to sup
 
 ## Which example to start from
 
-- Start with Hello World if you are learning the application model.
-- Start with Todo API if you want a real HTTP service shape.
+- Start with Hello World if you are learning the model.
+- Start with `counter.py` if you want a single file and the generated invoke endpoint.
+- Start with Todo API if you want a realistic mounted HTTP service.
 - Start with FastAPI Streaming or File Upload API if your workload depends on streaming or multipart behavior.
+- Start with Session Cache if you want to see a type-pinned backend.
+- Start with Team Directory if you want to see native secondary indexes.
 
-These examples are the fastest way to see how Skaal behaves outside a stripped-down API reference.
+These examples are the best anchors for the tutorial track and the guide pages.

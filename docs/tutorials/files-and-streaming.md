@@ -1,6 +1,6 @@
 # Tutorial 5: Files and Streaming
 
-The first four tutorials cover the core planner loop. This last tutorial adds two advanced-but-practical I/O patterns that already exist in the repository examples: blob storage and streaming responses.
+The earlier tutorials cover the core app and environment flow. This last tutorial adds two practical I/O patterns that already exist in the repository examples: blob storage and streaming responses.
 
 ## What You Will Learn
 
@@ -27,7 +27,7 @@ app = App("file-api")
 api = FastAPI(title="Tutorial File API")
 
 
-@app.storage(kind="blob", read_latency="< 500ms", durability="durable")
+@app.storage(kind="blob")
 class Uploads(BlobStore):
     pass
 
@@ -53,13 +53,13 @@ async def list_files() -> dict:
     }
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)
 ```
 
 Run it:
 
 ```bash
-skaal run file_api:app
+skaal run file_api:app --env local
 ```
 
 Upload a file:
@@ -113,6 +113,12 @@ curl -N "http://127.0.0.1:8000/chat?prompt=hello%20streaming%20world"
 ```
 
 This is the pattern used in `examples/fastapi_streaming/app.py`.
+
+## What this does not cover
+
+- backend-specific blob options in `skaal.toml`
+- auth or validation around uploads
+- cloud deploy configuration for the mounted app
 
 ## Where To Go Next
 

@@ -6,40 +6,30 @@ Honest answers to the questions a new user usually has before adopting Skaal.
 
 ### How mature is Skaal?
 
-Alpha (0.3.1). The constraint model, Z3 solver, plan format, and generated deployment artifacts are stable in shape — but the API surface still moves. Breaking changes go through ADRs in [`notes/design/`](https://github.com/Elouen-ginat/Skaal/tree/main/notes/design).
+Alpha (`0.4.0a0`). The code-first primitives, environment binding, lock file, and deploy pipeline are in place. Some command groups are still catching up to that model. Breaking changes still go through ADRs in `notes/design/`.
 
-The most exercised path is **local + AWS Lambda + DynamoDB / Postgres / S3**. GCP (Cloud Run, Firestore, GCS), the vector tier (Chroma, pgvector), and the Rust `mesh/` runtime are in active development.
-
-### What does "Infrastructure as Constraints" actually mean in practice?
-
-You declare what a resource must *do* — its read latency budget, durability class, throughput floor, residency, access pattern — and Skaal selects a concrete backend from a TOML catalog that satisfies all of those at the lowest declared cost. The choice is recorded in `plan.skaal.lock`, including rejected candidates and the reason each was rejected.
-
-You change the backend by changing the catalog, not the application code.
-
-### Is the solver overkill for small apps?
-
-For a single `Map` and a single backend, yes — but the cost is negligible (Z3 returns in milliseconds for typical app graphs). The payoff is when the catalog has more than one viable backend per resource, when you have a development catalog and a production catalog, or when prices change and you re-solve instead of refactor.
+The most exercised path today is local plus AWS-focused deployment. GCP and some CLI polish are still moving.
 
 ## Lock-in and ejection
 
 ### Can I stop using Skaal and keep my deployment?
 
-Yes. `skaal build` writes a complete Pulumi program plus Dockerfile, handler entrypoint, and stack metadata under `artifacts/`. Those files are normal Pulumi — you can commit them, run `pulumi up` directly, and never invoke Skaal again. The eject path is "stop running `skaal build`."
+Yes. `skaal build` writes a complete render tree under `.skaal/build/<env>/` by default. Those files are normal deploy artifacts: Dockerfiles, entrypoints, Pulumi program files, and stack metadata. The eject path is simple: stop regenerating them.
 
 What you'd lose by ejecting:
 
-- Re-solving when the catalog changes.
-- The `plan.skaal.lock` audit trail.
-- Decorator-driven regeneration of handlers.
+- The environment-to-plan bind step.
+- The `skaal.lock` pinning flow.
+- The ability to regenerate the deploy output from the app graph.
 
 What you'd keep:
 
 - All generated infrastructure code.
-- Your application code (`skaal` is an import; remove the decorators by inlining the chosen backend client).
+- Your application code.
 
 ### Does Skaal hide the Pulumi code?
 
-No. `artifacts/` is meant to be readable. The generated Pulumi program uses standard `pulumi_aws` / `pulumi_gcp` resource types; there is no proprietary runtime.
+No. The render tree is meant to be readable. Skaal is opinionated about how it gets there, not about hiding the result.
 
 ## License
 
@@ -56,35 +46,31 @@ The **generated artifacts** (your Pulumi program, your Dockerfile, your applicat
 
 To keep downstream forks of the framework itself open. The generated output is permissively usable; the planner and runtime are copyleft. If this is a blocker, [open an issue](https://github.com/Elouen-ginat/Skaal/issues) — relicensing can be discussed.
 
-## Solver behavior
+## Adoption
 
-### What happens if no backend in the catalog satisfies my constraints?
+### When should I not use Skaal?
 
-`skaal plan` returns `UnsatisfiableConstraintsError` with the offending constraint and the closest candidates. Common causes:
+Do not use Skaal if any of these are true:
 
-- Latency budget tighter than any catalog entry advertises.
-- Residency requirement not present on any backend in the active target.
-- Conflicting durability + throughput pairs that no single backend covers.
+- You already know you want one cloud, one backend choice per resource, and handwritten Pulumi is fine.
+- Your team wants a hosted platform instead of generated infrastructure you own.
+- You need a stable project scaffolder and fully surfaced migrations in the CLI today.
 
-Run `skaal plan --explain` to see candidate-by-candidate rejection reasons.
+Read [When to use Skaal](when-to-use.md) for the decision table.
 
-### Can I pin a backend instead of letting the solver choose?
+### Is there a migration path from 0.3.x?
 
-Yes — declare a constraint that only one catalog entry satisfies (e.g. `backend="postgres"` in your storage decorator), or remove competing entries from the catalog with the `remove` overlay key. Pinning is supported but defeats the point; we prefer overlays.
-
-### How fast is the solver?
-
-Sub-second for application graphs we've tested (dozens of resources). Z3 caches between runs are not yet shared; this is on the roadmap.
+No. The current line is a new product surface. If you need the earlier release, pin `skaal==0.3.1`.
 
 ## Operational concerns
 
 ### How are secrets handled?
 
-Generated artifacts never embed secrets. Skaal references environment variables and the configured secrets backend (`skaal[secrets-aws]` or `skaal[secrets-gcp]`). Catalog files may contain non-sensitive deployment hints (region, table class) but not credentials.
+Generated artifacts should not embed secrets. Skaal references environment variables and the configured secrets backend. `skaal.toml` is for environment shape and backend options, not credentials.
 
 ### Does Skaal manage migrations?
 
-Relational tier yes — SQLModel-backed entities use Alembic via `skaal migrate` (autogenerate, upgrade, downgrade, drift, dry-run SQL). Other tiers (DynamoDB, Firestore, blob, vector) follow the 6-stage migration engine where applicable; see [`skaal/migrate/`](https://github.com/Elouen-ginat/Skaal/tree/main/skaal/migrate).
+The relational layer and migration engine exist in the codebase. The public migration CLI is still being wired into the current alpha command surface, so the docs call that out where it matters.
 
 ### How do I observe a deployed Skaal app?
 
@@ -98,13 +84,13 @@ See the dedicated [comparison page](comparison.md).
 
 ### Why not just use `pulumi` directly?
 
-You can. Skaal exists for the case where you want **one application file** to target multiple environments and let cost or capability differences pick the backend, without maintaining N parallel Pulumi programs by hand. If you have one target and one backend choice per resource, plain Pulumi is simpler.
+You can. Skaal exists for the case where you want one app graph to target more than one environment without hand-maintaining parallel Pulumi programs. If that is not your problem, plain Pulumi is simpler.
 
 ## Contributing
 
-### How do I propose a new backend or constraint type?
+### How do I propose a new backend or primitive change?
 
-Open an issue first; significant changes go through an ADR under [`notes/design/`](https://github.com/Elouen-ginat/Skaal/tree/main/notes/design). For a backend, the checklist is in [`CONTRIBUTING.md`](https://github.com/Elouen-ginat/Skaal/blob/main/CONTRIBUTING.md): implementation under `skaal/backends/`, entry-point registration, catalog entry, contract test, doc update.
+Open an issue first; significant changes go through an ADR under [`notes/design/`](https://github.com/Elouen-ginat/Skaal/tree/main/notes/design). For a backend, the checklist is in [`CONTRIBUTING.md`](https://github.com/Elouen-ginat/Skaal/blob/main/CONTRIBUTING.md).
 
 ### Where do design discussions happen?
 
