@@ -1,9 +1,9 @@
-"""Tests for the runtime's per-kind dispatch table."""
+"""Tests for the local runtime's per-kind dispatch table."""
 
 from __future__ import annotations
 
 from skaal.inference.model import ResourceKind
-from skaal.runtime.dispatch import LOCAL_DISPATCH, dispatch_for
+from skaal.runtime.local.dispatch import LOCAL_DISPATCH, dispatch_for
 
 
 def test_every_resource_kind_has_an_adapter() -> None:

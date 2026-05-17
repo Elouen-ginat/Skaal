@@ -15,6 +15,8 @@ Then try:
     curl -s http://localhost:8000/reset -d '{"name": "hits"}' | jq
 """
 
+from typing import Any
+
 from skaal import App, Store
 
 app = App("counter")
@@ -26,7 +28,7 @@ class Counts(Store[int]):
 
 
 @app.expose()
-async def increment(name: str, by: int = 1) -> dict:
+async def increment(name: str, by: int = 1) -> dict[str, Any]:
     """Increment counter ``name`` by ``by`` (default 1). Returns new value."""
     current = await Counts.get(name) or 0
     new_value = current + by
@@ -35,21 +37,21 @@ async def increment(name: str, by: int = 1) -> dict:
 
 
 @app.expose()
-async def get_count(name: str) -> dict:
+async def get_count(name: str) -> dict[str, Any]:
     """Return the current value of counter ``name``."""
     value = await Counts.get(name) or 0
     return {"name": name, "value": value}
 
 
 @app.expose()
-async def reset(name: str) -> dict:
+async def reset(name: str) -> dict[str, Any]:
     """Reset counter ``name`` to zero."""
     await Counts.delete(name)
     return {"name": name, "value": 0}
 
 
 @app.expose()
-async def list_counts() -> dict:
+async def list_counts() -> dict[str, Any]:
     """Return all counters and their values."""
     entries = await Counts.list()
     return {"counts": dict(entries)}

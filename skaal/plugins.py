@@ -1,4 +1,4 @@
-"""Skaal plugin protocol — entry-point-driven extension of the deploy + binding registries.
+"""Skaal plugin protocol — entry-point-driven extension of deploy, runtime, and binding.
 
 External libraries contribute to Skaal by declaring one or more
 `SkaalPlugin` subclasses and exposing them via a ``skaal.plugins``
@@ -66,6 +66,12 @@ if TYPE_CHECKING:
     from skaal.binding.registry import BackendSpec
     from skaal.deploy._protocol import DeployTarget
     from skaal.inference.model import ResourceKind
+    from skaal.runtime._registry import (
+        RuntimeAdapterFn,
+        RuntimeBackendFactoryFn,
+        RuntimeBindingWiringFn,
+        RuntimeTargetRegistration,
+    )
 
 
 _LOG = logging.getLogger("skaal.plugins")
@@ -172,6 +178,69 @@ class PluginRegistry:
 
         _LOG.debug("plugin %r adding backend %r", self._plugin_name, entry.token_class.name)
         register_backend(entry)
+
+    def add_runtime_target(self, target: RuntimeTargetRegistration) -> None:
+        """Register a runtime target bucket for local or cold-start wiring."""
+        from skaal.runtime._registry import register_runtime_target
+
+        _LOG.debug("plugin %r adding runtime target %r", self._plugin_name, target.name)
+        register_runtime_target(target)
+
+    def add_runtime_adapter(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        adapter: RuntimeAdapterFn,
+    ) -> None:
+        """Register a local-runtime adapter on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime adapter for %r on %r",
+            self._plugin_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_adapter(kind, adapter)
+
+    def add_runtime_binding_wirer(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        wirer: RuntimeBindingWiringFn,
+    ) -> None:
+        """Register a cold-start binding wirer on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime binding wirer for %r on %r",
+            self._plugin_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_binding_wirer(kind, wirer)
+
+    def add_runtime_backend_factory(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        backend_name: str,
+        factory: RuntimeBackendFactoryFn,
+    ) -> None:
+        """Register a runtime backend factory on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime backend factory %r for %r on %r",
+            self._plugin_name,
+            backend_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_backend_factory(kind, backend_name, factory)
 
     def add_where_console_url(
         self,

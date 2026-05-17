@@ -31,6 +31,7 @@ Try it:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel
@@ -53,8 +54,8 @@ class Todo(BaseModel):
     title: str
     description: str = ""
     done: bool = False
-    tags: list[str] = PydanticField(default_factory=list)
-    attachments: list[Attachment] = PydanticField(default_factory=list)
+    tags: list[str] = PydanticField(default_factory=list[str])
+    attachments: list[Attachment] = PydanticField(default_factory=list[Attachment])
     created_at: str = PydanticField(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: str | None = None
 
@@ -66,8 +67,8 @@ class CreateTodoRequest(BaseModel):
     id: str
     title: str
     description: str = ""
-    tags: list[str] = PydanticField(default_factory=list)
-    attachments: list[Attachment] = PydanticField(default_factory=list)
+    tags: list[str] = PydanticField(default_factory=list[str])
+    attachments: list[Attachment] = PydanticField(default_factory=list[Attachment])
 
 
 class CommentRequest(BaseModel):
@@ -90,7 +91,7 @@ class Todos(Store[Todo]):
 class Comments(Table, table=True):
     """Structured todo comments stored in the relational tier."""
 
-    __tablename__ = "todo_comments"
+    __tablename__ = "todo_comments"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     todo_id: str = Field(index=True)
@@ -101,9 +102,10 @@ class Comments(Table, table=True):
 
 async def _comment_rows(todo_id: str) -> list[Comments]:
     async with Comments.session() as session:
-        result = await session.exec(
-            select(Comments).where(Comments.todo_id == todo_id).order_by(Comments.id)
+        statement = (
+            select(Comments).where(Comments.todo_id == todo_id).order_by(Comments.id)  # type: ignore[arg-type]
         )
+        result = await session.exec(statement)
         return list(result.all())
 
 
@@ -116,8 +118,8 @@ async def create_todo(
     title: str,
     description: str = "",
     tags: list[str] | None = None,
-    attachments: list[dict] | None = None,
-) -> dict:
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Create a new todo. Returns error if id already exists."""
     if await Todos.get(id) is not None:
         return {"error": f"Todo {id!r} already exists"}
@@ -133,14 +135,14 @@ async def create_todo(
 
 
 @app.expose()
-async def get_todo(id: str) -> dict:
+async def get_todo(id: str) -> dict[str, Any]:
     """Fetch a single todo by id."""
     todo = await Todos.get(id)
     return todo.model_dump() if todo else {"error": f"Todo {id!r} not found"}
 
 
 @app.expose()
-async def complete_todo(id: str) -> dict:
+async def complete_todo(id: str) -> dict[str, Any]:
     """Mark a todo as done."""
     todo = await Todos.get(id)
     if todo is None:
@@ -154,7 +156,7 @@ async def complete_todo(id: str) -> dict:
 @app.expose()
 async def add_attachment(
     id: str, url: str, name: str, mime_type: str = "application/octet-stream"
-) -> dict:
+) -> dict[str, Any]:
     """Attach a file to a todo. Demonstrates nested model mutation."""
     todo = await Todos.get(id)
     if todo is None:
@@ -165,7 +167,7 @@ async def add_attachment(
 
 
 @app.expose()
-async def add_comment(todo_id: str, author: str, body: str) -> dict:
+async def add_comment(todo_id: str, author: str, body: str) -> dict[str, Any]:
     """Insert a structured comment for a todo using relational storage."""
     if await Todos.get(todo_id) is None:
         return {"error": f"Todo {todo_id!r} not found"}
@@ -179,14 +181,14 @@ async def add_comment(todo_id: str, author: str, body: str) -> dict:
 
 
 @app.expose()
-async def list_comments(todo_id: str) -> dict:
+async def list_comments(todo_id: str) -> dict[str, Any]:
     """List structured comments for a todo from the relational store."""
     comments = await _comment_rows(todo_id)
     return {"comments": [comment.model_dump() for comment in comments], "count": len(comments)}
 
 
 @app.expose()
-async def list_todos(done: bool | None = None) -> dict:
+async def list_todos(done: bool | None = None) -> dict[str, Any]:
     """List all todos, optionally filtered by done status."""
     entries = await Todos.list()
     todos = [v for _, v in entries]
@@ -196,13 +198,15 @@ async def list_todos(done: bool | None = None) -> dict:
 
 
 @app.expose()
-async def delete_todo(id: str) -> dict:
+async def delete_todo(id: str) -> dict[str, Any]:
     """Delete a todo by id."""
     await Todos.delete(id)
     return {"ok": True, "deleted": id}
 
 
-def _raise_for_error(result: dict, *, not_found: bool = False, conflict: bool = False) -> dict:
+def _raise_for_error(
+    result: dict[str, Any], *, not_found: bool = False, conflict: bool = False
+) -> dict[str, Any]:
     if "error" not in result:
         return result
     if conflict:
@@ -213,35 +217,35 @@ def _raise_for_error(result: dict, *, not_found: bool = False, conflict: bool = 
 
 
 @api.get("/todos")
-async def http_list_todos(done: bool | None = Query(default=None)) -> dict:
+async def http_list_todos(done: bool | None = Query(default=None)) -> dict[str, Any]:
     return await list_todos(done=done)
 
 
 @api.get("/todos/{todo_id}")
-async def http_get_todo(todo_id: str) -> dict:
+async def http_get_todo(todo_id: str) -> dict[str, Any]:
     result = await get_todo(id=todo_id)
     return _raise_for_error(result, not_found=True)
 
 
 @api.post("/todos", status_code=status.HTTP_201_CREATED)
-async def http_create_todo(payload: CreateTodoRequest) -> dict:
+async def http_create_todo(payload: CreateTodoRequest) -> dict[str, Any]:
     result = await create_todo(**payload.model_dump(mode="json"))
     return _raise_for_error(result, conflict=True)
 
 
 @api.delete("/todos/{todo_id}")
-async def http_delete_todo(todo_id: str) -> dict:
+async def http_delete_todo(todo_id: str) -> dict[str, Any]:
     return await delete_todo(id=todo_id)
 
 
 @api.post("/todos/{todo_id}/comments", status_code=status.HTTP_201_CREATED)
-async def http_add_comment(todo_id: str, payload: CommentRequest) -> dict:
+async def http_add_comment(todo_id: str, payload: CommentRequest) -> dict[str, Any]:
     result = await add_comment(todo_id=todo_id, **payload.model_dump())
     return _raise_for_error(result, not_found=True)
 
 
 @api.get("/todos/{todo_id}/comments")
-async def http_list_comments(todo_id: str) -> dict:
+async def http_list_comments(todo_id: str) -> dict[str, Any]:
     return await list_comments(todo_id=todo_id)
 
 

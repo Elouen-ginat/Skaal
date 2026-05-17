@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from skaal.runtime.middleware import wrap_resilience
+from skaal.runtime.local.middleware import wrap_resilience
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,

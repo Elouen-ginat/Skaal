@@ -10,11 +10,16 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 # extras it references) declares — no bare pins live in this Dockerfile.
 RUN pip install --no-cache-dir uv
 
+{% if dev_skaal_source -%}
+# `--dev` mode: ship the local skaal checkout inside the image so the
+# pre-PyPI alpha is exercised end-to-end without a TestPyPI release.
+COPY _skaal_src ./_skaal_src
+{% endif -%}
 COPY pyproject.toml ./
 RUN uv pip install --no-cache --system --target ${LAMBDA_TASK_ROOT} -r pyproject.toml
 
 COPY {{ user_package }} ./{{ user_package }}
-COPY bootstrap.py handler.py ./
+COPY bootstrap.py handler.py runtime_bindings.json ./
 
 ENV SKAAL_APP={{ app_name }}
 ENV SKAAL_ENV={{ env_name }}

@@ -16,6 +16,15 @@ the same phase as the wider examples sweep.
 
 from __future__ import annotations
 
-from skaal.runtime.local import LocalRuntime, serve
+from typing import Any
 
 __all__ = ["LocalRuntime", "serve"]
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"LocalRuntime", "serve"}:
+        from skaal.runtime.local import LocalRuntime, serve
+
+        exports = {"LocalRuntime": LocalRuntime, "serve": serve}
+        return exports[name]
+    raise AttributeError(name)

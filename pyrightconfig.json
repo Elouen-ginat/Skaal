@@ -1,8 +1,9 @@
 {
-  "include": ["skaal", "tests/typing"],
+  "include": ["skaal", "tests/typing", "examples"],
   "exclude": [
     "skaal/deploy/templates",
     "skaal/cli/templates",
+    "examples/__pycache__",
     "**/__pycache__",
     "**/.venv",
     "**/node_modules"

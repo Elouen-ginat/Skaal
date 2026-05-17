@@ -65,7 +65,7 @@ def test_skaal_tags_as_mapping_emits_prefixed_keys() -> None:
         "skaal:app": "myapp",
         "skaal:resource_id": "myapp.svc:Cache",
         "skaal:source": "myapp.svc:Cache",
-        "skaal:source_line": "?:1",
+        "skaal:source_line": "_:1",
         "skaal:kind": "store",
         "skaal:env": "prod",
         "skaal:target": "aws",
@@ -130,3 +130,26 @@ def test_skaal_tags_kind_value_string(kind: ResourceKind, expected: str) -> None
     env = Environment(name="prod", target=Target.AWS)
     mapping = tags_for(resource, env, "f" * 16).as_mapping()
     assert mapping["skaal:kind"] == expected
+
+
+def test_skaal_tags_as_mapping_sanitizes_mount_style_values() -> None:
+    inferred = BlueprintResource(
+        id="skaal.app:file-upload-api.mount(/)",
+        kind=ResourceKind.ASGI_SERVICE,
+        source=SourceLocation(
+            module="skaal.app",
+            qualname="App",
+            file="C:\\Users\\Eltoc\\Desktop\\python_projects\\Skaal\\skaal\\app.py",
+            line=18,
+        ),
+        overrides=Overrides(),
+    )
+    resource = PlannedResource(inferred=inferred, backend="apigw-lambda", pinned=False)
+    env = Environment(name="prod", target=Target.AWS)
+
+    tags = tags_for(resource, env, "cafebabe00000001").as_mapping()
+
+    assert tags["skaal:resource_id"] == "skaal.app:file-upload-api.mount_/_"
+    assert (
+        tags["skaal:source_line"] == "C:/Users/Eltoc/Desktop/python_projects/Skaal/skaal/app.py:18"
+    )

@@ -54,6 +54,15 @@ def build(
         "--python-version",
         help="Python minor version embedded in the Dockerfile base image.",
     ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help=(
+            "Ship the local Skaal checkout inside each Lambda image instead of "
+            "installing `skaal[...]` from PyPI. Use during the 0.4.0 alpha while "
+            "the package is not yet published."
+        ),
+    ),
 ) -> None:
     try:
         app_spec = AppSpec.parse(target)
@@ -68,6 +77,7 @@ def build(
         app_spec,
         out_dir=out_dir,
         python_version=python_version,
+        dev=dev,
     )
 
     artefact_count = sum(1 for r in loaded.bound.resources if not r.external)

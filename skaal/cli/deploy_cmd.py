@@ -74,6 +74,15 @@ def deploy(
         "--lock",
         help="Path to `skaal.lock` (created on first deploy).",
     ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help=(
+            "Ship the local Skaal checkout inside each Lambda image instead of "
+            "installing `skaal[...]` from PyPI. Use during the 0.4.0 alpha while "
+            "the package is not yet published."
+        ),
+    ),
 ) -> None:
     try:
         app_spec = AppSpec.parse(target)
@@ -82,7 +91,7 @@ def deploy(
     skaal_app = load_app(app_spec)
     loaded = load_plan(skaal_app, env_name, lock_path=lock_path)
 
-    written = build_artefacts(loaded.bound, loaded.env, app_spec, out_dir=out_dir)
+    written = build_artefacts(loaded.bound, loaded.env, app_spec, out_dir=out_dir, dev=dev)
     console = Console()
     console.print(f"Rendered artefacts for [cyan]{env_name}[/cyan] → {written}")
 

@@ -43,15 +43,52 @@ class Topic(Generic[T, B]):
         self._backend_name: str | None = None
         self._wired: bool = False
 
+    def wire(self, backend: Any, *, backend_name: str | None = None) -> None:
+        """Bind a concrete channel backend to this topic instance."""
+        self._backend = backend
+        self._backend_name = backend_name or getattr(backend, "name", backend.__class__.__name__)
+        self._wired = True
+
     async def send(self, item: T) -> None:
+        if self._backend is None:
+            raise NotImplementedError(
+                "Topic.send() has no backend wired yet. The runtime wires channels through the "
+                "bound plan in Phase 4 of ADR 028."
+            )
+
+        send = getattr(self._backend, "send", None)
+        if callable(send):
+            await send(item)
+            return
+
+        publish = getattr(self._backend, "publish", None)
+        if callable(publish):
+            await publish(self._topic_name(), item)
+            return
+
         raise NotImplementedError(
-            "Topic.send() has no backend wired yet. The runtime wires channels through the "
-            "bound plan in Phase 4 of ADR 028."
+            f"Topic backend {self._backend_name!r} does not expose send()/publish()."
         )
 
     async def receive(self) -> AsyncIterator[T]:
-        raise NotImplementedError("Topic.receive() has no backend wired yet.")
-        yield  # pragma: no cover
+        if self._backend is None:
+            raise NotImplementedError("Topic.receive() has no backend wired yet.")
+
+        receive = getattr(self._backend, "receive", None)
+        if callable(receive):
+            async for item in receive():
+                yield item
+            return
+
+        subscribe = getattr(self._backend, "subscribe", None)
+        if callable(subscribe):
+            async for item in subscribe(self._topic_name()):
+                yield item
+            return
+
+        raise NotImplementedError(
+            f"Topic backend {self._backend_name!r} does not expose receive()/subscribe()."
+        )
 
     async def native(self) -> Any:
         """Return the native SDK client for the wired channel backend.
@@ -75,3 +112,6 @@ class Topic(Generic[T, B]):
     def __repr__(self) -> str:
         status = "wired" if self._wired else "unwired"
         return f"Topic(buffer={self.buffer}, backend={self._backend_name!r}, {status})"
+
+    def _topic_name(self) -> str:
+        return self.__class__.__name__

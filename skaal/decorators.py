@@ -313,11 +313,10 @@ def expose(
     """Declare a Skaal compute function with optional resilience policies.
 
     Resilience policies (`retry`, `circuit_breaker`, `rate_limit`,
-    `bulkhead`) are honoured by the runtime — see
-    `skaal.runtime.middleware`. The decorator returns a `FunctionRef`
-    carrying ``id``, ``overrides``, and ``__skaal_inferred__`` for
-    runtime / deploy consumers; no per-decorator legacy dunder is
-    written.
+    `bulkhead`) are honoured by the local runtime middleware. The
+    decorator returns a `FunctionRef` carrying ``id``, ``overrides``,
+    and ``__skaal_inferred__`` for runtime / deploy consumers; no
+    per-decorator legacy dunder is written.
 
     The decorator factory's return type is
     ``Callable[[Callable[P, R]], FunctionRef[P, R]]`` — Pyright infers

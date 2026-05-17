@@ -199,7 +199,7 @@ def test_build_artefacts_uses_default_out_dir(
     monkeypatch.chdir(tmp_path)
     out = build_artefacts(bound, env, _spec_for(app))
 
-    assert out == Path(".skaal") / "build" / env.name
+    assert out == (tmp_path / ".skaal" / "build" / env.name).resolve()
     assert (tmp_path / ".skaal" / "build" / env.name).is_dir()
 
 

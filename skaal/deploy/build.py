@@ -27,13 +27,15 @@ subdirectory. Phase 4 ships AWS templates only; the GCP tree lands in a
 
 from __future__ import annotations
 
-import hashlib
 import importlib.resources as resources
+import shutil
 from collections.abc import Iterable
+from importlib.util import find_spec
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from skaal.binding.model import Environment, Plan, PlannedResource, Target
+from skaal.deploy._naming import resource_slug
 from skaal.deploy.models import (
     BuildContext,
     BuildManifest,
@@ -41,6 +43,7 @@ from skaal.deploy.models import (
 )
 from skaal.errors import BuildError, MissingExtraError
 from skaal.inference.model import ResourceKind
+from skaal.runtime.models import RuntimeBindingManifest
 
 if TYPE_CHECKING:
     from skaal.cli._load import AppSpec
@@ -71,6 +74,7 @@ def build_artefacts(
     out_dir: Path | None = None,
     requirements: Iterable[str] | None = None,
     python_version: str = "3.11",
+    dev: bool = False,
 ) -> Path:
     """Render every deploy artefact `bound` needs into ``out_dir``.
 
@@ -110,7 +114,7 @@ def build_artefacts(
         )
 
     template_env = _Jinja2(_template_root(env.target))
-    resolved_out = out_dir or Path(".skaal") / "build" / env.name
+    resolved_out = (out_dir or Path(".skaal") / "build" / env.name).resolve()
     resolved_out.mkdir(parents=True, exist_ok=True)
 
     target_resources = tuple(_lambda_resources(bound.resources))
@@ -124,10 +128,19 @@ def build_artefacts(
     resolved_requirements: tuple[str, ...] = (
         tuple(requirements) if requirements is not None else _default_requirements()
     )
+    if dev:
+        resolved_requirements = _rewrite_requirements_for_dev(resolved_requirements)
+
+    runtime_bindings = RuntimeBindingManifest.from_bound_plan(bound, env)
+    runtime_bindings_json = runtime_bindings.to_json()
+    (resolved_out / "runtime_bindings.json").write_text(runtime_bindings_json, encoding="utf-8")
+
+    user_package_source = _resolve_user_package_dir(app_spec.top_package)
+    skaal_source_root = _resolve_skaal_source_root() if dev else None
 
     entries: list[ManifestResourceEntry] = []
     for resource in target_resources:
-        slug = _slug_for(resource)
+        slug = resource_slug(resource)
         resource_dir = resolved_out / slug
         resource_dir.mkdir(parents=True, exist_ok=True)
         context = BuildContext(
@@ -144,8 +157,16 @@ def build_artefacts(
             bound_fingerprint=bound.bound_fingerprint,
             app_fingerprint=bound.app_fingerprint,
             requirements=resolved_requirements,
+            dev_skaal_source=dev,
         )
         _render_resource(template_env, context, resource_dir)
+        (resource_dir / "runtime_bindings.json").write_text(
+            runtime_bindings_json,
+            encoding="utf-8",
+        )
+        _copy_user_package(user_package_source, resource_dir / app_spec.top_package)
+        if skaal_source_root is not None:
+            _copy_skaal_source(skaal_source_root, resource_dir / "_skaal_src")
         entries.append(ManifestResourceEntry.for_resource(resource, slug=slug))
 
     manifest = BuildManifest(
@@ -169,6 +190,112 @@ def _render_resource(template_env: _Jinja2, context: BuildContext, resource_dir:
         (resource_dir / output_name).write_text(rendered, encoding="utf-8")
 
 
+def _resolve_user_package_dir(top_package: str) -> Path:
+    """Locate the user's source package directory on disk.
+
+    The Dockerfile renders a ``COPY <top_package> ./<top_package>`` line; the
+    Docker build context is the per-Lambda artefact directory, so the build
+    must mirror the user's package source into each artefact directory before
+    `pulumi up` invokes Docker.
+    """
+    try:
+        spec = find_spec(top_package)
+    except (ImportError, ValueError) as exc:
+        raise BuildError(
+            f"Could not locate user package {top_package!r} for the Lambda "
+            f"build context: {exc}. Make sure the package is importable from "
+            "the current working directory."
+        ) from exc
+    if spec is None:
+        raise BuildError(
+            f"Could not locate user package {top_package!r} for the Lambda "
+            "build context. Make sure the package is importable from the "
+            "current working directory."
+        )
+    locations = list(spec.submodule_search_locations or ())
+    if locations:
+        return Path(locations[0]).resolve()
+    if spec.origin and spec.origin != "built-in":
+        return Path(spec.origin).resolve().parent
+    raise BuildError(f"User package {top_package!r} has no on-disk source directory.")
+
+
+def _copy_user_package(source: Path, dest: Path) -> None:
+    """Mirror ``source`` into ``dest``, dropping caches.
+
+    Idempotent: removes any prior copy first so stale `.pyc` files from a
+    previous build do not bleed into the new image layer.
+    """
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(
+        source,
+        dest,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".mypy_cache", ".ruff_cache"),
+    )
+
+
+def _resolve_skaal_source_root() -> Path:
+    """Locate the repo root that holds `skaal/` + `pyproject.toml`.
+
+    `--dev` mode ships the local Skaal source tree inside each Lambda image
+    so the unreleased alpha can be exercised without a TestPyPI publish.
+    """
+    skaal_spec = find_spec("skaal")
+    locations = list(skaal_spec.submodule_search_locations or ()) if skaal_spec else []
+    if not locations:
+        raise BuildError(
+            "`--dev` mode could not locate the local `skaal` package source. "
+            "Run `skaal build --dev` from a checkout that has `skaal/` importable."
+        )
+    skaal_dir = Path(locations[0]).resolve()
+    repo_root = skaal_dir.parent
+    if not (repo_root / "pyproject.toml").exists():
+        raise BuildError(
+            f"`--dev` mode found `skaal/` at {skaal_dir} but no sibling "
+            "`pyproject.toml`. The local checkout must contain both."
+        )
+    return repo_root
+
+
+def _copy_skaal_source(repo_root: Path, dest: Path) -> None:
+    """Mirror the local Skaal checkout (`skaal/` + `pyproject.toml`) into ``dest``."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    shutil.copytree(
+        repo_root / "skaal",
+        dest / "skaal",
+        ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", ".mypy_cache", ".ruff_cache", "tests"
+        ),
+    )
+    shutil.copy2(repo_root / "pyproject.toml", dest / "pyproject.toml")
+    for sibling in ("README.md", "LICENSE", "CITATION.cff"):
+        candidate = repo_root / sibling
+        if candidate.exists():
+            shutil.copy2(candidate, dest / sibling)
+
+
+def _rewrite_requirements_for_dev(requirements: tuple[str, ...]) -> tuple[str, ...]:
+    """Repoint any `skaal[...]` requirement at the in-image `_skaal_src/` path.
+
+    Without this rewrite, `uv pip install -r pyproject.toml` resolves
+    `skaal[runtime,aws]` from PyPI — which only has the published `0.3.x`
+    line and pulls in deleted dependencies (`z3-solver` etc.). The dev
+    build copies the local checkout to `_skaal_src/` inside the image; the
+    PEP 508 direct reference below installs from that path instead.
+    """
+    rewritten: list[str] = []
+    for spec in requirements:
+        stripped = spec.strip()
+        if stripped == "skaal" or stripped.startswith(("skaal[", "skaal ")):
+            rewritten.append(f"{stripped} @ file:///var/task/_skaal_src")
+        else:
+            rewritten.append(stripped)
+    return tuple(rewritten)
+
+
 def _lambda_resources(resources_in: Iterable[PlannedResource]) -> Iterable[PlannedResource]:
     """Yield the resources that need per-Lambda artefacts.
 
@@ -190,10 +317,7 @@ def _slug_for(resource: PlannedResource) -> str:
     the full id so two same-named resources in different modules do not
     collide on disk.
     """
-    bare = resource.inferred.source.bare_name or "resource"
-    digest = hashlib.sha256(resource.inferred.id.encode("utf-8")).hexdigest()[:8]
-    safe = "".join(c if c.isalnum() or c in {"-", "_"} else "_" for c in bare)
-    return f"{safe}-{digest}"
+    return resource_slug(resource)
 
 
 def _default_requirements() -> tuple[str, ...]:

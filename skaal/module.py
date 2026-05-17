@@ -45,6 +45,7 @@ from skaal.types.protocols import AsyncPublishTarget
 
 if TYPE_CHECKING:
     from skaal.schedule import Cron, Every
+    from skaal.secrets import SecretRegistry
     from skaal.topic import Topic
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -139,6 +140,7 @@ class Module:
         self._components: dict[str, Any] = {}
         self._schedules: dict[str, Any] = {}
         self._secrets: dict[str, SecretRef] = {}
+        self._secret_registry: SecretRegistry | None = None
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}
         self._before_invoke: list[BeforeInvocation] = []
@@ -429,7 +431,24 @@ class Module:
                 f"Secret {ref.name!r} re-declared with different parameters: {existing} vs {ref}"
             )
         self._secrets[ref.name] = ref
+        self._secret_registry = None
         return ref
+
+    @property
+    def secrets(self) -> SecretRegistry:
+        """Return the live secret registry for this module graph."""
+        registry = self._secret_registry
+        if registry is None:
+            from skaal.secrets import SecretRegistry
+
+            registry = SecretRegistry(
+                {name: ref.to_spec() for name, ref in self._collect_secrets().items()}
+            )
+            self._secret_registry = registry
+        return registry
+
+    def _set_secret_registry(self, registry: SecretRegistry) -> None:
+        self._secret_registry = registry
 
     @overload
     def schedule(
@@ -569,6 +588,8 @@ class Module:
                             f"{key!r} already registered. Use namespace=<name> instead."
                         )
             self._submodules[""] = module
+
+        self._secret_registry = None
 
         exp_storage = {k: v for k, v in module._storage.items() if k in module._exports}
         exp_functions = {k: v for k, v in module._functions.items() if k in module._exports}

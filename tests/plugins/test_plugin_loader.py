@@ -16,7 +16,13 @@ import pytest
 from skaal import Backend, Target
 from skaal.binding.registry import BackendSpec, lookup
 from skaal.errors import SkaalConfigError
+from skaal.inference.model import ResourceKind
 from skaal.plugins import Plugin, PluginRegistry, load_plugins
+from skaal.runtime._registry import (
+    RuntimeBackendFactoryContext,
+    RuntimeTargetRegistration,
+    get_runtime_target,
+)
 
 
 class _FakePlugin(Plugin):
@@ -45,6 +51,28 @@ class _BrokenPlugin(Plugin):
         raise RuntimeError("intentional failure")
 
 
+def _fake_runtime_adapter(*_: object) -> None:
+    return None
+
+
+def _fake_runtime_backend_factory(context: RuntimeBackendFactoryContext) -> str:
+    return f"{context.target_name}:{context.backend_name}"
+
+
+class _FakeRuntimePlugin(Plugin):
+    name = "fake-runtime-plugin"
+
+    def register(self, registry: PluginRegistry) -> None:
+        registry.add_runtime_target(RuntimeTargetRegistration(name="fake-runtime"))
+        registry.add_runtime_adapter("fake-runtime", ResourceKind.STORE, _fake_runtime_adapter)
+        registry.add_runtime_backend_factory(
+            "fake-runtime",
+            ResourceKind.STORE,
+            "fake-store",
+            _fake_runtime_backend_factory,
+        )
+
+
 class _FakeEntryPoint:
     def __init__(self, name: str, target: type[Plugin]) -> None:
         self.name = name
@@ -59,12 +87,15 @@ def _reset_state() -> Iterable[None]:
     """Clear plugin state before and after each test."""
     from skaal.binding.registry import _reset_for_tests as reset_binding
     from skaal.plugins import _reset_for_tests as reset_plugins
+    from skaal.runtime._registry import _reset_for_tests as reset_runtime
 
     reset_plugins()
     reset_binding()
+    reset_runtime()
     yield
     reset_plugins()
     reset_binding()
+    reset_runtime()
 
 
 def _patch_entry_points(
@@ -151,3 +182,23 @@ def test_idempotent_re_registration_of_same_token() -> None:
     register_backend(entry)
     register_backend(entry)
     assert lookup("fake-backend").token_class is _FakeBackend
+
+
+def test_load_plugins_can_register_runtime_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_entry_points(monkeypatch, (_FakeEntryPoint("runtime", _FakeRuntimePlugin),))
+
+    target = get_runtime_target("fake-runtime")
+    assert target.adapter_for(ResourceKind.STORE) is _fake_runtime_adapter
+    assert (
+        target.build_backend(
+            RuntimeBackendFactoryContext(
+                target_name="fake-runtime",
+                resource_kind=ResourceKind.STORE,
+                backend_name="fake-store",
+                target=object(),
+            )
+        )
+        == "fake-runtime:fake-store"
+    )

@@ -24,6 +24,8 @@ Lookup a member through the unique email index:
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from skaal import App, SecondaryIndex, Store
@@ -119,14 +121,14 @@ class TeamMembers(Store[TeamMember]):
 
 
 @app.expose()
-async def seed_directory() -> dict:
+async def seed_directory() -> dict[str, Any]:
     for member in FIXTURE_MEMBERS:
         await TeamMembers.set(member.id, member)
     return {"seeded": len(FIXTURE_MEMBERS)}
 
 
 @app.expose()
-async def team_leaderboard(team: str, limit: int = 3, cursor: str | None = None) -> dict:
+async def team_leaderboard(team: str, limit: int = 3, cursor: str | None = None) -> dict[str, Any]:
     page = await TeamMembers.query_index("by_team", team, limit=limit, cursor=cursor)
     return {
         "team": team,
@@ -137,7 +139,7 @@ async def team_leaderboard(team: str, limit: int = 3, cursor: str | None = None)
 
 
 @app.expose()
-async def find_member(email: str) -> dict:
+async def find_member(email: str) -> dict[str, Any]:
     page = await TeamMembers.query_index("by_email", email, limit=1)
     member = page.items[0] if page.items else None
     return {"member": member.model_dump() if member is not None else None}

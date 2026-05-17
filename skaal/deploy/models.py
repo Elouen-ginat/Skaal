@@ -63,11 +63,14 @@ class SkaalTags(BaseModel):
     ) -> SkaalTags:
         """Build the tag set for one bound resource."""
         inferred = resource.inferred
+        # AWS tag values reject backslashes (regex `[\p{L}\p{Z}\p{N}_.:/=+\-@]*`),
+        # so source paths captured on Windows are normalised to forward slashes.
+        portable_file = inferred.source.file.replace("\\", "/")
         return cls(
             app=inferred.source.top_package,
             resource_id=inferred.id,
             source=f"{inferred.source.module}:{inferred.source.qualname}",
-            source_line=f"{inferred.source.file}:{inferred.source.line}",
+            source_line=f"{portable_file}:{inferred.source.line}",
             kind=inferred.kind,
             env=env.name,
             target=env.target,
@@ -78,16 +81,24 @@ class SkaalTags(BaseModel):
     def as_mapping(self) -> dict[str, str]:
         """Return the prefixed ``skaal:*`` mapping for Pulumi `tags=`."""
         return {
-            "skaal:app": self.app,
-            "skaal:resource_id": self.resource_id,
-            "skaal:source": self.source,
-            "skaal:source_line": self.source_line,
-            "skaal:kind": self.kind.value,
-            "skaal:env": self.env,
-            "skaal:target": self.target.value,
-            "skaal:backend": self.backend,
-            "skaal:fingerprint": self.fingerprint,
+            "skaal:app": _sanitize_tag_value(self.app),
+            "skaal:resource_id": _sanitize_tag_value(self.resource_id),
+            "skaal:source": _sanitize_tag_value(self.source),
+            "skaal:source_line": _sanitize_tag_value(self.source_line),
+            "skaal:kind": _sanitize_tag_value(self.kind.value),
+            "skaal:env": _sanitize_tag_value(self.env),
+            "skaal:target": _sanitize_tag_value(self.target.value),
+            "skaal:backend": _sanitize_tag_value(self.backend),
+            "skaal:fingerprint": _sanitize_tag_value(self.fingerprint),
         }
+
+
+def _sanitize_tag_value(value: str) -> str:
+    """Return an AWS-safe tag value while preserving readable provenance."""
+    sanitized = "".join(
+        char if (char.isalnum() or char.isspace() or char in "_.:/=+-@") else "_" for char in value
+    )
+    return sanitized[:256]
 
 
 class BuildContext(BaseModel):
@@ -113,6 +124,7 @@ class BuildContext(BaseModel):
     bound_fingerprint: str
     app_fingerprint: str
     requirements: tuple[str, ...]
+    dev_skaal_source: bool = False
 
 
 class ManifestResourceEntry(BaseModel):

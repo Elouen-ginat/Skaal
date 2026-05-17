@@ -1,11 +1,4 @@
-"""Adapter for `JOB` resources.
-
-The Phase 4 cut wires an asyncio-queue worker per registered job: an
-HTTP route at ``POST /_jobs/<name>/enqueue`` accepts a JSON payload and
-posts it to the queue; a background task consumes the queue and calls
-the user callable. Idempotency keys, dead-letter queues, and retry
-budgets are deferred to the follow-up Phase 4 deploy work.
-"""
+"""Adapter for `JOB` resources."""
 
 from __future__ import annotations
 
@@ -18,11 +11,10 @@ from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from skaal.binding.model import PlannedResource
-    from skaal.runtime.local import LocalRuntime
+    from skaal.runtime.local.runtime import LocalRuntime
 
 
 def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
-    """Wire an in-process queue + worker task for the registered job."""
     if target is None:
         return
     if bound.backend != "asyncio":
@@ -41,8 +33,6 @@ def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None
             try:
                 await target(**payload)
             except Exception:
-                # Phase 4 ships a minimal contract; richer error
-                # handling lands with the deploy-time DLQ work.
                 pass
             finally:
                 queue.task_done()

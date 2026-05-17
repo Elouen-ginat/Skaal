@@ -138,13 +138,17 @@ class MissingExtraError(SkaalError):
 # ── Runtime errors ───────────────────────────────────────────────────────────
 
 
-class RuntimeAdapterMissing(SkaalError):
+class SkaalRuntimeError(SkaalError):
+    """A runtime bootstrap, wiring, or adapter step failed."""
+
+
+class RuntimeAdapterMissing(SkaalRuntimeError):
     """The local runtime has no adapter wired for a resource kind.
 
-    Raised when the dispatch table in `skaal.runtime.dispatch` is asked
-    for a kind that has not been hooked up yet. Phase 4 ships first-class
-    adapters for the kinds the local defaults table emits; remaining
-    kinds raise this until their adapter lands.
+    Raised when the local dispatch table is asked for a kind that has
+    not been hooked up yet. Phase 4 ships first-class adapters for the
+    kinds the local defaults table emits; remaining kinds raise this
+    until their adapter lands.
     """
 
     def __init__(self, kind: str) -> None:
@@ -155,7 +159,7 @@ class RuntimeAdapterMissing(SkaalError):
         )
 
 
-class RuntimeResourceUnresolved(SkaalError):
+class RuntimeResourceUnresolved(SkaalRuntimeError):
     """A `BoundResource.id` could not be resolved back to a live Python object.
 
     The runtime walks the user's `App` graph to find the live `Store`
@@ -171,6 +175,10 @@ class RuntimeResourceUnresolved(SkaalError):
             f"Cannot resolve resource {resource_id!r} to a live object on the App. "
             "The BoundPlan and App must come from the same inference run."
         )
+
+
+class RuntimeWiringError(SkaalRuntimeError):
+    """AWS cold-start runtime wiring failed before the first invocation."""
 
 
 def require_extra(
@@ -207,6 +215,7 @@ __all__ = [
     "PlanError",
     "RuntimeAdapterMissing",
     "RuntimeResourceUnresolved",
+    "RuntimeWiringError",
     "SecretMissingError",
     "SkaalBackendError",
     "SkaalConfigError",
@@ -214,6 +223,7 @@ __all__ = [
     "SkaalDeployError",
     "SkaalError",
     "SkaalHookError",
+    "SkaalRuntimeError",
     "SkaalUnavailable",
     "require_extra",
 ]

@@ -22,9 +22,12 @@ post-scaffold wiring step can reference the pre-built resource.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from abc import ABC
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, cast
 
 import pulumi
@@ -183,7 +186,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
 
     def _build_repository(self, ctx: SynthContext[AwsConfig], cfg: AwsConfig) -> aws.ecr.Repository:
         return aws.ecr.Repository(
-            f"{ctx.pulumi_name}-repo",
+            _repository_name(f"{ctx.pulumi_name}-repo"),
             force_delete=cfg.ecr.force_delete,
             image_tag_mutability=cfg.ecr.image_tag_mutability,
             tags=ctx.tags,
@@ -196,11 +199,10 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         repository: aws.ecr.Repository,
     ) -> docker.Image:
         creds = aws.ecr.get_authorization_token_output(registry_id=repository.registry_id)
+        image_tag = _artifact_tag_for_dir(ctx.build_dir / ctx.resource_slug)
         return docker.Image(
             f"{ctx.pulumi_name}-image",
-            image_name=pulumi.Output.concat(
-                repository.repository_url, ":", ctx.bound.bound_fingerprint
-            ),
+            image_name=pulumi.Output.concat(repository.repository_url, ":", image_tag),
             build=docker.DockerBuildArgs(
                 context=str(ctx.build_dir / ctx.resource_slug),
                 dockerfile=str(ctx.build_dir / ctx.resource_slug / "Dockerfile"),
@@ -288,9 +290,31 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         merged.update(
             {key: value for peer in ctx.peers.values() for key, value in peer.env_vars.items()}
         )
+        runtime_wire = os.environ.get("SKAAL_RUNTIME_WIRE")
+        if runtime_wire is not None:
+            merged["SKAAL_RUNTIME_WIRE"] = runtime_wire
         if extra:
             merged.update(extra)
         return merged
+
+
+def _artifact_tag_for_dir(resource_dir: Path) -> str:
+    """Return a stable image tag derived from one rendered Lambda artifact dir."""
+    digest = hashlib.sha256()
+    for path in sorted(candidate for candidate in resource_dir.rglob("*") if candidate.is_file()):
+        relative = path.relative_to(resource_dir).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()[:16]
+
+
+def _repository_name(name: str) -> str:
+    """Return an ECR-compatible repository name derived from a Pulumi prefix."""
+    sanitized = "".join(char if char.isalnum() else "-" for char in name.lower())
+    collapsed = "-".join(part for part in sanitized.split("-") if part)
+    return collapsed or "skaal"
 
 
 __all__ = ["LambdaScaffold", "LambdaSynth", "PreScaffold"]

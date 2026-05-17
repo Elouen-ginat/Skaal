@@ -1,12 +1,4 @@
-"""Adapter for `SCHEDULE` resources.
-
-Phase 4 ships a minimal hook that registers each callable with an
-in-process APScheduler whose triggers are reconstructed from the
-inference layer's ``overrides.trigger`` payload. Richer lifecycle
-(graceful shutdown, jitter, clustering) is part of the broader runtime
-work and will be filled in alongside the deploy-side EventBridge /
-Cloud Scheduler synth.
-"""
+"""Adapter for `SCHEDULE` resources."""
 
 from __future__ import annotations
 
@@ -14,11 +6,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from skaal.binding.model import PlannedResource
-    from skaal.runtime.local import LocalRuntime
+    from skaal.runtime.local.runtime import LocalRuntime
 
 
 def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
-    """Register the callable with an in-process scheduler started on serve()."""
     if target is None:
         return
     if bound.backend != "apscheduler":

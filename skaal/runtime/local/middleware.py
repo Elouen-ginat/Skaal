@@ -1,23 +1,4 @@
-"""Resilience middleware chain for `@app.function` invocations.
-
-The runtime wraps every user callable in the chain ``retry →
-circuit_breaker → rate_limit → bulkhead → user_callable``. The four
-policy classes survive unchanged from `skaal.types.compute`; this
-module applies them as composable async wrappers backed by the
-established libraries already in the dependency tree:
-
-- ``tenacity`` for the retry-with-backoff loop.
-- ``pybreaker`` for the circuit-breaker state machine.
-- ``asyncio.Semaphore`` for the bulkhead.
-- A small token-bucket for the rate limiter (no obvious off-the-shelf
-  fit in the dependency set; the implementation is ~20 lines).
-
-The chain is intentionally minimal — the Phase 4 cut focuses on the
-correctness contract (each policy is honoured exactly once and in the
-right order) rather than the full backpressure / observability surface
-that ADR 028 §6.7 spells out. Those richer behaviours land alongside
-the deploy-time observability work in a later phase.
-"""
+"""Resilience middleware chain for `@app.function` invocations."""
 
 from __future__ import annotations
 
@@ -29,20 +10,13 @@ from typing import Any, TypeVar, cast
 import pybreaker
 import tenacity
 
-from skaal.types.compute import (
-    Bulkhead,
-    CircuitBreaker,
-    RateLimit,
-    Retry,
-)
+from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimit, Retry
 
 R = TypeVar("R")
 Handler = Callable[..., Awaitable[R]]
 
 
 class _RateLimitBucket:
-    """Token-bucket counter for a single function (no per-arg sharding here)."""
-
     __slots__ = ("burst", "last_refill", "rate", "tokens")
 
     def __init__(self, rate: float, burst: int) -> None:
@@ -80,13 +54,6 @@ def wrap_resilience(
     rate_limit: RateLimit | None = None,
     bulkhead: Bulkhead | None = None,
 ) -> Handler[R]:
-    """Return ``handler`` wrapped with the configured resilience policies.
-
-    The four policies compose in the order spelled in ADR 032 §4.1: the
-    retry loop is the outermost wrapper, the circuit breaker sits inside
-    it, then rate limiting, then the bulkhead, then the user callable.
-    Passing ``None`` for any policy is a no-op for that layer.
-    """
     wrapped: Handler[R] = handler
 
     if bulkhead is not None:
@@ -139,11 +106,6 @@ def _with_circuit_breaker(handler: Handler[R], policy: CircuitBreaker) -> Handle
     )
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
-        # `pybreaker.call_async` requires Tornado in its current release;
-        # we drive the same state machine manually through the
-        # public-ish hooks (`state.before_call`, `state.on_success` /
-        # `state.on_failure`, plus the storage's counter API). The flow
-        # mirrors `CircuitBreakerState.call` for the sync entry point.
         state: pybreaker.CircuitBreakerState = breaker.state
         try:
             state.before_call(handler, *args, **kwargs)
