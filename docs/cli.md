@@ -43,6 +43,11 @@ The CLI follows the same shape as the framework itself: declare the app once, re
         <span class="skaal-cli-card__title"><code>skaal migrate</code></span>
         <p class="skaal-cli-card__desc">Manage relational revisions and staged backend migrations.</p>
     </a>
+    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-apps">
+        <span class="skaal-cli-card__eyebrow">Multi-App</span>
+        <span class="skaal-cli-card__title"><code>skaal apps</code></span>
+        <p class="skaal-cli-card__desc">List, graph, and validate the project's <code>[tool.skaal.apps]</code> DAG.</p>
+    </a>
 </div>
 
 ## The Core Loop
@@ -116,12 +121,17 @@ The project name must be a valid Python identifier.
     <p>Run the app locally with hot reload and switch between in-memory, SQLite, Redis, or the experimental mesh runtime path.</p>
 </div>
 
-Run a Skaal app locally with either an explicit `MODULE:APP` or the value from `[tool.skaal] app`.
+Run a Skaal app locally with either an explicit `MODULE:APP`, the name of an entry under `[tool.skaal.apps]`, or the value from `[tool.skaal] app`.
 
 ```bash
 skaal run examples.01_quickstart.app:app
 skaal run examples.01_quickstart.app:app --persist
 skaal run examples.01_quickstart.app:app --host 0.0.0.0 --port 9000
+
+# Multi-app projects:
+skaal run --all                # start every [tool.skaal.apps] entry on its own port
+skaal run frontend             # one app from the project; reads cross-app URLs from
+                               # .skaal/local-endpoints.json so AppRefs resolve
 ```
 
 Key options:
@@ -129,6 +139,7 @@ Key options:
 | Flag | Meaning |
 | --- | --- |
 | `--host`, `--port` | Bind the local server to a different address or port. |
+| `--all` | Start every app declared in `[tool.skaal.apps]`, one port each. Writes `.skaal/local-endpoints.json` so cross-app `AppRef`s resolve automatically. |
 | `--persist` | Use SQLite-backed local persistence instead of in-memory storage. |
 | `--db PATH` | Choose the SQLite file used with `--persist`. |
 | `--redis URL` | Route supported storage through Redis for local testing. |
@@ -153,6 +164,11 @@ Reload defaults to automatic mode: on for interactive development, off for non-i
 ```bash
 skaal plan examples.01_quickstart.app:app --target local --catalog catalogs/local.toml
 skaal plan examples.04_fullstack_split.backend:app --target aws --catalog catalogs/aws.toml
+
+# Multi-app projects:
+skaal plan --all          # plan every [tool.skaal.apps] entry into its own
+                          # artifacts/<name>/plan.skaal.lock in topo order
+skaal plan backend        # plan one named app from [tool.skaal.apps]
 ```
 
 Useful options:
@@ -160,6 +176,7 @@ Useful options:
 | Flag | Meaning |
 | --- | --- |
 | `--target`, `-t` | Select the deploy target such as `local`, `aws`, `gcp`, or `aws-lambda`. |
+| `--all` | Plan every app declared in `[tool.skaal.apps]` in topological order. |
 | `--catalog PATH` | Use a specific catalog file instead of discovery or project defaults. |
 | `--reoptimize` | Force re-solving all backend choices even when a lock file already exists. |
 | `--pin NAME=BACKEND` | Pin one variable to a backend while investigating solver output. |
@@ -198,6 +215,10 @@ skaal build
 skaal build --out artifacts
 skaal build --out artifacts --stack prod --region eu-west-1
 skaal build --dev
+
+# Multi-app projects:
+skaal build --all         # build artifacts/<name>/ for every [tool.skaal.apps] entry
+skaal build frontend      # build one named app from [tool.skaal.apps]
 ```
 
 Key options:
@@ -205,6 +226,7 @@ Key options:
 | Flag | Meaning |
 | --- | --- |
 | `--out`, `-o` | Output directory for generated artifacts. |
+| `--all` | Build every app declared in `[tool.skaal.apps]`. Each app writes to `artifacts/<name>/` (or its `out` override) so multiple apps coexist on disk. |
 | `--region`, `-r` | Override the region at build time. |
 | `--stack`, `-s` | Resolve stack-specific settings from `[tool.skaal.stacks.<name>]`. |
 | `--dev` | Bundle the local Skaal source tree into the artifact instead of relying on the published package. |
@@ -223,13 +245,22 @@ Deploy previously-built artifacts with Pulumi.
 skaal deploy
 skaal deploy --artifacts-dir artifacts --stack local
 skaal deploy --artifacts-dir artifacts --stack prod --region eu-west-1
+
+# Multi-app projects:
+skaal deploy --all                 # plan + build + deploy every [tool.skaal.apps]
+                                   # entry in topo order, injecting each upstream
+                                   # URL into the next downstream's environment
+skaal deploy frontend --stack prod # iterate on one app; upstream URLs come from
+                                   # plan.skaal.project.lock
 ```
 
 Important options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--artifacts-dir`, `-a` | Directory created by `skaal build`. |
+| `--all` | Deploy every app declared in `[tool.skaal.apps]` in topological order. Captures each upstream's service URL into `<artifacts>/<app>/url.txt` and `plan.skaal.project.lock`, then injects `SKAAL_APPREF_<NAME>_URL` for downstream apps. Aborts on the first failure. |
+| `<app_name>` | Deploy a single app from `[tool.skaal.apps]`. Reads upstream URLs from `plan.skaal.project.lock` so the upstreams are not redeployed. |
+| `--artifacts-dir`, `-a` | Directory created by `skaal build` (single-app mode only). |
 | `--stack`, `-s` | Pulumi stack name. |
 | `--region`, `-r` | Cloud region override. |
 | `--gcp-project` | Required for GCP deploys when not already configured. |

@@ -3,6 +3,7 @@
 import typer
 
 from skaal.cli._logging import LogFormat, configure_cli_logging
+from skaal.cli.apps_cmd import app as apps_app
 from skaal.cli.build_cmd import app as build_app
 from skaal.cli.catalog_cmd import app as catalog_app
 from skaal.cli.deploy_cmd import app as deploy_app
@@ -32,6 +33,7 @@ app.add_typer(diff_app, name="diff")
 app.add_typer(infra_app, name="infra")
 app.add_typer(migrate_app, name="migrate")
 app.add_typer(stacks_app, name="stacks")
+app.add_typer(apps_app, name="apps")
 
 
 @app.callback()

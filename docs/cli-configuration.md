@@ -94,6 +94,55 @@ post_deploy = [["python", "scripts/notify_deploy.py"]]
 | `pre_deploy` | array of argv arrays | `deploy` | Commands run before `pulumi up`. |
 | `post_deploy` | array of argv arrays | `deploy` | Commands run after a successful deploy. |
 | `stacks` | table of stack profiles | `build`, `deploy`, `stacks` | Named per-stack overrides declared under `[tool.skaal.stacks.<name>]`. |
+| `apps` | table of app entries | `apps`, `plan --all`, `build --all`, `deploy --all`, `destroy --all`, `run --all` | Multi-app project surface declared under `[tool.skaal.apps.<name>]`. See [Multi-App Projects](multi-app-projects.md). |
+
+## `[tool.skaal.apps.<name>]` Keys
+
+For multi-app projects (a backend plus a frontend, an API plus a worker, …), declare each app under `[tool.skaal.apps.<name>]`. The CLI then accepts `--all` and `<app_name>` arguments, walks the apps in topological order, and wires `AppRef` cross-app URLs automatically. See [Multi-App Projects](multi-app-projects.md) for the full guide.
+
+```toml
+[tool.skaal]
+target  = "gcp"
+catalog = "catalogs/gcp.toml"
+
+[tool.skaal.apps.backend]
+module = "myproject.backend:app"
+
+[tool.skaal.apps.frontend]
+module     = "myproject.frontend:app"
+depends_on = ["backend"]
+expose     = "BACKEND_URL"   # default: SKAAL_APPREF_<NAME>_URL
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `module` | string | **Required.** `MODULE:VARIABLE` reference for this app. |
+| `target` | string | Per-app override of `[tool.skaal] target`. |
+| `region` | string | Per-app override of `[tool.skaal] region`. |
+| `catalog` | path | Per-app override of `[tool.skaal] catalog`. |
+| `stack` | string | Default Pulumi stack for this app. |
+| `gcp_project` | string | Per-app override of `[tool.skaal] gcp_project`. |
+| `out` | path | Per-app artifact dir. Defaults to `<base.out>/<name>` when `--all` or `<app_name>` is used. |
+| `enable_mesh` | bool | Per-app override. |
+| `depends_on` | array of strings | Names of upstream apps in this same `apps` table. Cycles are an error. |
+| `expose` | string | Env var consumers see for this app's URL. Defaults to `SKAAL_APPREF_<NAME>_URL`. |
+| `endpoint_secret` | string | When set, route the URL through the configured secrets backend instead of plain env injection. |
+| `env`, `invokers`, `labels`, `overrides`, `pre_deploy`, `post_deploy` | same as base | Per-app overrides for the deploy-shaped fields. |
+| `deletion_protection` | bool | Per-app override. |
+| `stacks` | table | Per-app stack profiles. Layered on top of the global stack overlay. See below. |
+
+Per-app stack overlays live under `[tool.skaal.apps.<name>.stacks.<stack>]` and use the same key surface as global `[tool.skaal.stacks.<stack>]`. They apply on top of the per-app overrides.
+
+```toml
+[tool.skaal.apps.backend]
+target = "gcp"
+
+[tool.skaal.apps.backend.stacks.prod]
+gcp_project = "myproj-prod"
+region      = "europe-west1"
+```
+
+`AppRef("backend")` in a downstream app resolves through the env var `expose` advertises. The runtime appends the canonical `/_skaal/invoke/<fn_name>` prefix automatically when the URL came from this auto-resolution path, so consumers do not need to embed it themselves. Explicit `base_url=` and `base_url_secret=` still win over the auto fallback and keep the existing path semantics.
 
 ## `[tool.skaal.stacks.<name>]` Keys
 

@@ -1,18 +1,24 @@
 """Frontend — a Skaal `App` that calls the backend through `AppRef`.
 
 The frontend is also a Skaal application, but it owns no storage — it only
-mounts a Dash UI and declares an `AppRef` pointing at the backend. Calls
-made through `backend.create_task(...)` POST to
-`{base_url}/create_task`, which is why `BACKEND_URL` includes the
-`/_skaal/invoke` prefix the runtime reserves for function calls.
+mounts a Dash UI and declares an `AppRef` pointing at the backend.
 
-A streaming endpoint is consumed via raw `httpx.stream`, since `AppRef` is
-JSON-only by design.
+`AppRef("backend")` resolves automatically from `SKAAL_APPREF_BACKEND_URL`
+and the runtime appends the canonical `/_skaal/invoke/<fn>` prefix to each
+call. `skaal run --all` and `skaal deploy --all` set that env var for you.
 
-Run after the backend is already serving on port 8000:
+A streaming endpoint is consumed via raw `httpx.stream` (line 261), since
+`AppRef` is JSON-only by design.
+
+Run with the orchestrator:
 
     pip install "skaal[serve,examples]" dash dash-bootstrap-components httpx
-    BACKEND_URL=http://localhost:8000 \\
+    skaal run --all      # backend on 8000, frontend on 8050
+
+Or by hand:
+
+    skaal run examples.04_fullstack_split.backend:app --port 8000
+    SKAAL_APPREF_BACKEND_URL=http://localhost:8000 \\
         python examples/04_fullstack_split/frontend.py
 
 Then open http://localhost:8050.
@@ -21,7 +27,6 @@ Then open http://localhost:8050.
 from __future__ import annotations
 
 import asyncio
-import os
 
 import dash
 import dash_bootstrap_components as dbc
@@ -30,14 +35,10 @@ from dash import Input, Output, State, callback, dcc, html, no_update
 
 from skaal import App, AppRef, RetryPolicy
 
-BACKEND_HOST = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
-BACKEND_INVOKE_URL = f"{BACKEND_HOST}/_skaal/invoke"
-
 # ── Skaal app ─────────────────────────────────────────────────────────────────
 
 app = App("fullstack-frontend")
-
-backend = AppRef("backend", base_url=BACKEND_INVOKE_URL, timeout_ms=10_000)
+backend = AppRef("backend", timeout_ms=10_000, fallback_url="http://localhost:8000")
 app.attach(backend)
 
 
@@ -80,7 +81,7 @@ dash_app.layout = dbc.Container(
     [
         html.H2("Skaal Fullstack — Dash + AppRef Frontend"),
         html.P(
-            f"Backend: {BACKEND_HOST}. The frontend is itself a Skaal `App` "
+            f"Backend: {backend.url}. The frontend is itself a Skaal `App` "
             "that holds no storage; it talks to the backend through `AppRef` "
             "(POST /_skaal/invoke/<fn>).",
             className="text-muted",
@@ -236,7 +237,7 @@ def refresh_tasks(*_args: object) -> html.Div:
 def stream(_clicks: int, task_id: str) -> str:
     task_id = (task_id or "demo").strip()
     chunks: list[str] = []
-    with httpx.stream("GET", f"{BACKEND_HOST}/tasks/{task_id}/progress", timeout=None) as response:
+    with httpx.stream("GET", f"{backend.url}/tasks/{task_id}/progress", timeout=None) as response:
         for line in response.iter_lines():
             if line.startswith("data:"):
                 chunks.append(line.removeprefix("data:").strip())

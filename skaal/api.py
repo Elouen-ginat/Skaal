@@ -50,9 +50,12 @@ __all__ = [
     "PlanDiff",
     "PlanDiffEntry",
     "build",
+    "build_all",
     "build_runtime",
     "catalog",
     "deploy",
+    "deploy_all",
+    "destroy_all",
     "diff",
     "infra_cleanup",
     "infra_status",
@@ -63,6 +66,8 @@ __all__ = [
     "migrate_start",
     "migrate_status",
     "plan",
+    "plan_all",
+    "project_graph",
     "relational_autogenerate",
     "relational_check",
     "relational_current",
@@ -677,6 +682,53 @@ def run(
         )
     except KeyboardInterrupt:
         return
+
+
+# ── multi-app orchestration ───────────────────────────────────────────────────
+
+
+def project_graph(settings: SkaalSettings | None = None):
+    """Return a `ProjectGraph` for the current project.
+
+    Reads ``[tool.skaal.apps.*]`` from `pyproject.toml` and validates the
+    DAG. Equivalent to the data exposed by ``skaal apps graph``.
+
+    Raises:
+        ValueError: If no apps are declared, or the graph has a cycle or
+            references an undeclared app.
+    """
+    from skaal.types.project import build_project_graph
+
+    cfg = settings or SkaalSettings()
+    return build_project_graph(cfg)
+
+
+def plan_all(*, only: list[str] | None = None) -> list:
+    """Plan every app in the project graph in topological order."""
+    from skaal.cli._orchestrator import plan_all as _plan_all
+
+    return _plan_all(project_graph(), only=only)
+
+
+def build_all(*, only: list[str] | None = None, dev: bool = False) -> list:
+    """Build artifacts for every app in the project graph."""
+    from skaal.cli._orchestrator import build_all as _build_all
+
+    return _build_all(project_graph(), only=only, dev=dev)
+
+
+def deploy_all(*, only: list[str] | None = None, yes: bool = True) -> list:
+    """Plan + build + deploy every app in the project graph in topo order."""
+    from skaal.cli._orchestrator import deploy_all as _deploy_all
+
+    return _deploy_all(project_graph(), only=only, yes=yes)
+
+
+def destroy_all(*, only: list[str] | None = None, yes: bool = True) -> list:
+    """Destroy every app in the project graph in reverse topo order."""
+    from skaal.cli._orchestrator import destroy_all as _destroy_all
+
+    return _destroy_all(project_graph(), only=only, yes=yes)
 
 
 # ── diff ──────────────────────────────────────────────────────────────────────

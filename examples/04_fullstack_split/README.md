@@ -26,27 +26,60 @@ A two-process example that mirrors a realistic deployment topology, with
 
 ## Run locally
 
-In one terminal, start the backend:
+The shortest path is `skaal run --all` from a project that declares both
+apps under `[tool.skaal.apps]` (see "Multi-app config" below). The
+orchestrator picks ports for each app, writes
+`.skaal/local-endpoints.json`, and injects `SKAAL_APPREF_BACKEND_URL`
+into the frontend so `AppRef("backend")` resolves automatically:
 
 ```bash
-pip install "skaal[serve,fastapi,examples]"
-skaal run examples.04_fullstack_split.backend:app --port 8000
-```
-
-In a second terminal, start the frontend:
-
-```bash
-pip install dash dash-bootstrap-components httpx
-python examples/04_fullstack_split/frontend.py
+pip install "skaal[serve,fastapi,examples]" dash dash-bootstrap-components httpx
+skaal run --all
 ```
 
 Then open [http://localhost:8050](http://localhost:8050).
 
-Set `BACKEND_URL` to repoint at any other backend host (e.g. a Cloud Run
-URL produced by `skaal deploy --target gcp`) without editing code:
+To run the apps individually (no orchestrator), pass `BACKEND_URL`:
+
+```bash
+skaal run examples.04_fullstack_split.backend:app --port 8000
+BACKEND_URL=http://localhost:8000 python examples/04_fullstack_split/frontend.py
+```
+
+Or repoint at any other backend host (e.g. a Cloud Run URL produced by
+`skaal deploy --target gcp`) without editing code:
 
 ```bash
 BACKEND_URL=https://backend-abc123.run.app python frontend.py
+```
+
+## Multi-app config
+
+Add to your project's `pyproject.toml` so the two apps deploy and run as
+a single project:
+
+```toml
+[tool.skaal]
+target  = "gcp"
+catalog = "catalogs/gcp.toml"
+
+[tool.skaal.apps.backend]
+module = "examples.04_fullstack_split.backend:app"
+
+[tool.skaal.apps.frontend]
+module     = "examples.04_fullstack_split.frontend:app"
+depends_on = ["backend"]
+```
+
+Then:
+
+```bash
+skaal apps list           # show declared apps + last-deployed URL
+skaal apps graph          # render the AppRef DAG
+skaal run --all           # local dev: both apps + cross-app discovery
+skaal deploy --all        # deploy backend, then frontend with URL injected
+skaal deploy frontend     # iterate on the frontend; backend's URL is read
+                          # from plan.skaal.project.lock
 ```
 
 ## How `AppRef` works
@@ -66,26 +99,19 @@ the backend already declares.
 
 ## Deploying both apps
 
-Today, `skaal plan` / `skaal build` / `skaal deploy` operate on **one**
-`App` per invocation, so deploying the pair is two `skaal deploy` runs
-back to back with `BACKEND_URL` exported into the second one. The two
-options that work today:
+`skaal deploy --all` walks the project graph in topological order:
 
-- Run them by hand, capturing the backend's URL after the first deploy
-  and exporting `BACKEND_URL` before the second one.
-- Use `[tool.skaal.stacks.<name>].pre_deploy` on the frontend's
-  `pyproject.toml` to invoke `skaal deploy <backend>` and inject the
-  backend URL into the frontend deploy environment.
-- Or collapse both apps into one process by replacing the frontend `App`
-  with a `Module` mounted via `app.use(module)` — single artifact, but
-  loses the independent deploy / scale story.
+1. Plans + builds + deploys the backend; captures its service URL
+   (Cloud Run / API Gateway URL) into `<artifacts_dir>/url.txt` and the
+   project lock.
+2. Plans + builds + deploys the frontend with
+   `SKAAL_APPREF_BACKEND_URL` set to the backend's URL, so the
+   frontend's `AppRef("backend")` resolves automatically.
+3. Writes `plan.skaal.project.lock` so `skaal deploy frontend` can
+   later iterate on the frontend without redeploying the backend.
 
-A native multi-app project surface is being designed under
-[ADR 028](../../notes/design/028-multi-app-projects-implementation-plan.md).
-Once that lands, deploying both apps will be a single
-`skaal deploy --all` driven by a `[tool.skaal.apps]` table, and the
-`AppRef("backend")` lookup in the frontend will resolve to the backend's
-deployed URL automatically.
+A failure mid-graph aborts and prints the structured status; already-
+deployed apps stay up. `skaal destroy --all` reverses the order.
 
 ## What to try
 
