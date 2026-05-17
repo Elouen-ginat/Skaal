@@ -108,4 +108,4 @@ Open an issue first; significant changes go through an ADR under [`notes/design/
 
 ### Where do design discussions happen?
 
-GitHub issues and pull requests, plus ADRs in `docs/design/`. There is no Discord or Slack yet — open an issue if you'd find one useful.
+GitHub issues and pull requests, plus ADRs in `notes/design/`. There is no Discord or Slack yet — open an issue if you'd find one useful.

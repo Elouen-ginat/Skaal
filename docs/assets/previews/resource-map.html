@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Resource map</title><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .map { background:#fff; border:1px solid var(--border-1); border-radius:18px; padding: 18px 22px; }
+  .map-head { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
+  .map-title { font: 600 13px var(--font-heading); }
+  .map-meta { font: 500 11px 'IBM Plex Mono'; color: var(--fg-3); }
+  .map-row { display:grid; grid-template-columns: 1fr 60px 1fr; align-items:center; gap: 12px; padding: 8px 0; border-top: 1px dashed rgba(167,180,194,0.35); }
+  .map-row:first-of-type { border-top: 0; }
+  .src { display:flex; align-items:baseline; gap: 8px; font: 500 13px 'IBM Plex Mono'; color: #0E1726; min-width: 0; }
+  .src .file { color: rgba(14,23,38,0.5); font-size: 11px; }
+  .src .sym { color: #5FA8FF; }
+  .src .typ { color: rgba(14,23,38,0.78); }
+  .arrow { display:flex; align-items:center; justify-content:center; }
+  .arrow svg { display:block; }
+  .res { display:flex; align-items:center; gap: 8px; min-width: 0; }
+  .res .badge { font: 600 10.5px 'IBM Plex Sans'; padding: 3px 8px; border-radius: 999px; background: rgba(19,181,168,0.12); color: #0F8E84; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
+  .res .name { font: 500 12.5px 'IBM Plex Mono'; color: #0E1726; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+<div class="map">
+  <div class="map-head">
+    <div class="map-title">skaal resources · env=prod</div>
+    <div class="map-meta">12 resources · fingerprint a7c…3f</div>
+  </div>
+
+  <div class="map-row">
+    <div class="src"><span class="file">users.py:14</span><span class="sym">Users</span><span class="typ">Store[User]</span></div>
+    <div class="arrow"><svg width="60" height="14" viewBox="0 0 60 14" fill="none"><path d="M0 7 H 54" stroke="#13B5A8" stroke-width="1.5"/><path d="M52 3 L 58 7 L 52 11" stroke="#13B5A8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="res"><span class="badge">DynamoDB</span><span class="name">acme-prod-users</span></div>
+  </div>
+
+  <div class="map-row">
+    <div class="src"><span class="file">users.py:22</span><span class="sym">Avatars</span><span class="typ">BlobStore</span></div>
+    <div class="arrow"><svg width="60" height="14" viewBox="0 0 60 14" fill="none"><path d="M0 7 H 54" stroke="#13B5A8" stroke-width="1.5"/><path d="M52 3 L 58 7 L 52 11" stroke="#13B5A8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="res"><span class="badge">S3</span><span class="name">acme-prod-avatars</span></div>
+  </div>
+
+  <div class="map-row">
+    <div class="src"><span class="file">sales.py:9</span><span class="sym">Sales</span><span class="typ">Table[BigQuery]</span></div>
+    <div class="arrow">
+      <svg width="60" height="14" viewBox="0 0 60 14" fill="none"><path d="M0 7 H 54" stroke="#13B5A8" stroke-width="1.5"/><path d="M52 3 L 58 7 L 52 11" stroke="#13B5A8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="res"><span class="badge" style="background:rgba(154,230,110,0.18);color:#4f9924;">BigQuery</span><span class="name">acme-prod.warehouse.sales</span></div>
+  </div>
+
+  <div class="map-row">
+    <div class="src"><span class="file">signup.py:8</span><span style="color:#13B5A8;">@</span><span class="sym">signup</span><span class="typ">(User) → User</span></div>
+    <div class="arrow"><svg width="60" height="14" viewBox="0 0 60 14" fill="none"><path d="M0 7 H 54" stroke="#13B5A8" stroke-width="1.5"/><path d="M52 3 L 58 7 L 52 11" stroke="#13B5A8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="res"><span class="badge">λ Lambda</span><span class="name">acme-prod-signup</span></div>
+  </div>
+
+  <div class="map-row">
+    <div class="src"><span class="file">api.py:4</span><span class="sym">app.mount</span><span class="typ">("/api", FastAPI())</span></div>
+    <div class="arrow"><svg width="60" height="14" viewBox="0 0 60 14" fill="none"><path d="M0 7 H 54" stroke="#13B5A8" stroke-width="1.5"/><path d="M52 3 L 58 7 L 52 11" stroke="#13B5A8" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="res"><span class="badge">APIGW + λ</span><span class="name">acme-prod-api</span></div>
+  </div>
+</div>
+</div></body></html>

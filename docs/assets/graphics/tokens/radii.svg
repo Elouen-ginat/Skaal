@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="160" viewBox="0 0 700 160" fill="none">
+  <foreignObject width="700" height="160">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+  <div style="display:flex;gap:18px;align-items:flex-end;">
+    <div style="text-align:center;"><div style="width:80px;height:80px;border-radius:14px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">14 · chip</div></div>
+    <div style="text-align:center;"><div style="width:80px;height:80px;border-radius:16px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">16 · card</div></div>
+    <div style="text-align:center;"><div style="width:80px;height:80px;border-radius:18px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">18 · icon</div></div>
+    <div style="text-align:center;"><div style="width:80px;height:80px;border-radius:22px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">22 · panel</div></div>
+    <div style="text-align:center;"><div style="width:80px;height:80px;border-radius:32px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">32 · hero</div></div>
+    <div style="text-align:center;"><div style="width:120px;height:40px;border-radius:999px;background:#fff;border:1.5px solid #A7B4C2;"></div><div class="label" style="margin-top:8px;">999 · pill</div></div>
+  </div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

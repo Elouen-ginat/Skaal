@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="240" viewBox="0 0 700 240" fill="none">
+  <foreignObject width="700" height="240">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+<style>
+  .diff { background:#fff; border:1px solid var(--border-1); border-radius:18px; overflow: hidden; }
+  .diff-head { display:flex; justify-content:space-between; align-items:center; padding: 12px 18px; border-bottom: 1px solid var(--border-1); }
+  .diff-title { font: 600 13px var(--font-heading); }
+  .diff-summary { display:flex; gap: 10px; font: 600 11.5px 'IBM Plex Mono'; }
+  .diff-summary .add { color:#4f9924; } .diff-summary .chg { color:#0F8E84; } .diff-summary .rem { color:#B05227; }
+  .diff-body { padding: 6px 0; }
+  .diff-row { display:grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items:center; padding: 7px 18px; font: 500 13px 'IBM Plex Mono'; }
+  .diff-row.add { background: linear-gradient(90deg, rgba(154,230,110,0.12), transparent 60%); }
+  .diff-row.chg { background: linear-gradient(90deg, rgba(19,181,168,0.10), transparent 60%); }
+  .diff-row.rem { background: linear-gradient(90deg, rgba(201,106,61,0.10), transparent 60%); }
+  .sigil { font: 700 14px 'IBM Plex Mono'; text-align:center; }
+  .sigil.add { color:#4f9924; } .sigil.chg { color:#0F8E84; } .sigil.rem { color:#B05227; }
+  .resource { color:#0E1726; }
+  .resource .module { color: rgba(14,23,38,0.5); }
+  .meta { font: 500 11px 'IBM Plex Mono'; color: rgba(14,23,38,0.55); }
+  .meta .from { text-decoration: line-through; opacity: 0.6; }
+  .meta .to { color: #0E1726; }
+</style>
+<div class="diff">
+  <div class="diff-head">
+    <div class="diff-title">skaal plan · env=prod · vs main</div>
+    <div class="diff-summary"><span class="add">+2</span><span class="chg">~1</span><span class="rem">−1</span></div>
+  </div>
+  <div class="diff-body">
+    <div class="diff-row add">
+      <div class="sigil add">+</div>
+      <div class="resource"><span class="module">acme.events:</span>SignupEvents</div>
+      <div class="meta"><span class="to">→ sqs</span></div>
+    </div>
+    <div class="diff-row add">
+      <div class="sigil add">+</div>
+      <div class="resource"><span class="module">acme.signup:</span>signup</div>
+      <div class="meta"><span class="to">→ lambda</span></div>
+    </div>
+    <div class="diff-row chg">
+      <div class="sigil chg">~</div>
+      <div class="resource"><span class="module">acme.users:</span>Users <span style="color:rgba(14,23,38,0.5);">· schema</span></div>
+      <div class="meta"><span class="to">+ field email_verified</span></div>
+    </div>
+    <div class="diff-row rem">
+      <div class="sigil rem">−</div>
+      <div class="resource"><span class="module">acme.legacy:</span>OldSessions</div>
+      <div class="meta"><span class="from">dynamodb</span></div>
+    </div>
+  </div>
+</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

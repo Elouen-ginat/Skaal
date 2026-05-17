@@ -8,8 +8,8 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   custom_dir: docs/overrides
-  logo: design_system/app-icon.svg
-  favicon: design_system/favicon.svg
+  logo: assets/brand/app-icon.svg
+  favicon: assets/brand/favicon.svg
   features:
     - navigation.instant
     - navigation.sections
@@ -26,9 +26,6 @@ theme:
     - scheme: default
       primary: custom
       accent: custom
-
-exclude_docs: |
-  design/_archive/
 
 plugins:
   - search
@@ -74,8 +71,8 @@ markdown_extensions:
       alternate_style: true
 
 extra_css:
-  - design_system/tokens/skaal-tokens.css
-  - design_system/styles/landing.css
+  - assets/stylesheets/skaal-tokens.css
+  - assets/stylesheets/landing.css
   - assets/stylesheets/extra.css
   - assets/stylesheets/reference.css
 
@@ -106,8 +103,6 @@ nav:
           - Components and Scheduling: reference/python-api-components.md
           - CLI-Parity API: reference/python-api-cli-parity.md
           - Types and Policies: reference/python-api-types.md
-      - Design System: design_system/index.md
-      - Design Assets: design_system/ASSETS.md
 
 extra:
   homepage: https://elouen-ginat.github.io/Skaal/
@@ -147,8 +142,6 @@ extra:
           link: cli/
         - label: CLI Configuration
           link: cli-configuration/
-        - label: Design System
-          link: design_system/
     - title: Project
       links:
         - label: GitHub

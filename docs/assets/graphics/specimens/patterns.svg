@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="170" viewBox="0 0 700 170" fill="none">
+  <foreignObject width="700" height="170">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+  <div><div style="height:90px;border-radius:12px;background-image:url('../patterns/grid-light.svg');background-size:cover;border:1px solid var(--border-2);"></div><div class="label" style="margin-top:8px;">grid-light</div></div>
+  <div><div style="height:90px;border-radius:12px;background-image:url('../patterns/grid-dots.svg');background-size:cover;border:1px solid var(--border-2);"></div><div class="label" style="margin-top:8px;">grid-dots</div></div>
+  <div><div style="height:90px;border-radius:12px;background-image:url('../patterns/grid-dark.svg');background-size:cover;"></div><div class="label" style="margin-top:8px;">grid-dark</div></div>
+  <div><div style="height:90px;border-radius:12px;background-image:url('../patterns/aurora-gradient.svg');background-size:cover;"></div><div class="label" style="margin-top:8px;">aurora</div></div>
+</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

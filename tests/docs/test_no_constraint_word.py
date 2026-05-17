@@ -9,11 +9,10 @@ The gate has three surfaces:
    decorator's parameter names are scanned. Enforced — must be clean.
 2. **CLI help strings** — every Typer command's `help=` text is scanned.
    Enforced — must be clean as of Phase 1.
-3. **Docs prose** under `docs/` (excluding `design/_archive/` and the
-   vocabulary-neutral `design_system/` assets) — scanned for the full
-   constraint-era token list. Marked `xfail` until the Phase 7 §7.2
-   page-by-page rewrite lands (ADR 035 Decision 1); flips to a hard gate
-   in the same commit that ticks 7.2.
+3. **Docs prose** under `docs/` — scanned for the full constraint-era token
+    list. Marked `xfail` until the Phase 7 §7.2 page-by-page rewrite lands
+    (ADR 035 Decision 1); flips to a hard gate in the same commit that ticks
+    7.2.
 """
 
 from __future__ import annotations
@@ -34,6 +33,7 @@ _CLEAN_DOC_TOKENS: tuple[str, ...] = (
     "Durability",
     "AccessPattern",
     "Throughput",
+    "VectorStore",
     "@app.handler",
     "@app.scale",
     "@app.shared",
@@ -52,7 +52,6 @@ _DIRTY_DOC_TOKENS: tuple[str, ...] = (
     "constraint",
     "Constraint",
     "Latency",
-    "VectorStore",
 )
 
 # Subset that *signatures* and *CLI help* must never contain (no
@@ -67,17 +66,9 @@ _BANNED_SIGNATURE_TOKENS: tuple[str, ...] = (
 
 
 def _docs_files() -> list[Path]:
-    """All Markdown files under `docs/` excluding archived and design-system assets."""
+    """All Markdown files under `docs/`."""
     files: list[Path] = []
     for path in _DOCS_DIR.rglob("*.md"):
-        rel = path.relative_to(_DOCS_DIR).as_posix()
-        if rel.startswith("design/_archive/"):
-            continue
-        if rel.startswith("design_system/"):
-            # Design-system pages reference component filenames (e.g.
-            # `constraint-tokens.svg`) that are scheduled for renaming in
-            # ADR 035 Decision 1 §20 but are vocabulary-neutral in CSS.
-            continue
         files.append(path)
     return files
 
@@ -121,7 +112,7 @@ def test_dirty_constraint_token_clears_from_docs(token: str) -> None:
 
 @pytest.mark.parametrize(
     "decorator_attr",
-    ["storage", "function", "schedule", "job", "channel", "external"],
+    ["storage", "expose", "schedule", "job", "channel"],
 )
 def test_decorator_signatures_clean(decorator_attr: str) -> None:
     """`@app.<decorator>` must not accept constraint-era kwargs.
@@ -144,19 +135,14 @@ def test_decorator_signatures_clean(decorator_attr: str) -> None:
     )
 
 
-def test_archive_excluded_from_mkdocs() -> None:
-    """`docs/design/_archive/` must be excluded from the mkdocs build."""
-    mkdocs_path = _REPO_ROOT / "mkdocs.yml"
-    text = mkdocs_path.read_text(encoding="utf-8")
-    assert "design/_archive/" in text, (
-        "mkdocs.yml must declare `exclude_docs: design/_archive/` so the "
-        "archived constraint-era ADR is not discoverable as current docs."
-    )
+def test_docs_design_folder_deleted() -> None:
+    """The legacy `docs/design/` folder should be gone after the docs reorg."""
+    assert not (_DOCS_DIR / "design").exists(), "docs/design/ must not exist anymore."
 
 
-def test_archive_directory_present() -> None:
-    """The archived ADR 001 must live under `docs/design/_archive/`."""
-    archived = _REPO_ROOT / "docs" / "design" / "_archive" / "001-infrastructure-as-constraints.md"
+def test_archive_moved_to_notes() -> None:
+    """The archived ADR 001 should live under `notes/design/_archive/`."""
+    archived = _REPO_ROOT / "notes" / "design" / "_archive" / "001-infrastructure-as-constraints.md"
     assert archived.is_file(), (
         "Expected the archived constraint-model ADR at "
         f"{archived.relative_to(_REPO_ROOT).as_posix()}."

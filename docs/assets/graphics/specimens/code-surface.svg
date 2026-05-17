@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="300" viewBox="0 0 700 300" fill="none">
+  <foreignObject width="700" height="300">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card" style="background:#F6FBF9;">
+<style>
+  .codeblk { border-radius: 16px; background: linear-gradient(180deg,#10192B,#0F1828); box-shadow: 0 4px 14px rgba(14,23,38,0.10); padding: 16px 18px; font: 500 13px/1.7 'IBM Plex Mono'; color: #E5F3F7; }
+  .kw { color: #5FA8FF; }
+  .deco { color: #13B5A8; }
+  .str { color: #9AE66E; }
+  .cls { color: #f0c674; }
+  .cmt { color: rgba(245,251,255,0.45); }
+</style>
+<div class="codeblk"><span class="cmt"># the class is the table · the function is the unit</span>
+<span class="kw">from</span> skaal <span class="kw">import</span> App, Store, Topic
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel
+
+<span class="kw">class</span> <span class="cls">User</span>(<span class="cls">BaseModel</span>):
+    id: <span class="cls">str</span>
+    email: <span class="cls">str</span>
+
+<span class="kw">class</span> <span class="cls">Users</span>(<span class="cls">Store</span>[<span class="cls">User</span>]): ...
+<span class="kw">class</span> <span class="cls">SignupEvents</span>(<span class="cls">Topic</span>[<span class="cls">User</span>]): ...
+
+app = <span class="cls">App</span>(<span class="str">"acme"</span>)
+
+<span class="deco">@app.expose</span>
+<span class="kw">async def</span> <span class="cls">signup</span>(user: <span class="cls">User</span>) -&gt; <span class="cls">User</span>:
+    <span class="kw">await</span> Users.put(user.id, user)
+    <span class="kw">await</span> SignupEvents.publish(user)
+    <span class="kw">return</span> user
+</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

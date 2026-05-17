@@ -4,7 +4,7 @@ Skaal is not only a solver wrapper. It gives you one application model across ty
 
 <div class="skaal-feature-grid">
   <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/stack-cubes.svg" alt="Illustration of stacked infrastructure layers." />
+    <img src="../assets/graphics/illustrations/stack-cubes.svg" alt="Illustration of stacked infrastructure layers." />
     <div>
       <h3>Typed data surfaces</h3>
       <ul>
@@ -16,7 +16,7 @@ Skaal is not only a solver wrapper. It gives you one application model across ty
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/analytics-screen.svg" alt="Dashboard illustration for runtime and observability capabilities." />
+    <img src="../assets/graphics/illustrations/analytics-screen.svg" alt="Dashboard illustration for runtime and observability capabilities." />
     <div>
       <h3>Runtime and execution model</h3>
       <ul>
@@ -28,7 +28,7 @@ Skaal is not only a solver wrapper. It gives you one application model across ty
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/cloud-route.svg" alt="Cloud route illustration showing movement from local to cloud targets." />
+    <img src="../assets/graphics/illustrations/cloud-route.svg" alt="Cloud route illustration showing movement from local to cloud targets." />
     <div>
       <h3>Deployment without handwritten glue</h3>
       <ul>
@@ -40,7 +40,7 @@ Skaal is not only a solver wrapper. It gives you one application model across ty
     </div>
   </section>
   <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/code-console.svg" alt="Code console illustration for framework integration and developer workflow." />
+    <img src="../assets/graphics/illustrations/code-console.svg" alt="Code console illustration for framework integration and developer workflow." />
     <div>
       <h3>Framework and product integration</h3>
       <ul>
