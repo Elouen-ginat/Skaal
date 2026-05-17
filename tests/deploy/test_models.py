@@ -81,20 +81,20 @@ def test_build_manifest_round_trip_via_json() -> None:
 
 
 def test_manifest_resource_entry_for_resource_builds_from_bound() -> None:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.inference.model import (
-        InferredResource,
-        ResourceOverrides,
+        BlueprintResource,
+        Overrides,
         SourceLocation,
     )
 
-    inferred = InferredResource(
+    inferred = BlueprintResource(
         id="svc.api:greet",
         kind=ResourceKind.FUNCTION,
         source=SourceLocation(module="svc.api", qualname="greet", file="?", line=1),
-        overrides=ResourceOverrides(),
+        overrides=Overrides(),
     )
-    bound = BoundResource(inferred=inferred, backend="lambda", pinned=False)
+    bound = PlannedResource(inferred=inferred, backend="lambda", pinned=False)
     entry = ManifestResourceEntry.for_resource(bound, slug="greet-deadbeef")
     assert entry.id == "svc.api:greet"
     assert entry.kind is ResourceKind.FUNCTION

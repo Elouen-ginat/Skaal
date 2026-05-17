@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from skaal.binding.model import BoundPlan, BoundResource, Environment
+from skaal.binding.model import Environment, Plan, PlannedResource
 from skaal.deploy._protocol import SynthContext, SynthResult, TargetConfig
 from skaal.deploy._registry import get_target
 from skaal.deploy.build import _slug_for as _slug_for_resource
@@ -55,7 +55,7 @@ _COMPUTE_KINDS: frozenset[ResourceKind] = frozenset(
 )
 
 
-def pulumi_program_for(bound: BoundPlan, env: Environment, build_dir: Path) -> PulumiProgram:
+def pulumi_program_for(bound: Plan, env: Environment, build_dir: Path) -> PulumiProgram:
     """Return a parameterless Pulumi program callable for `bound`.
 
     Args:
@@ -80,7 +80,7 @@ def pulumi_program_for(bound: BoundPlan, env: Environment, build_dir: Path) -> P
     return program
 
 
-def synthesize_stack(bound: BoundPlan, env: Environment, build_dir: Path) -> dict[str, SynthResult]:
+def synthesize_stack(bound: Plan, env: Environment, build_dir: Path) -> dict[str, SynthResult]:
     """Walk `bound.resources` and dispatch each through `env.target`'s synths.
 
     Storage kinds synthesize before compute kinds so each compute synth
@@ -108,7 +108,7 @@ def synthesize_stack(bound: BoundPlan, env: Environment, build_dir: Path) -> dic
 
 
 def _synthesise_pass(
-    bound: BoundPlan,
+    bound: Plan,
     env: Environment,
     build_dir: Path,
     peers: dict[str, SynthResult],
@@ -133,8 +133,8 @@ def _synthesise_pass(
 
 
 def _context_for(
-    bound: BoundPlan,
-    resource: BoundResource,
+    bound: Plan,
+    resource: PlannedResource,
     env: Environment,
     build_dir: Path,
     peers: Mapping[str, SynthResult],

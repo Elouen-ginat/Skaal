@@ -33,7 +33,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
+from skaal.binding.model import Environment, Plan, PlannedResource, Target
 from skaal.deploy.models import (
     BuildContext,
     BuildManifest,
@@ -64,7 +64,7 @@ _TEMPLATE_OUTPUTS: tuple[tuple[str, str], ...] = (
 
 
 def build_artefacts(
-    bound: BoundPlan,
+    bound: Plan,
     env: Environment,
     app_spec: AppSpec,
     *,
@@ -169,7 +169,7 @@ def _render_resource(template_env: _Jinja2, context: BuildContext, resource_dir:
         (resource_dir / output_name).write_text(rendered, encoding="utf-8")
 
 
-def _lambda_resources(resources_in: Iterable[BoundResource]) -> Iterable[BoundResource]:
+def _lambda_resources(resources_in: Iterable[PlannedResource]) -> Iterable[PlannedResource]:
     """Yield the resources that need per-Lambda artefacts.
 
     Externals are skipped (their connections come from
@@ -183,7 +183,7 @@ def _lambda_resources(resources_in: Iterable[BoundResource]) -> Iterable[BoundRe
             yield resource
 
 
-def _slug_for(resource: BoundResource) -> str:
+def _slug_for(resource: PlannedResource) -> str:
     """Return a filesystem-safe slug for a bound resource.
 
     Combines the typed `SourceLocation.bare_name` with a short hash of

@@ -30,21 +30,21 @@ import json
 
 from skaal.binding.model import (
     BackendConfig,
-    BoundPlan,
-    BoundResource,
     Environment,
     LockFile,
+    Plan,
+    PlannedResource,
 )
-from skaal.binding.registry import BackendEntry, default_entry_for, lookup
+from skaal.binding.registry import BackendSpec, default_entry_for, lookup
 from skaal.errors import (
     BackendKindMismatch,
     BackendNotAvailableForTarget,
     TypePinViolation,
 )
-from skaal.inference.model import InferredPlan, InferredResource
+from skaal.inference.model import Blueprint, BlueprintResource
 
 
-def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
+def plan(plan: Blueprint, env: Environment, lock: LockFile) -> Plan:
     """Bind every resource in ``plan`` to one concrete backend.
 
     Args:
@@ -65,7 +65,7 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
         UnknownBackendError: A string in the env or lock did not resolve to a token.
     """
     bound = tuple(_bind_resource(res, env, lock) for res in plan.resources)
-    skeleton = BoundPlan(
+    skeleton = Plan(
         app=plan.app,
         environment=env.name,
         resources=bound,
@@ -75,7 +75,7 @@ def bind(plan: InferredPlan, env: Environment, lock: LockFile) -> BoundPlan:
     return skeleton.model_copy(update={"bound_fingerprint": _bound_fingerprint(skeleton)})
 
 
-def _bound_fingerprint(plan: BoundPlan) -> str:
+def _bound_fingerprint(plan: Plan) -> str:
     """Compute the 16-hex-char fingerprint of ``plan`` (excluding itself)."""
     data = plan.model_dump(
         mode="json",
@@ -90,7 +90,7 @@ def _bound_fingerprint(plan: BoundPlan) -> str:
     return hashlib.sha256(canonical).hexdigest()[:16]
 
 
-def _bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> BoundResource:
+def _bind_resource(res: BlueprintResource, env: Environment, lock: LockFile) -> PlannedResource:
     pinned_backend = res.overrides.backend
     lock_entry = lock.entries.get((env.name, res.id))
     env_override = env.overrides.get(res.id)
@@ -142,7 +142,7 @@ def _bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> B
     return _build(res, entry, env, pinned=False)
 
 
-def _validate(entry: BackendEntry, res: InferredResource, env: Environment) -> None:
+def _validate(entry: BackendSpec, res: BlueprintResource, env: Environment) -> None:
     if env.target not in entry.targets:
         raise BackendNotAvailableForTarget(entry.token_class.name, env.target.value)
     if res.kind.value not in entry.token_class.kinds:
@@ -150,14 +150,14 @@ def _validate(entry: BackendEntry, res: InferredResource, env: Environment) -> N
 
 
 def _build(
-    res: InferredResource,
-    entry: BackendEntry,
+    res: BlueprintResource,
+    entry: BackendSpec,
     env: Environment,
     *,
     pinned: bool,
     region: str | None = None,
     options: dict[str, str] | None = None,
-) -> BoundResource:
+) -> PlannedResource:
     external = res.overrides.external
     external_name = res.overrides.external_name
     backend_config: BackendConfig | None
@@ -165,7 +165,7 @@ def _build(
         backend_config = env.backends.get(external_name) or env.backends.get(entry.token_class.name)
     else:
         backend_config = env.backends.get(entry.token_class.name)
-    return BoundResource(
+    return PlannedResource(
         inferred=res,
         backend=entry.token_class.name,
         region=region if region is not None else env.region,

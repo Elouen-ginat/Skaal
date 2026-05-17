@@ -63,7 +63,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast, runtime_checkab
 
 if TYPE_CHECKING:
     from skaal.binding.model import Target
-    from skaal.binding.registry import BackendEntry
+    from skaal.binding.registry import BackendSpec
     from skaal.deploy._protocol import DeployTarget
     from skaal.inference.model import ResourceKind
 
@@ -74,7 +74,7 @@ _PLUGINS_LOADED = False
 
 
 @runtime_checkable
-class SkaalPlugin(Protocol):
+class Plugin(Protocol):
     """A skaal plugin contributes infrastructure modules.
 
     Implementations declare a `name` class variable (used for logging
@@ -166,7 +166,7 @@ class PluginRegistry:
         )
         deploy_target.register_synth(instance)
 
-    def add_backend(self, entry: BackendEntry) -> None:
+    def add_backend(self, entry: BackendSpec) -> None:
         """Register a `BackendEntry` in the binding registry."""
         from skaal.binding.registry import register_backend
 
@@ -231,14 +231,14 @@ def load_plugins(*, force: bool = False) -> None:
             _safe_register(plugin_cls)
 
 
-def _discover_plugin_classes() -> Iterable[type[SkaalPlugin]]:
+def _discover_plugin_classes() -> Iterable[type[Plugin]]:
     """Iterate over plugin classes declared on the ``skaal.plugins`` group."""
     try:
         from importlib.metadata import entry_points
     except ImportError:  # pragma: no cover - stdlib since 3.8
         return ()
 
-    discovered: list[type[SkaalPlugin]] = []
+    discovered: list[type[Plugin]] = []
     try:
         eps: Any = entry_points(group="skaal.plugins")
     except TypeError:
@@ -262,7 +262,7 @@ def _discover_plugin_classes() -> Iterable[type[SkaalPlugin]]:
     return discovered
 
 
-def _safe_register(plugin_cls: type[SkaalPlugin]) -> None:
+def _safe_register(plugin_cls: type[Plugin]) -> None:
     """Instantiate `plugin_cls` and call `register(...)`, isolating failures."""
     name = getattr(plugin_cls, "name", plugin_cls.__name__)
     try:
@@ -282,7 +282,7 @@ def _reset_for_tests() -> None:
 
 
 __all__ = [
+    "Plugin",
     "PluginRegistry",
-    "SkaalPlugin",
     "load_plugins",
 ]

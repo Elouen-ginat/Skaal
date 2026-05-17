@@ -28,7 +28,7 @@ _FIXTURE = textwrap.dedent(
         pass
 
 
-    @app.function()
+    @app.expose()
     async def hello(name: str) -> dict:
         return {"name": name}
     """

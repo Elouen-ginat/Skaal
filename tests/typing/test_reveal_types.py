@@ -12,7 +12,7 @@ Phase 5a covers the rows that do not depend on `.native()` typing:
 - Decorator preserves signatures (call sites preserve `(user: User)
   -> CoroutineType[Any, Any, User]`)
 - Pydantic models round-trip through `model_validate_json`
-- `ResourceOverrides.backend` reveals `str | None`, not `Any`
+- `Overrides.backend` reveals `str | None`, not `Any`
 
 Phase 5b extends the table to `.native()` typing once each `Backend`
 token has its `NativeClient: type[ConcreteSDK]` declaration in place.
@@ -42,9 +42,8 @@ _PROBE = textwrap.dedent(
 
     from pydantic import BaseModel
 
-    from skaal import App, Store
+    from skaal import App, Blueprint, Overrides, Store
     from skaal.backends.redis import Redis
-    from skaal.inference.model import InferredPlan, ResourceOverrides
 
 
     class User(BaseModel):
@@ -65,13 +64,13 @@ _PROBE = textwrap.dedent(
         pass
 
 
-    @a.function()
+    @a.expose()
     async def signup(user: User) -> User:
         return user
 
 
-    plan = cast(InferredPlan, None)
-    overrides = cast(ResourceOverrides, None)
+    plan = cast(Blueprint, None)
+    overrides = cast(Overrides, None)
 
     reveal_type(signup)
     reveal_type(signup(User(id="u1", name="Alice")))
@@ -131,19 +130,19 @@ def test_call_site_returns_coroutine_of_user(pyright_diagnostics: list[dict[str,
     ), messages
 
 
-def test_inferred_plan_roundtrip_returns_inferred_plan(
+def test_blueprint_roundtrip_returns_blueprint(
     pyright_diagnostics: list[dict[str, Any]],
 ) -> None:
-    """`InferredPlan.model_validate_json(...)` is typed as `InferredPlan`."""
+    """`Blueprint.model_validate_json(...)` is typed as `Blueprint`."""
     messages = _messages(pyright_diagnostics)
     plan_msg = next((m for m in messages if "plan.model_validate_json" in m), "")
-    assert "InferredPlan" in plan_msg, messages
+    assert "Blueprint" in plan_msg, messages
 
 
-def test_resource_overrides_backend_is_str_or_none(
+def test_overrides_backend_is_str_or_none(
     pyright_diagnostics: list[dict[str, Any]],
 ) -> None:
-    """`ResourceOverrides.backend` reveals `str | None`, not `Any`."""
+    """`Overrides.backend` reveals `str | None`, not `Any`."""
     messages = _messages(pyright_diagnostics)
     backend_msg = next((m for m in messages if "overrides.backend" in m), "")
     assert "str" in backend_msg and "None" in backend_msg, messages

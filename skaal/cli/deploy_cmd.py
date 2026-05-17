@@ -19,9 +19,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from skaal.binding import load_lock
-from skaal.binding.lock import write_lock
-from skaal.binding.model import BoundPlan, Environment, LockEntry, LockFile
+from skaal.binding.model import Environment, LockEntry, LockFile, Plan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import AppSpec, load_app, load_plan
 from skaal.deploy import (
@@ -104,7 +102,7 @@ def deploy(
 
 def _run_pulumi(
     *,
-    bound: BoundPlan,
+    bound: Plan,
     env: Environment,
     program: PulumiProgram,
     preview: bool,
@@ -158,14 +156,14 @@ def _run_pulumi(
         raise SkaalDeployError(f"Pulumi {('preview' if preview else 'up')} failed: {exc}") from exc
 
 
-def _write_lock_pins(bound: BoundPlan, env: Environment, *, lock_path: Path) -> None:
+def _write_lock_pins(bound: Plan, env: Environment, *, lock_path: Path) -> None:
     """Pin every non-external bound resource into `skaal.lock`.
 
     First-deploy runs convert the binder's defaults / overrides into
     explicit `LockEntry` rows so subsequent `skaal plan` runs short-circuit
     when nothing has changed. Already-locked entries are kept as-is.
     """
-    existing = load_lock(lock_path)
+    existing = LockFile.load(lock_path)
     new_entries = dict(existing.entries)
     now = datetime.now(UTC)
     for resource in bound.resources:
@@ -184,4 +182,4 @@ def _write_lock_pins(bound: BoundPlan, env: Environment, *, lock_path: Path) -> 
 
     if new_entries != existing.entries:
         updated = LockFile(version=existing.version, entries=new_entries)
-        write_lock(lock_path, updated)
+        updated.save(lock_path)

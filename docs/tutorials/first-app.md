@@ -6,7 +6,7 @@ This tutorial keeps the surface intentionally small: one store, a few compute fu
 
 - how `App` groups your application model
 - how `@app.storage(...)` declares backend needs without choosing a backend directly
-- how `@app.function()` becomes a callable runtime surface
+- how `@app.expose()` becomes a callable runtime surface
 - how `skaal run` exposes those functions locally
 
 ## Build the Counter App
@@ -19,12 +19,12 @@ from skaal import App, Store
 app = App("counter")
 
 
-@app.storage(read_latency="< 5ms", durability="ephemeral")
+@app.storage
 class Counts(Store[int]):
     pass
 
 
-@app.function()
+@app.expose()
 async def increment(name: str, by: int = 1) -> dict:
     current = await Counts.get(name) or 0
     new_value = current + by
@@ -32,13 +32,13 @@ async def increment(name: str, by: int = 1) -> dict:
     return {"name": name, "value": new_value}
 
 
-@app.function()
+@app.expose()
 async def get_count(name: str) -> dict:
     value = await Counts.get(name) or 0
     return {"name": name, "value": value}
 
 
-@app.function()
+@app.expose()
 async def list_counts() -> dict:
     entries = await Counts.list()
     return {"counts": dict(entries)}
@@ -47,7 +47,7 @@ async def list_counts() -> dict:
 This is the smallest useful Skaal shape:
 
 - `App("counter")` defines the application boundary.
-- `Counts` is a storage surface with requirements attached to it.
+- `Counts` is a storage surface that Skaal can infer and bind by environment.
 - the functions describe work the runtime can execute.
 
 ## Run the App

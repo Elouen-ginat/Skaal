@@ -34,7 +34,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from skaal.binding.model import BoundPlan, BoundResource
+from skaal.binding.model import Plan, PlannedResource
 from skaal.errors import RuntimeResourceUnresolved
 from skaal.runtime.dispatch import dispatch_for
 
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 StartupHook = Callable[[], Awaitable[None]]
 ShutdownHook = Callable[[], Awaitable[None]]
 JobPayload = dict[str, Any]
-ScheduleEntry = tuple[BoundResource, Callable[..., Awaitable[Any]]]
+ScheduleEntry = tuple[PlannedResource, Callable[..., Awaitable[Any]]]
 
 
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ class LocalRuntime:
     every adapter before handing back a runtime ready to `serve()`.
     """
 
-    bound: BoundPlan
+    bound: Plan
     app: App
     routes: list[_Route] = field(default_factory=list)
     mounts: list[_Mount] = field(default_factory=list)
@@ -102,12 +102,12 @@ class LocalRuntime:
     state: RuntimeState = field(default_factory=RuntimeState)
 
     @classmethod
-    def from_bound_plan(cls, bound: BoundPlan, app: App) -> LocalRuntime:
+    def from_bound_plan(cls, bound: Plan, app: App) -> LocalRuntime:
         """Build a runtime from a `BoundPlan`, registering every resource."""
         runtime: LocalRuntime = cls(bound=bound, app=app)
         for resource in bound.resources:
             target: Any = runtime._resolve(resource)
-            adapter: Callable[[LocalRuntime, BoundResource, Any], None] = dispatch_for(
+            adapter: Callable[[LocalRuntime, PlannedResource, Any], None] = dispatch_for(
                 resource.inferred.kind
             )
             adapter(runtime, resource, target)
@@ -225,8 +225,9 @@ class LocalRuntime:
 
     # ── Resource resolution ──────────────────────────────────────────────
 
-    def _resolve(self, resource: BoundResource) -> Any:
+    def _resolve(self, resource: PlannedResource) -> Any:
         """Look up the live Python object behind a `BoundResource.id`."""
+        self.app._autodiscover_declarations()
         bare: str = resource.inferred.source.bare_name
 
         registries: tuple[dict[str, Any], ...] = (
@@ -255,7 +256,7 @@ class LocalRuntime:
 
 
 def serve(
-    bound: BoundPlan,
+    bound: Plan,
     app: App,
     *,
     host: str = "127.0.0.1",

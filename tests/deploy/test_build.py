@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from skaal import App, Store
-from skaal.binding import bind
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.deploy import AppSpec, BuildManifest, build_artefacts
 from skaal.errors import BuildError
@@ -16,7 +15,7 @@ from skaal.inference.model import ResourceKind
 
 def _bound_for(app: App, *, env: Environment | None = None):
     env = env or Environment(name="prod", target=Target.AWS, region="us-east-1")
-    return bind(app.infer(), env, LockFile()), env
+    return app.plan(env, lock=LockFile()), env
 
 
 def _spec_for(app: App) -> AppSpec:
@@ -34,7 +33,7 @@ def test_build_artefacts_writes_dockerfile_handler_bootstrap_pyproject(
 ) -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -60,7 +59,7 @@ def test_build_artefacts_writes_dockerfile_handler_bootstrap_pyproject(
 def test_build_artefacts_round_trips_manifest_through_pydantic(tmp_path: Path) -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def predict(x: int) -> int:
         return x + 1
 
@@ -89,7 +88,7 @@ def test_build_artefacts_skips_storage_resources(tmp_path: Path) -> None:
     class Cache(Store[dict]):
         pass
 
-    @app.function()
+    @app.expose()
     async def hit(key: str) -> dict:
         return await Cache.get(key) or {}
 
@@ -105,7 +104,7 @@ def test_build_artefacts_skips_storage_resources(tmp_path: Path) -> None:
 def test_build_artefacts_rejects_non_aws_target(tmp_path: Path) -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -127,7 +126,7 @@ def test_build_artefacts_renders_dependencies_into_pyproject(tmp_path: Path) -> 
     """Custom `requirements` flow into `[project].dependencies` in `pyproject.toml`."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -155,7 +154,7 @@ def test_build_artefacts_default_requirements_use_only_skaal_extras(
 
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -170,7 +169,7 @@ def test_build_artefacts_default_requirements_use_only_skaal_extras(
 def test_build_artefacts_renders_app_target_into_bootstrap(tmp_path: Path) -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -192,7 +191,7 @@ def test_build_artefacts_uses_default_out_dir(
     """Defaults the build output to `./.skaal/build/<env_name>` under cwd."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -208,7 +207,7 @@ def test_build_artefacts_resource_slug_is_filesystem_safe(tmp_path: Path) -> Non
     """Slugs strip module dots and add a short hash to disambiguate."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -228,7 +227,7 @@ def test_build_artefacts_uses_app_spec_top_package_in_dockerfile(
     """`COPY {{ user_package }}` uses the parsed top package, not a re-split string."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 

@@ -18,13 +18,13 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
-from skaal import App, RetryPolicy
+from skaal import App, Retry
 
 app = App("fastapi-streaming")
 api = FastAPI(title="Skaal FastAPI Streaming")
 
 
-@app.function(retry=RetryPolicy(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
+@app.expose(retry=Retry(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
 async def stream_tokens(prompt: str):
     for token in prompt.split():
         await asyncio.sleep(0.02)

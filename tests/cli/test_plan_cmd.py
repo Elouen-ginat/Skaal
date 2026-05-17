@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from skaal.binding.lock import write_lock
 from skaal.binding.model import LockEntry, LockFile
 from skaal.cli._load import load_app, load_plan
 from skaal.cli.main import app
@@ -76,22 +75,20 @@ def test_plan_reports_no_resources_for_empty_app(
 def test_plan_reports_no_changes_when_lock_matches(fixture_app: str, tmp_path: Path) -> None:
     skaal_app = load_app(fixture_app)
     bound = load_plan(skaal_app, "local").bound
-    write_lock(
-        tmp_path / "skaal.lock",
-        LockFile(
-            entries={
-                ("local", resource.inferred.id): LockEntry(
-                    backend=resource.backend,
-                    region=resource.region,
-                    pinned_at=datetime.now(UTC),
-                    pinned_by="test",
-                    fingerprint=bound.bound_fingerprint,
-                )
-                for resource in bound.resources
-                if not resource.external
-            }
-        ),
+    lock = LockFile(
+        entries={
+            ("local", resource.inferred.id): LockEntry(
+                backend=resource.backend,
+                region=resource.region,
+                pinned_at=datetime.now(UTC),
+                pinned_by="test",
+                fingerprint=bound.bound_fingerprint,
+            )
+            for resource in bound.resources
+            if not resource.external
+        }
     )
+    lock.save(tmp_path / "skaal.lock")
 
     result = runner.invoke(app, ["plan", fixture_app])
     assert result.exit_code == 0, result.output
@@ -105,22 +102,20 @@ def test_plan_reports_updates_when_code_changes_after_lock(
 ) -> None:
     skaal_app = load_app(fixture_app)
     bound = load_plan(skaal_app, "local").bound
-    write_lock(
-        tmp_path / "skaal.lock",
-        LockFile(
-            entries={
-                ("local", resource.inferred.id): LockEntry(
-                    backend=resource.backend,
-                    region=resource.region,
-                    pinned_at=datetime.now(UTC),
-                    pinned_by="test",
-                    fingerprint=bound.bound_fingerprint,
-                )
-                for resource in bound.resources
-                if not resource.external
-            }
-        ),
+    lock = LockFile(
+        entries={
+            ("local", resource.inferred.id): LockEntry(
+                backend=resource.backend,
+                region=resource.region,
+                pinned_at=datetime.now(UTC),
+                pinned_by="test",
+                fingerprint=bound.bound_fingerprint,
+            )
+            for resource in bound.resources
+            if not resource.external
+        }
     )
+    lock.save(tmp_path / "skaal.lock")
 
     app_file = tmp_path / "plan_fixture_pkg" / "app.py"
     app_file.write_text(_make_fixture_app_source("plan-fixture-v2"))

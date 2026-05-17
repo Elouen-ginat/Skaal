@@ -73,7 +73,7 @@ The deployment pipeline produces real artifacts instead of asking you to hand-ma
 
 ## Where to drill deeper
 
-- [How Skaal Works](how-it-works.md) for the lifecycle from constraints to artifacts
-- [Catalogs](catalogs.md) for the environment model and overrides
+- [How Skaal Works](how-it-works.md) for the lifecycle from declaration to deployed artefacts
+- [CLI Configuration](cli-configuration.md) for the environment model and overrides
 - [CLI](cli.md) for operational commands
 - [Python API](reference/python-api.md) for in-process planning and deployment

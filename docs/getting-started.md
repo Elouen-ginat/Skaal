@@ -59,7 +59,7 @@ The tutorials are intentionally simple and build one idea at a time.
 
 | Tutorial | Outcome |
 | --- | --- |
-| [1. Build a Counter App](tutorials/first-app.md) | Learn `App`, `Store`, `@app.storage`, `@app.function`, and the local HTTP surface. |
+| [1. Build a Counter App](tutorials/first-app.md) | Learn `App`, `Store`, `@app.storage`, `@app.expose`, and the local HTTP surface. |
 | [2. Add a FastAPI Surface](tutorials/http-api.md) | Mount FastAPI and route public HTTP through `app.invoke(...)`. |
 | [3. Plan, Build, and Deploy](tutorials/planning-and-deployment.md) | Use catalogs, inspect `plan.skaal.lock`, then generate and deploy artifacts. |
 | [4. Relational Data and Migrations](tutorials/relational-and-migrations.md) | Add SQLModel-backed storage and use the Alembic-powered migration commands. |

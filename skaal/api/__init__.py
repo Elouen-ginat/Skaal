@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import TypeAlias
 
 from skaal.app import App
-from skaal.binding import load_lock
+from skaal.binding import LockFile
 from skaal.cli._load import load_app, load_plan
 
 from ._commands import (
     BuildResult,
     DeployResult,
     DoctorReport,
-    StubEmitResult,
+    StubResult,
     build,
     deploy,
     doctor,
@@ -23,42 +23,42 @@ from ._commands import (
 )
 from ._plan import PlanChange, PlanDiff, diff_bound_plans, diff_plan, render_plan_diff_markdown
 from ._resource_map import ResourceMap, ResourceMapEntry
-from ._trace import TraceHit, resolve_trace
-from ._where import WhereHit, resolve_where
+from ._trace import SourceMatch, resolve_trace
+from ._where import Location, resolve_where
 
-AppTarget: TypeAlias = App | str
+AppRef: TypeAlias = App | str
 
 __all__ = [
-    "AppTarget",
+    "AppRef",
     "BuildResult",
     "DeployResult",
     "DoctorReport",
+    "Location",
     "PlanChange",
     "PlanDiff",
     "ResourceMap",
     "ResourceMapEntry",
-    "StubEmitResult",
-    "TraceHit",
-    "WhereHit",
+    "SourceMatch",
+    "StubResult",
     "build",
     "deploy",
     "diff_bound_plans",
     "diff_plan",
     "doctor",
+    "find_source",
     "init",
-    "map",
+    "locate",
     "plan",
     "render_plan_diff_markdown",
     "resolve_trace",
+    "resources",
     "run",
     "stubs",
-    "trace",
-    "where",
 ]
 
 
 def plan(
-    target: AppTarget,
+    target: AppRef,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
@@ -76,16 +76,16 @@ def plan(
         The diff between the current bound plan and the lock file.
     """
     loaded = load_plan(
-        _resolve_app_target(target),
+        _resolve_app_ref(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
     )
-    return diff_plan(loaded.bound, load_lock(lock_path))
+    return diff_plan(loaded.bound, LockFile.load(lock_path))
 
 
-def map(
-    target: AppTarget,
+def resources(
+    target: AppRef,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
@@ -105,7 +105,7 @@ def map(
         The validated resource map for the bound plan.
     """
     loaded = load_plan(
-        _resolve_app_target(target),
+        _resolve_app_ref(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -117,14 +117,14 @@ def map(
     return resource_map
 
 
-def trace(
+def find_source(
     needle: str,
-    target: AppTarget,
+    target: AppRef,
     *,
     env_name: str = "local",
     toml_path: Path = Path("skaal.toml"),
     lock_path: Path = Path("skaal.lock"),
-) -> TraceHit:
+) -> SourceMatch:
     """Resolve a resource id or log line back to a source location.
 
     Args:
@@ -138,7 +138,7 @@ def trace(
         The resolved trace hit.
     """
     loaded = load_plan(
-        _resolve_app_target(target),
+        _resolve_app_ref(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -146,14 +146,14 @@ def trace(
     return resolve_trace(needle, loaded.bound)
 
 
-def where(
+def locate(
     resource_id: str,
-    target: AppTarget,
+    target: AppRef,
     *,
     env_name: str = "prod",
     toml_path: Path = Path("skaal.toml"),
     lock_path: Path = Path("skaal.lock"),
-) -> WhereHit:
+) -> Location:
     """Resolve a resource id to its deployed cloud-console URL.
 
     Args:
@@ -167,7 +167,7 @@ def where(
         The resolved deployed-resource location.
     """
     loaded = load_plan(
-        _resolve_app_target(target),
+        _resolve_app_ref(target),
         env_name,
         toml_path=toml_path,
         lock_path=lock_path,
@@ -175,7 +175,7 @@ def where(
     return resolve_where(resource_id, loaded.bound, loaded.env)
 
 
-def _resolve_app_target(target: AppTarget) -> App:
+def _resolve_app_ref(target: AppRef) -> App:
     """Resolve `target` to a live `App` instance.
 
     Args:

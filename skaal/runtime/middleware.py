@@ -32,8 +32,8 @@ import tenacity
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,
-    RateLimitPolicy,
-    RetryPolicy,
+    RateLimit,
+    Retry,
 )
 
 R = TypeVar("R")
@@ -62,7 +62,7 @@ class _RateLimitBucket:
         return False
 
 
-def _tenacity_wait(policy: RetryPolicy) -> tenacity.wait.wait_base:
+def _tenacity_wait(policy: Retry) -> tenacity.wait.wait_base:
     base_s: float = policy.base_delay_ms / 1000.0
     max_s: float = policy.max_delay_ms / 1000.0
     if policy.backoff == "fixed":
@@ -75,9 +75,9 @@ def _tenacity_wait(policy: RetryPolicy) -> tenacity.wait.wait_base:
 def wrap_resilience(
     handler: Handler[R],
     *,
-    retry: RetryPolicy | None = None,
+    retry: Retry | None = None,
     circuit_breaker: CircuitBreaker | None = None,
-    rate_limit: RateLimitPolicy | None = None,
+    rate_limit: RateLimit | None = None,
     bulkhead: Bulkhead | None = None,
 ) -> Handler[R]:
     """Return ``handler`` wrapped with the configured resilience policies.
@@ -121,7 +121,7 @@ def _with_bulkhead(handler: Handler[R], policy: Bulkhead) -> Handler[R]:
     return wrapper
 
 
-def _with_rate_limit(handler: Handler[R], policy: RateLimitPolicy) -> Handler[R]:
+def _with_rate_limit(handler: Handler[R], policy: RateLimit) -> Handler[R]:
     bucket: _RateLimitBucket = _RateLimitBucket(policy.requests_per_second, policy.burst)
 
     async def wrapper(*args: Any, **kwargs: Any) -> R:
@@ -172,7 +172,7 @@ def _with_circuit_breaker(handler: Handler[R], policy: CircuitBreaker) -> Handle
     return wrapper
 
 
-def _with_retry(handler: Handler[R], policy: RetryPolicy) -> Handler[R]:
+def _with_retry(handler: Handler[R], policy: Retry) -> Handler[R]:
     retrying: tenacity.AsyncRetrying = tenacity.AsyncRetrying(
         stop=tenacity.stop_after_attempt(policy.max_attempts),
         wait=_tenacity_wait(policy),

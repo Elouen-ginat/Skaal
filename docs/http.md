@@ -1,6 +1,6 @@
 # HTTP with Skaal
 
-Skaal does not try to be a web framework. `@app.function()` is a compute primitive plus a resilience boundary; the public HTTP surface belongs to your mounted ASGI app.
+Skaal does not try to be a web framework. `@app.expose()` is a compute primitive plus a resilience boundary; the public HTTP surface belongs to your mounted ASGI app.
 
 Use FastAPI, Starlette, or Litestar via `app.mount_asgi(...)` and call Skaal compute through `app.invoke(...)` or `app.invoke_stream(...)`.
 
@@ -8,18 +8,18 @@ Use FastAPI, Starlette, or Litestar via `app.mount_asgi(...)` and call Skaal com
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
-from skaal import App, RetryPolicy
+from skaal import App, Retry
 
 app = App("api")
 api = FastAPI()
 
 
-@app.function(retry=RetryPolicy(max_attempts=3))
+@app.expose(retry=Retry(max_attempts=3))
 async def predict(features: dict) -> dict:
     return {"ok": True, "features": features}
 
 
-@app.function()
+@app.expose()
 async def stream_tokens(prompt: str):
     for token in prompt.split():
         yield f"data: {token}\n\n"

@@ -16,7 +16,7 @@ from skaal.app import App
 from skaal.binding.model import Target
 from skaal.cli._load import AppSpec
 from skaal.inference.model import ResourceKind
-from skaal.plugins import PluginRegistry, SkaalPlugin
+from skaal.plugins import Plugin, PluginRegistry
 
 _FIXTURE = textwrap.dedent(
     """
@@ -31,7 +31,7 @@ _FIXTURE = textwrap.dedent(
         pass
 
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
     """
@@ -109,7 +109,7 @@ def test_diff_bound_plans_reports_structural_changes(
                 pass
 
 
-            @app.function()
+            @app.expose()
             async def greet(name: str) -> dict[str, str]:
                 return {"hello": name}
 
@@ -135,7 +135,7 @@ def test_map_accepts_app_object_and_writes_json(
     _, app = fixture_app
     out_path = tmp_path / "artefacts" / "map.json"
 
-    resource_map = api.map(app, out_path=out_path)
+    resource_map = api.resources(app, out_path=out_path)
 
     assert resource_map.app == "api-fixture"
     assert out_path.exists()
@@ -145,7 +145,7 @@ def test_map_accepts_app_object_and_writes_json(
 def test_trace_resolves_log_line(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
-    hit = api.trace("error resource=api_fixture_pkg.app:greet", target)
+    hit = api.find_source("error resource=api_fixture_pkg.app:greet", target)
 
     assert hit.resource.inferred.id == "api_fixture_pkg.app:greet"
     assert hit.resource.inferred.source.qualname == "greet"
@@ -155,7 +155,7 @@ def test_trace_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
     with pytest.raises(ValueError, match="Could not resolve"):
-        api.trace("missing-resource", target)
+        api.find_source("missing-resource", target)
 
 
 def test_where_resolves_resource_console_url(
@@ -184,7 +184,7 @@ def test_where_resolves_resource_console_url(
         lambda bound, env, stack_name: fake_state,
     )
 
-    hit = api.where("api_fixture_pkg.app:Sessions", target)
+    hit = api.locate("api_fixture_pkg.app:Sessions", target)
 
     assert hit.resource.inferred.id == "api_fixture_pkg.app:Sessions"
     assert hit.provider_type == "aws:dynamodb/table:Table"
@@ -196,7 +196,7 @@ def test_where_rejects_unknown_resource(fixture_app: tuple[str, App]) -> None:
     target, _ = fixture_app
 
     with pytest.raises(ValueError, match="Could not resolve"):
-        api.where("missing-resource", target)
+        api.locate("missing-resource", target)
 
 
 def test_where_builtin_target_metadata_survives_reset(
@@ -229,7 +229,7 @@ def test_where_builtin_target_metadata_survives_reset(
     )
 
     try:
-        hit = api.where("api_fixture_pkg.app:Sessions", target)
+        hit = api.locate("api_fixture_pkg.app:Sessions", target)
     finally:
         reset_plugins()
         _where._reset_for_tests()
@@ -238,7 +238,7 @@ def test_where_builtin_target_metadata_survives_reset(
     assert hit.console_url.endswith("#table?name=built-in-store")
 
 
-class _WherePlugin(SkaalPlugin):
+class _WherePlugin(Plugin):
     name = "where-plugin"
 
     def register(self, registry: PluginRegistry) -> None:
@@ -257,11 +257,11 @@ class _WherePlugin(SkaalPlugin):
 
 
 class _FakeWhereEntryPoint:
-    def __init__(self, name: str, plugin_type: type[SkaalPlugin]) -> None:
+    def __init__(self, name: str, plugin_type: type[Plugin]) -> None:
         self.name = name
         self._plugin_type = plugin_type
 
-    def load(self) -> type[SkaalPlugin]:
+    def load(self) -> type[Plugin]:
         return self._plugin_type
 
 
@@ -319,7 +319,7 @@ def test_where_loads_plugin_contributed_resolver(
     )
 
     try:
-        hit = api.where("api_fixture_pkg.app:Sessions", target)
+        hit = api.locate("api_fixture_pkg.app:Sessions", target)
     finally:
         reset_plugins()
         _where._reset_for_tests()
@@ -374,7 +374,7 @@ def test_where_plugin_preference_beats_builtin_candidate(
     )
 
     try:
-        hit = api.where("api_fixture_pkg.app:Sessions", target)
+        hit = api.locate("api_fixture_pkg.app:Sessions", target)
     finally:
         reset_plugins()
         _where._reset_for_tests()

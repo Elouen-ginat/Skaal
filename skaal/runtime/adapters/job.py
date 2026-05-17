@@ -17,11 +17,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Wire an in-process queue + worker task for the registered job."""
     if target is None:
         return

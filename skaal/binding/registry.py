@@ -88,7 +88,7 @@ class BackendDefault(BaseModel):
     target: Target
 
 
-class BackendEntry(BaseModel):
+class BackendSpec(BaseModel):
     """One row of the registry (ADR 028 §6.12)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -143,8 +143,8 @@ def _entry(
     *,
     capabilities: BackendCapabilities | None = None,
     default_for: frozenset[BackendDefault] | None = None,
-) -> BackendEntry:
-    return BackendEntry(
+) -> BackendSpec:
+    return BackendSpec(
         token=token,
         targets=targets,
         capabilities=capabilities or BackendCapabilities(),
@@ -158,7 +158,9 @@ def _default_cells(
     *targets: Target,
     kinds: Iterable[ResourceKind] | None = None,
 ) -> frozenset[BackendDefault]:
-    default_kinds = tuple(kinds) if kinds is not None else (ResourceKind(kind) for kind in token.kinds)
+    default_kinds = (
+        tuple(kinds) if kinds is not None else (ResourceKind(kind) for kind in token.kinds)
+    )
     return frozenset(
         BackendDefault(kind=kind, target=target) for kind in default_kinds for target in targets
     )
@@ -170,7 +172,7 @@ _GCP = frozenset({Target.GCP})
 _ALL_TARGETS = frozenset({Target.LOCAL, Target.AWS, Target.GCP})
 
 
-REGISTRY: tuple[BackendEntry, ...] = (
+REGISTRY: tuple[BackendSpec, ...] = (
     _entry(
         Sqlite,
         _LOCAL,
@@ -266,23 +268,23 @@ REGISTRY: tuple[BackendEntry, ...] = (
 # stitched together on every lookup so the in-tree consistency invariant
 # stays loud while still allowing external libs to add backends.
 _LOCK: Lock = Lock()
-_EXTRA: list[BackendEntry] = []
-_EXTRA_BY_NAME: dict[str, BackendEntry] = {}
-_EXTRA_BY_TOKEN: dict[type[Backend[Any]], BackendEntry] = {}
+_EXTRA: list[BackendSpec] = []
+_EXTRA_BY_NAME: dict[str, BackendSpec] = {}
+_EXTRA_BY_TOKEN: dict[type[Backend[Any]], BackendSpec] = {}
 
 
-_BY_NAME: dict[str, BackendEntry] = {entry.token_class.name: entry for entry in REGISTRY}
-_BY_TOKEN: dict[type[Backend[Any]], BackendEntry] = {entry.token_class: entry for entry in REGISTRY}
+_BY_NAME: dict[str, BackendSpec] = {entry.token_class.name: entry for entry in REGISTRY}
+_BY_TOKEN: dict[type[Backend[Any]], BackendSpec] = {entry.token_class: entry for entry in REGISTRY}
 
 
-def all_entries() -> tuple[BackendEntry, ...]:
+def all_entries() -> tuple[BackendSpec, ...]:
     """Return every registered entry — built-in plus plugin-contributed."""
     _ensure_plugins_loaded()
     with _LOCK:
         return REGISTRY + tuple(_EXTRA)
 
 
-def register_backend(entry: BackendEntry) -> None:
+def register_backend(entry: BackendSpec) -> None:
     """Register a new `BackendEntry` (typically from a `SkaalPlugin`).
 
     Re-registering an already-known backend token is a silent no-op so
@@ -313,7 +315,7 @@ def register_backend(entry: BackendEntry) -> None:
         _EXTRA_BY_TOKEN[token] = entry
 
 
-def lookup(name: str) -> BackendEntry:
+def lookup(name: str) -> BackendSpec:
     """Return the registry entry whose ``token.name`` matches.
 
     Raises:
@@ -330,7 +332,7 @@ def lookup(name: str) -> BackendEntry:
     raise UnknownBackendError(name, valid)
 
 
-def lookup_token(token: type[Backend[Any]]) -> BackendEntry:
+def lookup_token(token: type[Backend[Any]]) -> BackendSpec:
     """Return the registry entry for a `Backend` subclass identity."""
     _ensure_plugins_loaded()
     with _LOCK:
@@ -343,7 +345,7 @@ def lookup_token(token: type[Backend[Any]]) -> BackendEntry:
     raise UnknownBackendError(token.name, valid)
 
 
-def default_entry_for(kind: ResourceKind, target: Target) -> BackendEntry:
+def default_entry_for(kind: ResourceKind, target: Target) -> BackendSpec:
     """Return the built-in default backend entry for `(kind, target)`."""
     for entry in REGISTRY:
         if entry.is_default_for(kind, target):
@@ -352,7 +354,7 @@ def default_entry_for(kind: ResourceKind, target: Target) -> BackendEntry:
     raise RuntimeError(msg)
 
 
-def tokens_for(kind: str, target: Target) -> tuple[BackendEntry, ...]:
+def tokens_for(kind: str, target: Target) -> tuple[BackendSpec, ...]:
     """Return every registered entry that can host ``kind`` on ``target``."""
     _ensure_plugins_loaded()
     with _LOCK:

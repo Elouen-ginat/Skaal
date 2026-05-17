@@ -118,14 +118,14 @@ class TeamMembers(Store[TeamMember]):
     """Directory entries backed by KV storage with native secondary indexes."""
 
 
-@app.function()
+@app.expose()
 async def seed_directory() -> dict:
     for member in FIXTURE_MEMBERS:
         await TeamMembers.set(member.id, member)
     return {"seeded": len(FIXTURE_MEMBERS)}
 
 
-@app.function()
+@app.expose()
 async def team_leaderboard(team: str, limit: int = 3, cursor: str | None = None) -> dict:
     page = await TeamMembers.query_index("by_team", team, limit=limit, cursor=cursor)
     return {
@@ -136,7 +136,7 @@ async def team_leaderboard(team: str, limit: int = 3, cursor: str | None = None)
     }
 
 
-@app.function()
+@app.expose()
 async def find_member(email: str) -> dict:
     page = await TeamMembers.query_index("by_email", email, limit=1)
     member = page.items[0] if page.items else None

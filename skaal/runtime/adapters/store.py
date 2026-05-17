@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Construct the chosen backend and bind it to ``target`` (the Store class)."""
     if target is None:
         return
@@ -42,7 +42,7 @@ def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
     runtime.add_shutdown_hook(_shutdown)
 
 
-def _build_backend(bound: BoundResource, target: Any) -> Any:
+def _build_backend(bound: PlannedResource, target: Any) -> Any:
     name: str = bound.backend
     namespace: str = target.__name__
 

@@ -14,19 +14,19 @@ from typing import Any
 import pytest
 
 from skaal import Backend, Target
-from skaal.binding.registry import BackendEntry, lookup
+from skaal.binding.registry import BackendSpec, lookup
 from skaal.errors import SkaalConfigError
-from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
+from skaal.plugins import Plugin, PluginRegistry, load_plugins
 
 
-class _FakePlugin(SkaalPlugin):
+class _FakePlugin(Plugin):
     """A plugin that registers one fake backend in the binding registry."""
 
     name = "fake-plugin"
 
     def register(self, registry: PluginRegistry) -> None:
         registry.add_backend(
-            BackendEntry(
+            BackendSpec(
                 token=_FakeBackend,
                 targets=frozenset({Target.AWS}),
             )
@@ -38,7 +38,7 @@ class _FakeBackend(Backend[object]):
     kinds = frozenset({"store"})
 
 
-class _BrokenPlugin(SkaalPlugin):
+class _BrokenPlugin(Plugin):
     name = "broken-plugin"
 
     def register(self, registry: PluginRegistry) -> None:
@@ -46,7 +46,7 @@ class _BrokenPlugin(SkaalPlugin):
 
 
 class _FakeEntryPoint:
-    def __init__(self, name: str, target: type[SkaalPlugin]) -> None:
+    def __init__(self, name: str, target: type[Plugin]) -> None:
         self.name = name
         self._target = target
 
@@ -91,7 +91,7 @@ def test_load_plugins_registers_contributed_backend(
 
     load_plugins()
     entry = lookup("fake-backend")
-    assert entry.token is _FakeBackend
+    assert entry.token_class is _FakeBackend
     assert Target.AWS in entry.targets
 
 
@@ -102,7 +102,7 @@ def test_load_plugins_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     # A second load is a no-op — the same plugin would otherwise raise
     # `SkaalConfigError` on the second registration of the same backend.
     load_plugins()
-    assert lookup("fake-backend").token is _FakeBackend
+    assert lookup("fake-backend").token_class is _FakeBackend
 
 
 def test_lookup_triggers_lazy_plugin_loading(
@@ -112,7 +112,7 @@ def test_lookup_triggers_lazy_plugin_loading(
     _patch_entry_points(monkeypatch, (_FakeEntryPoint("fake", _FakePlugin),))
     # No explicit `load_plugins()` call — the lookup must drive discovery.
     entry = lookup("fake-backend")
-    assert entry.token is _FakeBackend
+    assert entry.token_class is _FakeBackend
 
 
 def test_broken_plugin_does_not_break_others(
@@ -128,7 +128,7 @@ def test_broken_plugin_does_not_break_others(
     )
     load_plugins()
     # The healthy plugin still registered.
-    assert lookup("fake-backend").token is _FakeBackend
+    assert lookup("fake-backend").token_class is _FakeBackend
 
 
 def test_conflicting_backend_registration_raises() -> None:
@@ -140,14 +140,14 @@ def test_conflicting_backend_registration_raises() -> None:
         kinds = frozenset({"store"})
 
     with pytest.raises(SkaalConfigError, match="already registered"):
-        register_backend(BackendEntry(token=FakeRedis, targets=frozenset({Target.AWS})))
+        register_backend(BackendSpec(token=FakeRedis, targets=frozenset({Target.AWS})))
 
 
 def test_idempotent_re_registration_of_same_token() -> None:
     """Registering the exact same `BackendEntry` twice is a silent no-op."""
     from skaal.binding.registry import register_backend
 
-    entry = BackendEntry(token=_FakeBackend, targets=frozenset({Target.AWS}))
+    entry = BackendSpec(token=_FakeBackend, targets=frozenset({Target.AWS}))
     register_backend(entry)
     register_backend(entry)
-    assert lookup("fake-backend").token is _FakeBackend
+    assert lookup("fake-backend").token_class is _FakeBackend

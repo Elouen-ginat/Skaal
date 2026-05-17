@@ -56,7 +56,7 @@ def stubs(
     except StubEmitError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    resource_count = len(skaal_app.infer().resources)
+    resource_count = len(skaal_app.blueprint().resources)
     console.print(
         f"[green]Wrote stub package[/green] [bold]{pkg}[/bold] -> [cyan]{written}[/cyan]"
         f" ({resource_count} resource{'s' if resource_count != 1 else ''})"

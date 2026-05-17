@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING, Any
 from starlette.types import ASGIApp
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Mount the user's ASGI app under the path declared on the resource."""
     app: Any = runtime.app
     path: str = bound.inferred.overrides.options.get("path", "/")

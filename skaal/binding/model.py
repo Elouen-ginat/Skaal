@@ -9,23 +9,24 @@ The eight types are:
 
 - ``Target`` — the deployment platform (`local`, `aws`, `gcp`).
 - ``BackendConfig`` — per-backend env config (project, dataset, emulator).
-- ``ResourceOverride`` — an entry in ``[env.<name>.overrides]``.
+- ``EnvOverride`` — an entry in ``[env.<name>.overrides]``.
 - ``Environment`` — one `skaal.toml` ``[env.<name>]`` block.
 - ``LockEntry`` — one row of ``skaal.lock``.
 - ``LockFile`` — the full pin-on-first-deploy state.
-- ``BoundResource`` — an `InferredResource` bound to one backend.
-- ``BoundPlan`` — the deterministic output of ``bind(plan, env, lock)``.
+- ``PlannedResource`` — a `BlueprintResource` bound to one backend.
+- ``Plan`` — the deterministic output of ``plan(blueprint, env, lock)``.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from skaal.inference.model import Edge, InferredResource
+from skaal.inference.model import BlueprintResource, Edge
 
 
 class Target(StrEnum):
@@ -54,7 +55,7 @@ class BackendConfig(BaseModel):
     options: dict[str, Any] = {}
 
 
-class ResourceOverride(BaseModel):
+class EnvOverride(BaseModel):
     """An entry in ``[env.<name>.overrides]`` for a single un-pinned resource."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -72,8 +73,22 @@ class Environment(BaseModel):
     name: str
     target: Target
     region: str | None = None
-    overrides: dict[str, ResourceOverride] = {}
+    overrides: dict[str, EnvOverride] = {}
     backends: dict[str, BackendConfig] = {}
+
+    @classmethod
+    def load(cls, name: str = "local", *, path: Path | None = None) -> Environment:
+        """Load one named environment from `skaal.toml`."""
+        from skaal.binding.environment import load_environment
+
+        return load_environment(name, path=path)
+
+    @classmethod
+    def load_all(cls, *, path: Path | None = None) -> dict[str, Environment]:
+        """Load every environment from `skaal.toml`."""
+        from skaal.binding.environment import load_environments
+
+        return load_environments(path=path)
 
 
 class LockEntry(BaseModel):
@@ -101,8 +116,21 @@ class LockFile(BaseModel):
     version: int = 1
     entries: dict[tuple[str, str], LockEntry] = {}
 
+    @classmethod
+    def load(cls, path: Path) -> LockFile:
+        """Load `skaal.lock` from disk, or return an empty lock file."""
+        from skaal.binding.lock import load_lock
 
-class BoundResource(BaseModel):
+        return load_lock(path)
+
+    def save(self, path: Path) -> None:
+        """Persist this lock file to disk."""
+        from skaal.binding.lock import write_lock
+
+        write_lock(path, self)
+
+
+class PlannedResource(BaseModel):
     """An `InferredResource` bound to exactly one concrete backend.
 
     ``external`` is propagated from `ResourceOverrides.external` (set by
@@ -113,7 +141,7 @@ class BoundResource(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    inferred: InferredResource
+    inferred: BlueprintResource
     backend: str
     region: str | None = None
     options: dict[str, str] = {}
@@ -123,7 +151,7 @@ class BoundResource(BaseModel):
     external_name: str | None = None
 
 
-class BoundPlan(BaseModel):
+class Plan(BaseModel):
     """The deterministic output of ``bind(plan, env, lock)``.
 
     ``app_fingerprint`` mirrors ``InferredPlan.fingerprint`` through the
@@ -137,7 +165,7 @@ class BoundPlan(BaseModel):
 
     app: str
     environment: str
-    resources: tuple[BoundResource, ...] = ()
+    resources: tuple[PlannedResource, ...] = ()
     edges: tuple[Edge, ...] = ()
     app_fingerprint: str = ""
     bound_fingerprint: str = ""

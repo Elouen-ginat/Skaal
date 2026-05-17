@@ -37,7 +37,7 @@ from skaal.errors import SkaalDeployError, UnknownBackendError
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundPlan, Environment, Target
+    from skaal.binding.model import Environment, Plan, Target
 
 
 class BaseDeployTarget(DeployTarget):
@@ -201,7 +201,7 @@ class BaseDeployTarget(DeployTarget):
         }
         return self._config_cls.model_validate(merged)
 
-    def stack_name(self, bound: BoundPlan, env: Environment) -> str:
+    def stack_name(self, bound: Plan, env: Environment) -> str:
         return f"{bound.app}-{env.name}"
 
     def stack_config(self, env: Environment) -> Mapping[str, str]:

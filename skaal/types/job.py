@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from skaal.types.compute import RetryPolicy
+from skaal.types.compute import Retry
 
 
 @dataclass(frozen=True)
@@ -12,7 +12,7 @@ class JobSpec:
     """Metadata attached to a registered background job handler."""
 
     name: str
-    retry: RetryPolicy | None = None
+    retry: Retry | None = None
 
 
 @dataclass(frozen=True)

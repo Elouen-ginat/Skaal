@@ -5,8 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from skaal.api import TraceHit, resolve_trace
-from skaal.binding.model import BoundPlan
+from skaal.api import SourceMatch, resolve_trace
+from skaal.binding.model import Plan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
 
@@ -42,7 +42,7 @@ def trace(
     _render(hit, bound)
 
 
-def _resolve(needle: str, bound: BoundPlan) -> TraceHit:
+def _resolve(needle: str, bound: Plan) -> SourceMatch:
     """Resolve `needle` against the current bound plan."""
     try:
         return resolve_trace(needle, bound)
@@ -50,7 +50,7 @@ def _resolve(needle: str, bound: BoundPlan) -> TraceHit:
         raise typer.BadParameter(str(exc)) from exc
 
 
-def _render(hit: TraceHit, bound: BoundPlan) -> None:
+def _render(hit: SourceMatch, bound: Plan) -> None:
     """Render `hit` to the terminal."""
     source = hit.resource.inferred.source
     console = Console()

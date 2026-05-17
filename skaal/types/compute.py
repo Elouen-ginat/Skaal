@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
-class RetryPolicy(BaseModel):
+class Retry(BaseModel):
     """Retry-with-backoff and optional idempotency for a function."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -37,7 +37,7 @@ class CircuitBreaker(BaseModel):
     fallback: str | None = None
 
 
-class RateLimitPolicy(BaseModel):
+class RateLimit(BaseModel):
     """Token-bucket rate limiting, optionally scoped per-client or per-argument."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -66,9 +66,9 @@ class ResiliencePolicies(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    retry: RetryPolicy | None = None
+    retry: Retry | None = None
     circuit_breaker: CircuitBreaker | None = None
-    rate_limit: RateLimitPolicy | None = None
+    rate_limit: RateLimit | None = None
     bulkhead: Bulkhead | None = None
 
     @property

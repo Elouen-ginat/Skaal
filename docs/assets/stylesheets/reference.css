@@ -518,7 +518,7 @@
   color: var(--sk-pyg-function);
 }
 
-/* Decorators (@storage, @app.function). */
+/* Decorators (@app.storage, @app.expose). */
 .md-typeset .doc-signature .nd,
 .md-typeset .doc-contents .highlight .nd {
   color: var(--sk-pyg-decorator);

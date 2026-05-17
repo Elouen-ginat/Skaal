@@ -132,7 +132,7 @@ class SchemaRef(BaseModel):
         return cls(model_qualname=target.__qualname__, fingerprint=fingerprint)
 
 
-class ResourceOverrides(BaseModel):
+class Overrides(BaseModel):
     """The full set of declaration-site knobs (ADR 028 §6.5).
 
     ``backend`` is populated from the backend generic parameter on the
@@ -177,7 +177,7 @@ class Edge(BaseModel):
     kind: EdgeKind
 
 
-class InferredResource(BaseModel):
+class BlueprintResource(BaseModel):
     """A single resource discovered by walking an `App`.
 
     The ``id`` is the canonical ``<module>:<qualname>`` form used in
@@ -196,7 +196,7 @@ class InferredResource(BaseModel):
     source: SourceLocation
     schema_: SchemaRef | None = Field(default=None, alias="schema")
     indexes: tuple[SecondaryIndex, ...] = ()
-    overrides: ResourceOverrides = ResourceOverrides()
+    overrides: Overrides = Overrides()
 
     @staticmethod
     def id_for(obj: object) -> str:
@@ -206,7 +206,7 @@ class InferredResource(BaseModel):
         return f"{module}:{qualname}"
 
 
-class InferredPlan(BaseModel):
+class Blueprint(BaseModel):
     """The deterministic, environment-independent output of the inference walk.
 
     The fingerprint is computed by `skaal.inference.fingerprint.fingerprint_plan`
@@ -217,11 +217,11 @@ class InferredPlan(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     app: str
-    resources: tuple[InferredResource, ...] = ()
+    resources: tuple[BlueprintResource, ...] = ()
     edges: tuple[Edge, ...] = ()
     fingerprint: str = ""
 
-    def with_fingerprint(self, fingerprint: str) -> InferredPlan:
+    def with_fingerprint(self, fingerprint: str) -> Blueprint:
         """Return a copy of this plan with ``fingerprint`` filled in.
 
         Used by the walker to finalise a plan whose resources are already
@@ -230,7 +230,7 @@ class InferredPlan(BaseModel):
         return self.model_copy(update={"fingerprint": fingerprint})
 
 
-def _canonical_payload(plan: InferredPlan) -> bytes:
+def _canonical_payload(plan: Blueprint) -> bytes:
     """Return the byte-stable JSON form of a plan, excluding its fingerprint.
 
     This is the exact payload the fingerprint hashes over. Exposed here (not in
@@ -242,7 +242,7 @@ def _canonical_payload(plan: InferredPlan) -> bytes:
     return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _canonical_resource_payload(res: InferredResource) -> bytes:
+def _canonical_resource_payload(res: BlueprintResource) -> bytes:
     """Byte-stable JSON form of a single resource."""
     data: dict[str, Any] = res.model_dump(mode="json", by_alias=True)
     return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")

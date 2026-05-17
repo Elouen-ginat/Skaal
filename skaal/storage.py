@@ -64,7 +64,7 @@ from skaal.backends._base import Backend
 from skaal.serialization import deserialize_value as _deserialize
 from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
-from skaal.types import TTL
+from skaal.types import TTL, Duration
 from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 T = TypeVar("T")
@@ -331,7 +331,7 @@ class Store(Generic[T, B]):
     __skaal_key_type__: ClassVar[type] = str
     __skaal_value_type__: ClassVar[type | None] = None
     __skaal_key_field__: ClassVar[str] = "id"
-    __skaal_default_ttl_seconds__: ClassVar[float | None] = None
+    default_ttl: ClassVar[str | Duration | None] = None
     _backend: ClassVar[StorageBackend | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -345,15 +345,20 @@ class Store(Generic[T, B]):
                     if "__skaal_key_field__" not in cls.__dict__:
                         cls.__skaal_key_field__ = _primary_key_field(args[0])
                 break
+        if cls is Store:
+            return
+        from skaal.decorators import _attach_storage_inferred
+
+        _attach_storage_inferred(cls, kind="kv")
 
     @classmethod
     def wire(cls, backend: StorageBackend) -> None:
         """Bind *backend* to this storage class."""
-        from skaal.inference.model import InferredResource
+        from skaal.inference.model import BlueprintResource
 
         cls._backend = backend
         inferred = getattr(cls, "__skaal_inferred__", None)
-        indexes = list(inferred.indexes) if isinstance(inferred, InferredResource) else []
+        indexes = list(inferred.indexes) if isinstance(inferred, BlueprintResource) else []
         _configure_backend_indexes(backend, indexes)
 
     @classmethod
@@ -363,7 +368,10 @@ class Store(Generic[T, B]):
     ) -> float | None:
         resolved = TTL.coerce(ttl)
         if resolved is None:
-            return cls.__skaal_default_ttl_seconds__
+            default = TTL.coerce(cls.default_ttl)
+            if default is None or default.is_never:
+                return None
+            return default.seconds
         if resolved.is_never:
             return None
         return resolved.seconds

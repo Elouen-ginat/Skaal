@@ -28,8 +28,8 @@ def _public_symbols() -> list[tuple[str, object]]:
 def _expected_any_returns() -> set[str]:
     """Symbols whose return type is intentionally `Any`.
 
-    The typed `.native()` escape (`Store.native`, `Relational.native`,
-    `BlobStore.native`, `Channel.native`) returns `Any` in Phase 5a;
+    The typed `.native()` escape (`Store.native`, `Table.native`,
+    `BlobStore.native`, `Topic.native`) returns `Any` in Phase 5a;
     Phase 5b narrows it via per-token overloads.
 
     ``Module.attach`` and ``App.attach`` are extension hooks: they accept
@@ -43,9 +43,9 @@ def _expected_any_returns() -> set[str]:
     """
     return {
         "Store.native",
-        "Relational.native",
+        "Table.native",
         "BlobStore.native",
-        "Channel.native",
+        "Topic.native",
         "FunctionRef.__getattr__",
         "FunctionRef.__call__",
         "Module.attach",

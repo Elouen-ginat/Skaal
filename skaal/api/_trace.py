@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from skaal.binding.model import BoundPlan, BoundResource
+from skaal.binding.model import Plan, PlannedResource
 
 
 @dataclass(frozen=True)
-class TraceHit:
+class SourceMatch:
     """One resolved trace result."""
 
-    resource: BoundResource
+    resource: PlannedResource
     matched_text: str
 
 
-def resolve_trace(needle: str, bound: BoundPlan) -> TraceHit:
+def resolve_trace(needle: str, bound: Plan) -> SourceMatch:
     """Resolve `needle` against the current bound plan.
 
     Args:
@@ -31,14 +31,14 @@ def resolve_trace(needle: str, bound: BoundPlan) -> TraceHit:
     resources = bound.resources
     for resource in resources:
         if needle == resource.inferred.id:
-            return TraceHit(resource=resource, matched_text=resource.inferred.id)
+            return SourceMatch(resource=resource, matched_text=resource.inferred.id)
 
     matches = [resource for resource in resources if resource.inferred.id in needle]
-    best_match: BoundResource | None = (
+    best_match: PlannedResource | None = (
         max(matches, key=lambda resource: len(resource.inferred.id)) if matches else None
     )
     if best_match is not None:
-        return TraceHit(resource=best_match, matched_text=best_match.inferred.id)
+        return SourceMatch(resource=best_match, matched_text=best_match.inferred.id)
 
     known_ids = ", ".join(
         [resource.inferred.id for resource in resources[:5]]

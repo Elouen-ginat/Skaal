@@ -25,7 +25,7 @@ class Counts(Store[int]):
     """Named integer counters. Backed by SQLite locally."""
 
 
-@app.function()
+@app.expose()
 async def increment(name: str, by: int = 1) -> dict:
     """Increment counter ``name`` by ``by`` (default 1). Returns new value."""
     current = await Counts.get(name) or 0
@@ -34,21 +34,21 @@ async def increment(name: str, by: int = 1) -> dict:
     return {"name": name, "value": new_value}
 
 
-@app.function()
+@app.expose()
 async def get_count(name: str) -> dict:
     """Return the current value of counter ``name``."""
     value = await Counts.get(name) or 0
     return {"name": name, "value": value}
 
 
-@app.function()
+@app.expose()
 async def reset(name: str) -> dict:
     """Reset counter ``name`` to zero."""
     await Counts.delete(name)
     return {"name": name, "value": 0}
 
 
-@app.function()
+@app.expose()
 async def list_counts() -> dict:
     """Return all counters and their values."""
     entries = await Counts.list()

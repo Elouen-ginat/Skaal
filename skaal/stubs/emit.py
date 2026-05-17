@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from skaal.inference.model import InferredPlan, InferredResource, ResourceKind
+from skaal.inference.model import Blueprint, BlueprintResource, ResourceKind
 from skaal.stubs.manifest import StubManifest, StubResourceRef
 
 if TYPE_CHECKING:
@@ -176,7 +176,7 @@ def emit_stubs(
     out_dir = out_dir.resolve()
     _prepare_out_dir(out_dir, package_name)
 
-    plan = app.infer()
+    plan = app.blueprint()
     resources_by_kind = _group_by_kind(plan)
 
     (out_dir / "py.typed").write_text("", encoding="utf-8")
@@ -239,10 +239,10 @@ def _clean_generated(out_dir: Path) -> None:
 
 
 def _group_by_kind(
-    plan: InferredPlan,
-) -> dict[ResourceKind, list[InferredResource]]:
+    plan: Blueprint,
+) -> dict[ResourceKind, list[BlueprintResource]]:
     """Bucket the plan's resources by their `ResourceKind`."""
-    grouped: dict[ResourceKind, list[InferredResource]] = {}
+    grouped: dict[ResourceKind, list[BlueprintResource]] = {}
     for res in plan.resources:
         grouped.setdefault(res.kind, []).append(res)
     for bucket in grouped.values():
@@ -250,7 +250,7 @@ def _group_by_kind(
     return grouped
 
 
-def _build_manifest(plan: InferredPlan, package_name: str) -> StubManifest:
+def _build_manifest(plan: Blueprint, package_name: str) -> StubManifest:
     from skaal import __version__
 
     refs = tuple(
@@ -275,7 +275,7 @@ def _build_manifest(plan: InferredPlan, package_name: str) -> StubManifest:
 
 
 def _render_init(
-    resources_by_kind: dict[ResourceKind, list[InferredResource]],
+    resources_by_kind: dict[ResourceKind, list[BlueprintResource]],
 ) -> str:
     """Render `__init__.pyi` re-exporting every covered symbol."""
     lines: list[str] = [_STUB_HEADER.rstrip("\n"), ""]
@@ -299,7 +299,7 @@ def _render_init(
     return "\n".join(lines)
 
 
-def _render_kind(kind: ResourceKind, resources: list[InferredResource]) -> str:
+def _render_kind(kind: ResourceKind, resources: list[BlueprintResource]) -> str:
     """Render the `.pyi` body for one resource kind."""
     body = [_STUB_HEADER.rstrip("\n"), ""]
     imports = _imports_for(kind, resources)
@@ -312,22 +312,22 @@ def _render_kind(kind: ResourceKind, resources: list[InferredResource]) -> str:
     return "\n".join(body).rstrip() + "\n"
 
 
-def _imports_for(kind: ResourceKind, resources: list[InferredResource]) -> list[str]:
+def _imports_for(kind: ResourceKind, resources: list[BlueprintResource]) -> list[str]:
     """Compute the `from skaal import …` line for a kind's stub file."""
     if kind is ResourceKind.STORE:
         return ["from skaal import Store"]
     if kind is ResourceKind.RELATIONAL:
-        return ["from skaal import Relational"]
+        return ["from skaal import Table"]
     if kind is ResourceKind.BLOB:
         return ["from skaal import BlobStore"]
     if kind is ResourceKind.CHANNEL:
-        return ["from skaal import Channel"]
+        return ["from skaal import Topic"]
     if kind is ResourceKind.FUNCTION:
         return ["from typing import Any"]
     return []
 
 
-def _local_symbol(res: InferredResource) -> str:
+def _local_symbol(res: BlueprintResource) -> str:
     """Return the public name a stub consumer imports the resource as.
 
     For most resources this is `qualname`'s last segment. Free functions
@@ -337,7 +337,7 @@ def _local_symbol(res: InferredResource) -> str:
     return res.source.qualname.rpartition(".")[-1]
 
 
-def _render_resource(kind: ResourceKind, res: InferredResource) -> str:
+def _render_resource(kind: ResourceKind, res: BlueprintResource) -> str:
     name = _local_symbol(res)
     if kind is ResourceKind.STORE:
         return f"class {name}(Store): ..."
@@ -352,7 +352,7 @@ def _render_resource(kind: ResourceKind, res: InferredResource) -> str:
     return f"# unsupported kind: {kind.value}"
 
 
-def _render_function(res: InferredResource, name: str) -> str:
+def _render_function(res: BlueprintResource, name: str) -> str:
     """Render a `def name(...) -> Any: ...` line for an inferred function.
 
     The signature is recovered via `inspect.signature` against the live
@@ -371,7 +371,7 @@ def _render_function(res: InferredResource, name: str) -> str:
     return f"def {name}{sig}: ..."
 
 
-def _resolve_callable(res: InferredResource) -> object | None:
+def _resolve_callable(res: BlueprintResource) -> object | None:
     """Best-effort live-import of the callable behind a `FUNCTION` resource."""
     try:
         module = importlib.import_module(res.source.module)

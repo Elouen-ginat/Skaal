@@ -17,9 +17,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from skaal.inference.model import (
-    InferredResource,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SourceLocation,
 )
 
@@ -27,18 +27,18 @@ if TYPE_CHECKING:
     from skaal.app import App
 
 
-def recognise_path_mounts(app: App) -> list[InferredResource]:
+def recognise_path_mounts(app: App) -> list[BlueprintResource]:
     """Return one ``ASGI_SERVICE`` resource per ``App.mount(path, asgi_app)`` entry."""
     path_mounts: dict[str, object] = getattr(app, "_asgi_path_mounts", {}) or {}
-    resources: list[InferredResource] = []
+    resources: list[BlueprintResource] = []
     for path in sorted(path_mounts):
         resource_id = f"{app.__class__.__module__}:{app.name}.mount({path})"
         resources.append(
-            InferredResource(
+            BlueprintResource(
                 id=resource_id,
                 kind=ResourceKind.ASGI_SERVICE,
                 source=SourceLocation.from_object(app.__class__),
-                overrides=ResourceOverrides(options={"path": path}),
+                overrides=Overrides(options={"path": path}),
             )
         )
     return resources

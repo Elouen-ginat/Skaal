@@ -24,7 +24,7 @@ def _build_example_app() -> App:
     class Customers(Store[dict]):  # pragma: no cover - typed placeholder
         pass
 
-    @app.function()
+    @app.expose()
     async def signup(name: str) -> dict:  # pragma: no cover - typed placeholder
         return {"name": name}
 

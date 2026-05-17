@@ -6,7 +6,7 @@ Honest answers to the questions a new user usually has before adopting Skaal.
 
 ### How mature is Skaal?
 
-Alpha (0.3.1). The constraint model, Z3 solver, plan format, and generated deployment artifacts are stable in shape — but the API surface still moves. Breaking changes go through ADRs in [`docs/design/`](design/001-infrastructure-as-constraints.md).
+Alpha (0.3.1). The constraint model, Z3 solver, plan format, and generated deployment artifacts are stable in shape — but the API surface still moves. Breaking changes go through ADRs in [`notes/design/`](https://github.com/Elouen-ginat/Skaal/tree/main/notes/design).
 
 The most exercised path is **local + AWS Lambda + DynamoDB / Postgres / S3**. GCP (Cloud Run, Firestore, GCS), the vector tier (Chroma, pgvector), and the Rust `mesh/` runtime are in active development.
 
@@ -104,7 +104,7 @@ You can. Skaal exists for the case where you want **one application file** to ta
 
 ### How do I propose a new backend or constraint type?
 
-Open an issue first; significant changes go through an ADR under [`docs/design/`](design/001-infrastructure-as-constraints.md). For a backend, the checklist is in [`CONTRIBUTING.md`](https://github.com/Elouen-ginat/Skaal/blob/main/CONTRIBUTING.md): implementation under `skaal/backends/`, entry-point registration, catalog entry, contract test, doc update.
+Open an issue first; significant changes go through an ADR under [`notes/design/`](https://github.com/Elouen-ginat/Skaal/tree/main/notes/design). For a backend, the checklist is in [`CONTRIBUTING.md`](https://github.com/Elouen-ginat/Skaal/blob/main/CONTRIBUTING.md): implementation under `skaal/backends/`, entry-point registration, catalog entry, contract test, doc update.
 
 ### Where do design discussions happen?
 

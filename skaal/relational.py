@@ -4,10 +4,10 @@ This module exposes two entry points for declaring relational tables:
 
 * The original form — subclass ``SQLModel`` directly with ``table=True`` and
   decorate with ``@app.storage(kind="relational")``.
-* The typed form — subclass ``Relational[B]`` and decorate. The single
+* The typed form — subclass ``Table[B]`` and decorate. The single
   generic parameter ``B`` is a `Backend` type-pin (ADR 028 §6.6, ADR 032
-  §4.4) so ``class Sales(Relational[BigQuery], table=True)`` flows the
-  ``bigquery`` pin into `ResourceOverrides.backend` without an env
+    §4.4) so ``class Sales(Table[BigQuery], table=True)`` flows the
+    ``bigquery`` pin into `Overrides.backend` without an env
   override. The class body *is* the row schema — there is no companion
   DTO model and no field duplication. ``SQLModelMetaclass`` swallows
   ``__orig_bases__`` on subclasses, so the pin is captured via
@@ -34,13 +34,13 @@ B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 _RELATIONAL_BACKEND_ATTR = "__skaal_relational_backend__"
 
 
-class Relational(SQLModel, Generic[B]):
+class Table(SQLModel, Generic[B]):
     """Typed relational table primitive.
 
-    Subclass ``Relational[B]`` to declare a relational table whose
+    Subclass ``Table[B]`` to declare a relational table whose
     backend is pinned at declaration time:
 
-        class Comments(Relational[Postgres], table=True):
+        class Comments(Table[Postgres], table=True):
             id: int | None = Field(default=None, primary_key=True)
             todo_id: str = Field(index=True)
             body: str
@@ -49,7 +49,7 @@ class Relational(SQLModel, Generic[B]):
     ``B`` is a `Backend` token (``Postgres``, ``Sqlite``, ``BigQuery``,
     …). Omitting the parameter leaves the binding to the defaults table:
 
-        class Notes(Relational, table=True): ...
+        class Notes(Table, table=True): ...
 
     `SQLModelMetaclass` overwrites ``__orig_bases__`` on subclasses, so
     `_extract_backend_pin` cannot read the pin off ``Comments`` directly.
@@ -60,6 +60,14 @@ class Relational(SQLModel, Generic[B]):
     """
 
     __skaal_backend_pin__: ClassVar[type[Backend[Any]] | None] = None
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls is Table or getattr(cls, "__table__", None) is None:
+            return
+        from skaal.decorators import _attach_storage_inferred
+
+        _attach_storage_inferred(cls, kind="relational")
 
     def __class_getitem__(cls, params: Any) -> Any:
         sub: Any = super().__class_getitem__(params)
@@ -80,7 +88,7 @@ class Relational(SQLModel, Generic[B]):
     async def native(cls) -> Any:
         """Return the native SDK client for the wired backend (ADR 028 §6.13).
 
-        For type-pinned subclasses (``class Sales(Relational[BigQuery])``),
+        For type-pinned subclasses (``class Sales(Table[BigQuery])``),
         Pylance resolves the concrete SDK type via the backend token's
         ``NativeClient`` declaration in Phase 5b; Phase 5a returns the
         backend object directly (or unwraps ``backend.native()`` when
@@ -95,6 +103,18 @@ class Relational(SQLModel, Generic[B]):
         backend = get_backend(cls)
         return await resolve_native(backend)
 
+    @classmethod
+    async def migrate(cls) -> None:
+        """Create any missing tables for this model on its wired backend."""
+        await ensure_schema(cls)
+
+    @classmethod
+    @asynccontextmanager
+    async def session(cls) -> AsyncIterator[AsyncSession]:
+        """Yield an async session bound to this model's wired backend."""
+        async with open_session(cls) as session:
+            yield session
+
 
 def validate_relational_model(model_cls: object) -> None:
     """Raise if *model_cls* is not a concrete ``SQLModel`` table model."""
@@ -108,12 +128,12 @@ def validate_relational_model(model_cls: object) -> None:
 
 def is_relational_model(obj: Any) -> bool:
     """Return ``True`` if *obj* is a relational model registered with Skaal."""
-    from skaal.inference.model import InferredResource, ResourceKind
+    from skaal.inference.model import BlueprintResource, ResourceKind
 
     if not isinstance(obj, type):
         return False
     inferred = getattr(obj, "__skaal_inferred__", None)
-    return isinstance(inferred, InferredResource) and inferred.kind == ResourceKind.RELATIONAL
+    return isinstance(inferred, BlueprintResource) and inferred.kind == ResourceKind.RELATIONAL
 
 
 def _schema_hints(model_cls: type) -> dict[str, Any]:

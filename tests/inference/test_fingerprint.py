@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from skaal.inference.fingerprint import fingerprint_plan, fingerprint_resource
 from skaal.inference.model import (
+    Blueprint,
+    BlueprintResource,
     Edge,
     EdgeKind,
-    InferredPlan,
-    InferredResource,
     ResourceKind,
     SourceLocation,
 )
 
 
-def _resource(rid: str, kind: ResourceKind = ResourceKind.STORE) -> InferredResource:
-    return InferredResource(
+def _resource(rid: str, kind: ResourceKind = ResourceKind.STORE) -> BlueprintResource:
+    return BlueprintResource(
         id=rid,
         kind=kind,
         source=SourceLocation(module="m", qualname=rid, file="m.py", line=1),
@@ -22,33 +22,33 @@ def _resource(rid: str, kind: ResourceKind = ResourceKind.STORE) -> InferredReso
 
 
 def test_fingerprint_is_sixteen_hex_chars() -> None:
-    plan = InferredPlan(app="demo", resources=(_resource("a"),))
+    plan = Blueprint(app="demo", resources=(_resource("a"),))
     fp = fingerprint_plan(plan)
     assert len(fp) == 16
     assert all(c in "0123456789abcdef" for c in fp)
 
 
 def test_fingerprint_is_stable_across_resource_ordering() -> None:
-    plan_a = InferredPlan(app="demo", resources=(_resource("a"), _resource("b")))
-    plan_b = InferredPlan(app="demo", resources=(_resource("b"), _resource("a")))
+    plan_a = Blueprint(app="demo", resources=(_resource("a"), _resource("b")))
+    plan_b = Blueprint(app="demo", resources=(_resource("b"), _resource("a")))
     assert fingerprint_plan(plan_a) == fingerprint_plan(plan_b)
 
 
 def test_fingerprint_changes_when_a_resource_is_added() -> None:
-    plan_a = InferredPlan(app="demo", resources=(_resource("a"),))
-    plan_b = InferredPlan(app="demo", resources=(_resource("a"), _resource("b")))
+    plan_a = Blueprint(app="demo", resources=(_resource("a"),))
+    plan_b = Blueprint(app="demo", resources=(_resource("a"), _resource("b")))
     assert fingerprint_plan(plan_a) != fingerprint_plan(plan_b)
 
 
 def test_fingerprint_changes_when_a_resource_kind_changes() -> None:
-    plan_a = InferredPlan(app="demo", resources=(_resource("a", ResourceKind.STORE),))
-    plan_b = InferredPlan(app="demo", resources=(_resource("a", ResourceKind.BLOB),))
+    plan_a = Blueprint(app="demo", resources=(_resource("a", ResourceKind.STORE),))
+    plan_b = Blueprint(app="demo", resources=(_resource("a", ResourceKind.BLOB),))
     assert fingerprint_plan(plan_a) != fingerprint_plan(plan_b)
 
 
 def test_fingerprint_excludes_its_own_field() -> None:
     """Recomputing the fingerprint on a plan that already has one is idempotent."""
-    plan = InferredPlan(app="demo", resources=(_resource("a"),))
+    plan = Blueprint(app="demo", resources=(_resource("a"),))
     fp = fingerprint_plan(plan)
     fingerprinted = plan.with_fingerprint(fp)
     assert fingerprint_plan(fingerprinted) == fp
@@ -63,8 +63,8 @@ def test_fingerprint_is_stable_across_edge_ordering() -> None:
         Edge(source_id="c", target_id="d", kind=EdgeKind.WRITES),
         Edge(source_id="a", target_id="b", kind=EdgeKind.READS),
     )
-    plan_a = InferredPlan(app="demo", resources=(_resource("a"),), edges=edges_a)
-    plan_b = InferredPlan(app="demo", resources=(_resource("a"),), edges=edges_b)
+    plan_a = Blueprint(app="demo", resources=(_resource("a"),), edges=edges_a)
+    plan_b = Blueprint(app="demo", resources=(_resource("a"),), edges=edges_b)
     assert fingerprint_plan(plan_a) == fingerprint_plan(plan_b)
 
 

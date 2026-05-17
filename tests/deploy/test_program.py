@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from skaal import App
-from skaal.binding import bind
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.deploy import pulumi_program_for
 from skaal.errors import MissingExtraError, SkaalDeployError
@@ -19,14 +18,14 @@ from skaal.errors import MissingExtraError, SkaalDeployError
 
 def _bound_aws(app: App) -> tuple:
     env = Environment(name="prod", target=Target.AWS, region="us-east-1")
-    return bind(app.infer(), env, LockFile()), env
+    return app.plan(env, lock=LockFile()), env
 
 
 def test_pulumi_program_for_returns_callable_without_pulumi(tmp_path: Path) -> None:
     """The closure builder must not require pulumi to be importable."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -43,7 +42,7 @@ def test_program_invocation_unregistered_target_raises(
 
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -70,7 +69,7 @@ def test_program_invocation_extras_missing_raises_missing_extra(
 
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -103,12 +102,12 @@ def test_pulumi_program_for_unknown_target_raises_on_invocation(
     """
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
     env = Environment(name="gcp-prod", target=Target.GCP, region="us-central1")
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     program = pulumi_program_for(bound, env, tmp_path)
     with pytest.raises((MissingExtraError, SkaalDeployError)):
         program()

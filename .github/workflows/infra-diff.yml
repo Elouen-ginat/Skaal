@@ -104,7 +104,7 @@ jobs:
           from pathlib import Path
 
           from skaal.api import diff_bound_plans, render_plan_diff_markdown
-          from skaal.binding.model import BoundPlan
+          from skaal.binding.model import Plan
 
           TARGET = os.environ["TARGET"]
           ENV_NAME = os.environ["ENV_NAME"]
@@ -148,8 +148,8 @@ jobs:
           snapshot(BASE_DIR, base_json)
           snapshot(HEAD_DIR, head_json)
 
-          base_plan = BoundPlan.model_validate_json(base_json.read_text(encoding="utf-8"))
-          head_plan = BoundPlan.model_validate_json(head_json.read_text(encoding="utf-8"))
+          base_plan = Plan.model_validate_json(base_json.read_text(encoding="utf-8"))
+          head_plan = Plan.model_validate_json(head_json.read_text(encoding="utf-8"))
           diff = diff_bound_plans(head_plan, base_plan)
           body = render_plan_diff_markdown(diff, compared_label="base")
 

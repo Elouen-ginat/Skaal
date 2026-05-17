@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from sqlmodel import Field
 
-from skaal import App, BlobStore, Channel, Relational, Store
+from skaal import App, BlobStore, Store, Table, Topic
 from skaal.backends._tokens import S3, Postgres, Redis, RedisChannel, Sqlite
 from skaal.decorators import _extract_backend_pin
 
@@ -71,7 +71,7 @@ def test_channel_pinned_populates_overrides_backend() -> None:
     app = App("test-channel-pin")
 
     @app.channel(buffer=10)
-    class Events(Channel[dict, RedisChannel]):
+    class Events(Topic[dict, RedisChannel]):
         pass
 
     assert Events.__skaal_inferred__.overrides.backend == "redis-channel"
@@ -81,7 +81,7 @@ def test_channel_un_pinned_has_no_backend_override() -> None:
     app = App("test-channel-no-pin")
 
     @app.channel(buffer=10)
-    class Events(Channel[dict]):
+    class Events(Topic[dict]):
         pass
 
     assert Events.__skaal_inferred__.overrides.backend is None
@@ -102,7 +102,7 @@ def test_relational_pinned_populates_overrides_backend() -> None:
     app = App("test-relational-pin")
 
     @app.storage(kind="relational")
-    class Comments(Relational[Postgres], table=True):
+    class Comments(Table[Postgres], table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -114,7 +114,7 @@ def test_relational_un_pinned_has_no_backend_override() -> None:
     app = App("test-relational-no-pin")
 
     @app.storage(kind="relational")
-    class Notes(Relational, table=True):
+    class Notes(Table, table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -123,9 +123,9 @@ def test_relational_un_pinned_has_no_backend_override() -> None:
 
 
 def test_relational_two_distinct_pins_do_not_alias() -> None:
-    """Two parametrisations of `Relational` must not share state.
+    """Two parametrisations of `Table` must not share state.
 
-    `Relational[Postgres]` and `Relational[Sqlite]` create two distinct
+    `Table[Postgres]` and `Table[Sqlite]` create two distinct
     intermediate classes; the pin captured on one must not leak into
     the other.
     """
@@ -134,12 +134,12 @@ def test_relational_two_distinct_pins_do_not_alias() -> None:
     app_b = App("test-relational-distinct-b")
 
     @app_a.storage(kind="relational")
-    class CommentsA(Relational[Postgres], table=True):
+    class CommentsA(Table[Postgres], table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
     @app_b.storage(kind="relational")
-    class CommentsB(Relational[Sqlite], table=True):
+    class CommentsB(Table[Sqlite], table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -148,11 +148,11 @@ def test_relational_two_distinct_pins_do_not_alias() -> None:
 
 
 def test_extract_backend_pin_helper_on_relational() -> None:
-    class PinnedRelational(Relational[Postgres], table=True):
+    class PinnedRelational(Table[Postgres], table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
-    class UnPinnedRelational(Relational, table=True):
+    class UnPinnedRelational(Table, table=True):
         id: int | None = Field(default=None, primary_key=True)
         body: str
 

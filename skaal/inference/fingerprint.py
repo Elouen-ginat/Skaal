@@ -13,8 +13,8 @@ from __future__ import annotations
 import hashlib
 
 from skaal.inference.model import (
-    InferredPlan,
-    InferredResource,
+    Blueprint,
+    BlueprintResource,
     _canonical_payload,
     _canonical_resource_payload,
 )
@@ -22,7 +22,7 @@ from skaal.inference.model import (
 _FINGERPRINT_HEX_LEN = 16
 
 
-def fingerprint_plan(plan: InferredPlan) -> str:
+def fingerprint_plan(plan: Blueprint) -> str:
     """Return the 16-char SHA-256 fingerprint of ``plan``.
 
     The fingerprint excludes ``plan.fingerprint`` itself, so feeding a freshly
@@ -32,7 +32,7 @@ def fingerprint_plan(plan: InferredPlan) -> str:
     return hashlib.sha256(payload).hexdigest()[:_FINGERPRINT_HEX_LEN]
 
 
-def fingerprint_resource(res: InferredResource) -> str:
+def fingerprint_resource(res: BlueprintResource) -> str:
     """Return the 16-char SHA-256 fingerprint of a single resource.
 
     Used by the binding layer (Phase 3) to detect when a resource's *shape*

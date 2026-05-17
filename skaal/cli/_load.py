@@ -2,7 +2,7 @@
 
 All four verbs operate on a `BoundPlan`; the only differences are what
 they do with it (serve, dump, render artefacts, push to Pulumi). The
-`infer → load_environment → load_lock → bind` walk lives here so the
+`blueprint → Environment.load → LockFile.load → plan` walk lives here so the
 verb modules stay short and one obvious thing happens in each.
 
 The two value types in this module — `AppSpec` and `LoadedPlan` — keep
@@ -27,7 +27,7 @@ import typer
 
 if TYPE_CHECKING:
     from skaal.app import App
-    from skaal.binding.model import BoundPlan, Environment
+    from skaal.binding.model import Environment, Plan
 
 
 @dataclass(frozen=True)
@@ -95,7 +95,7 @@ class LoadedPlan:
     double-load that the previous tuple shape encouraged.
     """
 
-    bound: BoundPlan
+    bound: Plan
     env: Environment
 
 
@@ -135,8 +135,8 @@ def load_bound_plan(
     *,
     toml_path: Path = Path("skaal.toml"),
     lock_path: Path = Path("skaal.lock"),
-) -> BoundPlan:
-    """Walk ``infer → load env / lock → bind`` for ``skaal_app`` against ``env_name``."""
+) -> Plan:
+    """Walk ``blueprint → Environment.load → LockFile.load → plan`` for an app."""
     return load_plan(skaal_app, env_name, toml_path=toml_path, lock_path=lock_path).bound
 
 
@@ -147,16 +147,15 @@ def load_plan(
     toml_path: Path = Path("skaal.toml"),
     lock_path: Path = Path("skaal.lock"),
 ) -> LoadedPlan:
-    """Walk ``infer → load env / lock → bind`` and return a typed `LoadedPlan`.
+    """Walk ``blueprint → Environment.load → LockFile.load → plan`` once.
 
     Used by the `build` / `deploy` verbs that need both the bound plan
     and the environment. The `Environment` is constructed once and
     shared with the binding step, so callers see exactly the same view
     the binder did.
     """
-    from skaal.binding import bind, load_environment, load_lock
+    from skaal.binding import Environment, LockFile
 
-    env = load_environment(env_name, path=toml_path)
-    lock = load_lock(lock_path)
-    plan = skaal_app.infer()
-    return LoadedPlan(bound=bind(plan, env, lock), env=env)
+    env = Environment.load(env_name, path=toml_path)
+    lock = LockFile.load(lock_path)
+    return LoadedPlan(bound=skaal_app.plan(env, lock=lock), env=env)

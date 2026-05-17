@@ -1,8 +1,7 @@
 """Helper for the typed `.native()` escape on the four primitives (ADR 028 §6.13).
 
-`Store` / `BlobStore` / `Relational` / `Channel` all expose a `.native()`
-classmethod (instance method on `Channel`) that resolves to the wired
-backend's native SDK client. The common shape is the same: when the
+`Store` / `BlobStore` / `Table` / `Topic` all expose a `.native()`
+hook that resolves to the wired backend's native SDK client. The common shape is the same: when the
 backend exposes its own `.native()` callable, unwrap it (await if it
 returns an awaitable); otherwise return the backend object itself.
 

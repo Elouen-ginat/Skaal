@@ -13,11 +13,11 @@ resources that carried the old keys.
 
 from __future__ import annotations
 
-from skaal.binding.model import BoundResource, Environment
+from skaal.binding.model import Environment, PlannedResource
 from skaal.deploy.models import SkaalTags
 
 
-def tags_for(resource: BoundResource, env: Environment, fingerprint: str) -> SkaalTags:
+def tags_for(resource: PlannedResource, env: Environment, fingerprint: str) -> SkaalTags:
     """Return the canonical Skaal tag set for one cloud resource.
 
     The ``fingerprint`` argument is `BoundPlan.app_fingerprint` (or

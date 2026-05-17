@@ -10,8 +10,8 @@ from skaal.runtime.middleware import wrap_resilience
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,
-    RateLimitPolicy,
-    RetryPolicy,
+    RateLimit,
+    Retry,
 )
 
 
@@ -40,7 +40,7 @@ async def test_retry_attempts_until_success() -> None:
 
     wrapped = wrap_resilience(
         flaky,
-        retry=RetryPolicy(max_attempts=5, base_delay_ms=0, max_delay_ms=0),
+        retry=Retry(max_attempts=5, base_delay_ms=0, max_delay_ms=0),
     )
     assert await wrapped() == "ok"
     assert attempts == 3
@@ -56,7 +56,7 @@ async def test_retry_gives_up_after_max_attempts() -> None:
 
     wrapped = wrap_resilience(
         always_fails,
-        retry=RetryPolicy(max_attempts=3, base_delay_ms=0, max_delay_ms=0),
+        retry=Retry(max_attempts=3, base_delay_ms=0, max_delay_ms=0),
     )
     with pytest.raises(RuntimeError, match="nope"):
         await wrapped()
@@ -92,7 +92,7 @@ async def test_rate_limit_rejects_excess_calls() -> None:
 
     wrapped = wrap_resilience(
         handler,
-        rate_limit=RateLimitPolicy(requests_per_second=0.001, burst=1),
+        rate_limit=RateLimit(requests_per_second=0.001, burst=1),
     )
     assert await wrapped() == "ok"
     with pytest.raises(RuntimeError, match="rate limit"):

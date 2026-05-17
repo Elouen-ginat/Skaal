@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
-from skaal.binding.model import BoundPlan, BoundResource, Environment, Target
+from skaal.binding.model import Environment, Plan, PlannedResource, Target
 from skaal.deploy import get_target
 from skaal.deploy._protocol import ConsoleUrlResolver
 from skaal.errors import MissingExtraError, SkaalDeployError
@@ -28,17 +28,17 @@ _RESOURCE_TYPE_PREFERENCES: dict[Target, dict[ResourceKind, tuple[str, ...]]] = 
 
 
 @dataclass(frozen=True)
-class WhereHit:
+class Location:
     """One resolved deployed-resource location."""
 
-    resource: BoundResource
+    resource: PlannedResource
     stack_name: str
     provider_type: str
     console_url: str
     physical_id: str | None
 
 
-def resolve_where(resource_id: str, bound: BoundPlan, env: Environment) -> WhereHit:
+def resolve_where(resource_id: str, bound: Plan, env: Environment) -> Location:
     """Resolve `resource_id` to its cloud-console URL.
 
     Args:
@@ -63,7 +63,7 @@ def resolve_where(resource_id: str, bound: BoundPlan, env: Environment) -> Where
     deployment = _load_stack_deployment(bound, env, stack_name=stack_name)
     deployed = _select_deployed_resource(resource, deployment, target=env.target)
     console_url = _console_url_for_target(deployed, target=env.target, region=env.region)
-    return WhereHit(
+    return Location(
         resource=resource,
         stack_name=stack_name,
         provider_type=str(_field(deployed, "type") or ""),
@@ -72,7 +72,7 @@ def resolve_where(resource_id: str, bound: BoundPlan, env: Environment) -> Where
     )
 
 
-def _bound_resource(resource_id: str, bound: BoundPlan) -> BoundResource:
+def _bound_resource(resource_id: str, bound: Plan) -> PlannedResource:
     for resource in bound.resources:
         if resource.inferred.id == resource_id:
             return resource
@@ -84,7 +84,7 @@ def _bound_resource(resource_id: str, bound: BoundPlan) -> BoundResource:
     )
 
 
-def _stack_name(bound: BoundPlan, env: Environment) -> str:
+def _stack_name(bound: Plan, env: Environment) -> str:
     try:
         target = get_target(env.target)
     except Exception:
@@ -92,9 +92,7 @@ def _stack_name(bound: BoundPlan, env: Environment) -> str:
     return target.stack_name(bound, env)
 
 
-def _load_stack_deployment(
-    bound: BoundPlan, env: Environment, *, stack_name: str
-) -> StackMapping:
+def _load_stack_deployment(bound: Plan, env: Environment, *, stack_name: str) -> StackMapping:
     try:
         from pulumi import automation as auto
     except ImportError as exc:
@@ -125,7 +123,7 @@ def _load_stack_deployment(
 
 
 def _select_deployed_resource(
-    resource: BoundResource,
+    resource: PlannedResource,
     deployment: StackMapping,
     *,
     target: Target,
@@ -255,6 +253,7 @@ def register_resource_type_preference(
 def _console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:
     _ensure_plugins_loaded()
     resolvers: dict[str, ConsoleUrlResolver] = {}
+    resolvers.update(_builtin_console_url_resolvers(target))
     target_impl = _get_deploy_target_safely(target)
     if target_impl is not None:
         resolvers.update(target_impl.where_console_url_resolvers())
@@ -295,6 +294,23 @@ def _get_deploy_target_safely(target: Target) -> DeployTarget | None:
             return None
 
 
+def _builtin_console_url_resolvers(target: Target) -> dict[str, ConsoleUrlResolver]:
+    """Return built-in `where` resolvers without importing optional deploy extras.
+
+    `skaal where` should remain able to render known console URLs even when the
+    full deploy target package cannot import because Pulumi provider SDKs are
+    absent. Keep this fallback narrow and static so read-only lookup paths do
+    not depend on optional deployment dependencies.
+    """
+    if target is not Target.AWS:
+        return {}
+    try:
+        from skaal.deploy.aws._where import AWS_CONSOLE_URLS
+    except ImportError:
+        return {}
+    return dict(AWS_CONSOLE_URLS)
+
+
 def _ensure_plugins_loaded() -> None:
     """Trigger lazy plugin discovery so `where` extensions register themselves."""
     from skaal.plugins import load_plugins
@@ -310,7 +326,7 @@ def _reset_for_tests() -> None:
 
 
 __all__ = [
-    "WhereHit",
+    "Location",
     "register_console_url",
     "register_resource_type_preference",
     "resolve_where",

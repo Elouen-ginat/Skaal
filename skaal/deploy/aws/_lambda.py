@@ -31,7 +31,7 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_docker as docker
 
-from skaal.binding.model import BoundPlan
+from skaal.binding.model import Plan
 from skaal.deploy._protocol import SynthContext, SynthModule, SynthResult
 from skaal.deploy.aws._config import AwsConfig
 from skaal.inference.model import ResourceKind
@@ -264,7 +264,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         )
 
     @staticmethod
-    def _policy_keys_for_plan(bound: BoundPlan, policies: Mapping[str, str]) -> tuple[str, ...]:
+    def _policy_keys_for_plan(bound: Plan, policies: Mapping[str, str]) -> tuple[str, ...]:
         """Return the unique storage backend names present in `bound`."""
         seen: set[str] = set()
         for resource in bound.resources:

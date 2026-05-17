@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Never, TypeAlias
 from rich.console import Console
 
 from skaal.app import App
-from skaal.binding import load_lock
 from skaal.binding.model import Environment, LockFile
 from skaal.cli._load import AppSpec, load_app, load_bound_plan, load_plan
 from skaal.cli.deploy_cmd import _run_pulumi, _write_lock_pins
@@ -20,7 +19,7 @@ from skaal.deploy import BuildManifest, build_artefacts, pulumi_program_for
 from skaal.stubs import StubManifest, discover_app, emit_stubs
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundPlan
+    from skaal.binding.model import Plan
 
 StubSource: TypeAlias = str | Path
 
@@ -30,7 +29,7 @@ class BuildResult:
     """Result of `skaal.api.build`."""
 
     app_spec: AppSpec
-    bound: BoundPlan
+    bound: Plan
     env: Environment
     build_dir: Path
     manifest: BuildManifest
@@ -56,7 +55,7 @@ class DoctorReport:
 
 
 @dataclass(frozen=True)
-class StubEmitResult:
+class StubResult:
     """Result of `skaal.api.stubs`."""
 
     app_name: str
@@ -169,7 +168,7 @@ def deploy(
         lock_path=lock_path,
         out_dir=out_dir,
     )
-    existing_lock = load_lock(lock_path)
+    existing_lock = LockFile.load(lock_path)
     program = pulumi_program_for(build_result.bound, build_result.env, build_result.build_dir)
     _run_pulumi(
         bound=build_result.bound,
@@ -180,7 +179,7 @@ def deploy(
         console=Console(),
     )
     _write_lock_pins(build_result.bound, build_result.env, lock_path=lock_path)
-    updated_lock = load_lock(lock_path)
+    updated_lock = LockFile.load(lock_path)
     return DeployResult(
         build=build_result,
         preview=preview,
@@ -221,7 +220,7 @@ def stubs(
     out_dir: Path,
     *,
     package_name: str | None = None,
-) -> StubEmitResult:
+) -> StubResult:
     """Emit a typed `.pyi` package describing a Skaal app.
 
     Args:
@@ -237,7 +236,7 @@ def stubs(
     written = emit_stubs(app=skaal_app, out_dir=out_dir, package_name=package)
     manifest_path = written / "_manifest.json"
     manifest = StubManifest.from_json(manifest_path.read_text(encoding="utf-8"))
-    return StubEmitResult(
+    return StubResult(
         app_name=skaal_app.name,
         package_name=package,
         out_dir=written,

@@ -44,11 +44,11 @@ from skaal.runtime.adapters import (
 )
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-AdapterFn = Callable[["LocalRuntime", "BoundResource", Any], None]
+AdapterFn = Callable[["LocalRuntime", "PlannedResource", Any], None]
 
 
 LOCAL_DISPATCH: dict[ResourceKind, AdapterFn] = {

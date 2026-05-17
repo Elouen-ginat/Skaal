@@ -20,12 +20,11 @@ pytest.importorskip("pulumi_docker")
 
 import skaal.deploy.aws  # noqa: E402 — side-effect import registers AWS target
 from skaal import App, Backend, Target  # noqa: E402
-from skaal.binding import bind  # noqa: E402
 from skaal.binding.model import Environment, LockFile  # noqa: E402
-from skaal.binding.registry import BackendEntry  # noqa: E402
+from skaal.binding.registry import BackendSpec  # noqa: E402
 from skaal.deploy import (  # noqa: E402
+    Plugin,
     PluginRegistry,
-    SkaalPlugin,
     SynthContext,
     SynthModule,
     SynthResult,
@@ -61,16 +60,16 @@ class _MyDatabaseSynth(SynthModule[AwsConfig]):
         return SynthResult(resource_id=ctx.resource_id, primary=table)
 
 
-class _MyDatabasePlugin(SkaalPlugin):
+class _MyDatabasePlugin(Plugin):
     name = "my-database"
 
     def register(self, registry: PluginRegistry) -> None:
-        registry.add_backend(BackendEntry(token=_MyDatabase, targets=frozenset({Target.AWS})))
+        registry.add_backend(BackendSpec(token=_MyDatabase, targets=frozenset({Target.AWS})))
         registry.add_synth(Target.AWS, _MyDatabaseSynth)
 
 
 class _FakeEntryPoint:
-    def __init__(self, name: str, target: type[SkaalPlugin]) -> None:
+    def __init__(self, name: str, target: type[Plugin]) -> None:
         self.name = name
         self._target = target
 
@@ -123,21 +122,21 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
 
 def test_plugin_adds_backend_and_synth_end_to_end(tmp_path: Path) -> None:
     """A plugin contributes both a binding entry and a deploy synth."""
-    from skaal import Store, external
+    from skaal import Store, connect
     from skaal.deploy import AppSpec, build_artefacts
 
     app = App("svc")
 
-    @external(name="external-db")
+    @connect(name="external-db")
     class MyData(Store[dict, _MyDatabase]):
         pass
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
     env = Environment(name="prod", target=Target.AWS, region="us-east-1")
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     build_dir = build_artefacts(bound, env, AppSpec.for_app(app), out_dir=tmp_path)
 
     results = synthesize_stack(bound, env, build_dir)
@@ -158,12 +157,12 @@ def test_plugin_synth_dispatches_for_non_external_resource(tmp_path: Path) -> No
     class Cache(Store[dict, _MyDatabase]):
         pass
 
-    @app.function()
+    @app.expose()
     async def hit(key: str) -> dict:
         return await Cache.get(key) or {}
 
     env = Environment(name="prod", target=Target.AWS, region="us-east-1")
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     build_dir = build_artefacts(bound, env, AppSpec.for_app(app), out_dir=tmp_path)
 
     results = synthesize_stack(bound, env, build_dir)

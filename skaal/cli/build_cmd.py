@@ -1,6 +1,6 @@
-"""`skaal build` — render Pulumi-adjacent artefacts from a bound plan.
+"""`skaal build` — render Pulumi-adjacent artefacts from a plan.
 
-The verb walks ``infer → bind`` and feeds the resulting `BoundPlan` into
+The verb walks ``blueprint → plan`` and feeds the resulting `Plan` into
 `skaal.deploy.build_artefacts`, which writes the per-Lambda Dockerfile,
 handler, bootstrap, and requirements files to ``./.skaal/build/<env>/``.
 

@@ -59,12 +59,11 @@ def test_app_spec_is_hashable_and_frozen() -> None:
 
 def test_loaded_plan_carries_bound_and_env() -> None:
     """Constructing a `LoadedPlan` shape works without going through `load_plan`."""
-    from skaal.binding import bind
     from skaal.binding.model import Environment, LockFile, Target
 
     app = App("svc")
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     loaded = LoadedPlan(bound=bound, env=env)
     assert loaded.bound is bound
     assert loaded.env is env

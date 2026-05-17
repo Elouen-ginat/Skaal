@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from skaal.binding.model import BoundPlan, BoundResource
+from skaal.binding.model import Plan, PlannedResource
 from skaal.inference.model import ResourceKind
 
 
@@ -40,7 +40,7 @@ class ResourceMapEntry(BaseModel):
     pinned: bool = False
 
     @classmethod
-    def for_resource(cls, resource: BoundResource) -> ResourceMapEntry:
+    def for_resource(cls, resource: PlannedResource) -> ResourceMapEntry:
         """Build an entry from a bound resource."""
         source = resource.inferred.source
         return cls(
@@ -70,7 +70,7 @@ class ResourceMap(BaseModel):
     resources: tuple[ResourceMapEntry, ...] = ()
 
     @classmethod
-    def for_bound_plan(cls, bound: BoundPlan) -> ResourceMap:
+    def for_bound_plan(cls, bound: Plan) -> ResourceMap:
         """Build the resource map from a bound plan."""
         entries = [ResourceMapEntry.for_resource(resource) for resource in bound.resources]
         # Sort by source location first, then by symbol name, then by id so the

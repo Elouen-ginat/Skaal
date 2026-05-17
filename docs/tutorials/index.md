@@ -14,10 +14,10 @@ Every tutorial is grounded in an existing example or public API surface from thi
 
 | Tutorial | Focus | Draws from |
 | --- | --- | --- |
-| [1. Build a Counter App](first-app.md) | `App`, `Store`, `@app.storage`, `@app.function`, local run loop | `examples/counter.py`, `examples/hello_world/app.py` |
+| [1. Build a Counter App](first-app.md) | `App`, `Store`, `@app.storage`, `@app.expose`, local run loop | `examples/counter.py`, `examples/hello_world/app.py` |
 | [2. Add a FastAPI Surface](http-api.md) | Mounted ASGI, `app.invoke(...)`, public routes | `examples/todo_api/app.py`, `examples/fastapi_streaming/app.py` |
 | [3. Plan, Build, and Deploy](planning-and-deployment.md) | Catalogs, `plan.skaal.lock`, build artifacts, deploy loop | `skaal/cli/*.py`, `catalogs/*.toml` |
-| [4. Relational Data and Migrations](relational-and-migrations.md) | SQLModel storage, `open_relational_session`, relational CLI | `examples/todo_api/app.py`, `skaal/cli/migrate/relational_cmd.py` |
+| [4. Relational Data and Migrations](relational-and-migrations.md) | SQLModel storage, `Table.session()`, relational CLI | `examples/todo_api/app.py`, `skaal/cli/migrate/relational_cmd.py` |
 | [5. Files and Streaming](files-and-streaming.md) | `BlobStore`, pagination, `app.invoke_stream(...)` | `examples/file_upload_api/app.py`, `examples/fastapi_streaming/app.py` |
 
 ## Before You Begin

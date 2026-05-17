@@ -9,7 +9,7 @@ def _empty_metadata() -> dict[str, str]:
 
 
 @dataclass(frozen=True)
-class BlobObject:
+class BlobItem:
     key: str
     size: int
     content_type: str | None = None

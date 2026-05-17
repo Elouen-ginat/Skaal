@@ -22,9 +22,8 @@ pytest.importorskip("pulumi_docker")
 # done lazily by `pulumi_program_for`'s closure; tests call
 # `synthesize_stack` directly so they trigger the import explicitly.
 import skaal.deploy.aws  # noqa: E402, F401
-from skaal import App, Channel, Store  # noqa: E402
-from skaal.binding import bind  # noqa: E402
-from skaal.binding.model import Environment, LockFile, Target  # noqa: E402
+from skaal import App, Store, Topic  # noqa: E402
+from skaal.binding.model import Environment, LockFile, Plan, PlannedResource, Target  # noqa: E402
 from skaal.deploy import build_artefacts, synthesize_stack  # noqa: E402
 from skaal.errors import SkaalDeployError  # noqa: E402
 
@@ -65,7 +64,7 @@ def _mocks() -> None:
 def _app_with_function() -> App:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
@@ -77,7 +76,7 @@ def _aws_env() -> Environment:
 
 
 def _bound(app: App, env: Environment) -> Any:
-    return bind(app.infer(), env, LockFile())
+    return app.plan(env, lock=LockFile())
 
 
 def _build(app: App, bound: Any, env: Environment, tmp_path: Path) -> Path:
@@ -107,7 +106,7 @@ def test_synth_stack_store_emits_dynamodb_then_lambda(tmp_path: Path) -> None:
     class Cache(Store[dict]):
         pass
 
-    @app.function()
+    @app.expose()
     async def hit(key: str) -> dict:
         return await Cache.get(key) or {}
 
@@ -125,16 +124,16 @@ def test_synth_stack_store_emits_dynamodb_then_lambda(tmp_path: Path) -> None:
 
 def test_synth_stack_skips_external_resources(tmp_path: Path) -> None:
     """Resources marked external are not synthesised."""
-    from skaal import external
+    from skaal import connect
     from skaal.backends.postgres import Postgres
 
     app = App("svc")
 
-    @external(name="legacy")
+    @connect(name="legacy")
     class Legacy(Store[dict, Postgres]):
         pass
 
-    @app.function()
+    @app.expose()
     async def noop() -> None:
         return None
 
@@ -148,19 +147,18 @@ def test_synth_stack_skips_external_resources(tmp_path: Path) -> None:
 
 def test_synth_stack_unknown_backend_raises(tmp_path: Path) -> None:
     """A bound resource naming a backend without a synth entry is rejected."""
-    from skaal.binding.model import BoundPlan, BoundResource
-    from skaal.inference.model import InferredResource, ResourceKind, SourceLocation
+    from skaal.inference.model import BlueprintResource, ResourceKind, SourceLocation
 
-    inferred = InferredResource(
+    inferred = BlueprintResource(
         id="m:Mystery",
         kind=ResourceKind.STORE,
         source=SourceLocation(module="m", qualname="Mystery", file="x", line=1),
     )
-    bound = BoundPlan(
+    bound = Plan(
         app="svc",
         environment="prod",
         resources=(
-            BoundResource(
+            PlannedResource(
                 inferred=inferred,
                 backend="not-a-real-backend",
                 pinned=False,
@@ -196,10 +194,10 @@ def test_synth_stack_channel_emits_sqs(tmp_path: Path) -> None:
     app = App("svc")
 
     @app.channel()
-    class Events(Channel[dict]):
+    class Events(Topic[dict]):
         pass
 
-    @app.function()
+    @app.expose()
     async def publish() -> None:
         await Events.send({})
 
@@ -251,7 +249,7 @@ def test_synth_stack_job_peer_env_var_reaches_function(tmp_path: Path) -> None:
     async def worker(payload: dict) -> None:
         return None
 
-    @app.function()
+    @app.expose()
     async def producer() -> None:
         return None
 

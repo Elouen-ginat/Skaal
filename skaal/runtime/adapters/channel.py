@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Verify the channel backend is supported locally; otherwise raise."""
     if bound.external:
         return

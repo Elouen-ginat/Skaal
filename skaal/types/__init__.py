@@ -7,13 +7,13 @@ Phase 1. The inferred-plan / bound-plan typing surface lands in Phases 2-3
 under `skaal.inference` and `skaal.binding`.
 """
 
-from skaal.types.blob import BlobObject
+from skaal.types.blob import BlobItem
 from skaal.types.cli import ChangeBatch, ChangeStream, ChildArgv, ReloadDirs, ReloadMode
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,
-    RateLimitPolicy,
-    RetryPolicy,
+    RateLimit,
+    Retry,
 )
 from skaal.types.deploy import (
     AppLike,
@@ -56,7 +56,7 @@ from skaal.types.deploy import (
     TargetName,
 )
 from skaal.types.duration import TTL, Duration, Retention
-from skaal.types.invoke import BeforeInvoke, InvokeContext, StreamFn
+from skaal.types.invoke import BeforeInvocation, InvocationContext, StreamFn
 from skaal.types.job import JobHandle, JobResult, JobSpec, JobStatus
 from skaal.types.observability import (
     EngineTelemetrySnapshot,
@@ -111,8 +111,8 @@ __all__ = [
     "AwsSecretsManagerSession",
     "BackendIndexFields",
     "BackendWiring",
-    "BeforeInvoke",
-    "BlobObject",
+    "BeforeInvocation",
+    "BlobItem",
     "Bulkhead",
     "ChangeBatch",
     "ChangeStream",
@@ -147,7 +147,7 @@ __all__ = [
     "GcpSecretPayload",
     "GcpSecretVersionResponse",
     "HeaderMap",
-    "InvokeContext",
+    "InvocationContext",
     "JobHandle",
     "JobResult",
     "JobSpec",
@@ -159,8 +159,8 @@ __all__ = [
     "PulumiResource",
     "PulumiResourceOptions",
     "PulumiStack",
+    "RateLimit",
     "RateLimitConfig",
-    "RateLimitPolicy",
     "ReadinessState",
     "RelationalMigrationBackend",
     "RelationalMigrationOp",
@@ -173,7 +173,7 @@ __all__ = [
     "ReloadMode",
     "ResolvedSecret",
     "Retention",
-    "RetryPolicy",
+    "Retry",
     "RouteSpec",
     "ScheduleTriggerConfig",
     "SecondaryIndex",

@@ -49,7 +49,7 @@ from skaal.errors import UnknownBackendError
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundPlan, BoundResource, Environment
+    from skaal.binding.model import Environment, Plan, PlannedResource
 
 
 class TargetConfig(BaseModel):
@@ -150,8 +150,8 @@ class SynthContext(Generic[ConfigT]):
             `Environment.backends[<target_name>].options` from `skaal.toml`.
     """
 
-    bound: BoundPlan
-    resource: BoundResource
+    bound: Plan
+    resource: PlannedResource
     env: Environment
     build_dir: Path
     resource_slug: str
@@ -368,7 +368,7 @@ class DeployTarget(Protocol):
         """Load the typed config for `env`, overlaying any TOML overrides."""
         ...
 
-    def stack_name(self, bound: BoundPlan, env: Environment) -> str:
+    def stack_name(self, bound: Plan, env: Environment) -> str:
         """The Pulumi stack name to use for `(bound, env)`."""
         ...
 

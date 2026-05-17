@@ -34,9 +34,9 @@ from typing_extensions import ParamSpec
 from skaal.backends._base import Backend
 from skaal.blob import validate_blob_model
 from skaal.inference.model import (
-    InferredResource,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SchemaRef,
     SourceLocation,
 )
@@ -44,9 +44,9 @@ from skaal.types import SecondaryIndex
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,
-    RateLimitPolicy,
+    RateLimit,
     ResiliencePolicies,
-    RetryPolicy,
+    Retry,
 )
 
 C = TypeVar("C", bound=type)
@@ -82,8 +82,8 @@ class FunctionRef(Generic[P, R]):
         fn: Callable[P, Awaitable[R]] | Callable[P, R],
         *,
         id: str,
-        overrides: ResourceOverrides,
-        inferred: InferredResource,
+        overrides: Overrides,
+        inferred: BlueprintResource,
     ) -> None:
         self.__wrapped__ = fn
         self.id = id
@@ -173,6 +173,76 @@ def _validate_storage_class(cls: type, *, kind: StorageKind) -> None:
         validate_relational_model(cls)
 
 
+def _storage_inferred(
+    cls: type,
+    *,
+    kind: StorageKind,
+    indexes: list[SecondaryIndex] | None = None,
+    external_name: str | None = None,
+) -> BlueprintResource:
+    _validate_storage_class(cls, kind=kind)
+    idx = tuple(indexes or ()) if kind == "kv" else ()
+    pinned_token = _extract_backend_pin(cls)
+    overrides = Overrides(
+        backend=pinned_token.name if pinned_token is not None else None,
+        external=external_name is not None,
+        external_name=external_name,
+    )
+    return BlueprintResource(
+        id=BlueprintResource.id_for(cls),
+        kind=_STORAGE_KIND_TO_RESOURCE_KIND[kind],
+        source=SourceLocation.from_object(cls),
+        schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
+        indexes=idx,
+        overrides=overrides,
+    )
+
+
+def _attach_storage_inferred(
+    cls: type,
+    *,
+    kind: StorageKind,
+    indexes: list[SecondaryIndex] | None = None,
+    external_name: str | None = None,
+) -> BlueprintResource:
+    inferred = _storage_inferred(
+        cls,
+        kind=kind,
+        indexes=indexes,
+        external_name=external_name,
+    )
+    cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+    return inferred
+
+
+def _channel_inferred(
+    cls: type,
+    *,
+    buffer: int = 1000,
+) -> BlueprintResource:
+    pinned_token = _extract_backend_pin(cls)
+    return BlueprintResource(
+        id=BlueprintResource.id_for(cls),
+        kind=ResourceKind.CHANNEL,
+        source=SourceLocation.from_object(cls),
+        schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
+        overrides=Overrides(
+            backend=pinned_token.name if pinned_token is not None else None,
+            channel_buffer=buffer,
+        ),
+    )
+
+
+def _attach_channel_inferred(
+    cls: type,
+    *,
+    buffer: int = 1000,
+) -> BlueprintResource:
+    inferred = _channel_inferred(cls, buffer=buffer)
+    cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+    return inferred
+
+
 def storage(
     *,
     kind: StorageKind | str = "kv",
@@ -188,29 +258,13 @@ def storage(
     normalized_kind = _normalize_storage_kind(kind)
 
     def decorator(cls: C) -> C:
-        _validate_storage_class(cls, kind=normalized_kind)
-        idx = tuple(indexes or ()) if normalized_kind == "kv" else ()
-        pinned_token = _extract_backend_pin(cls)
-        overrides = (
-            ResourceOverrides(backend=pinned_token.name)
-            if pinned_token is not None
-            else ResourceOverrides()
-        )
-        inferred = InferredResource(
-            id=InferredResource.id_for(cls),
-            kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
-            source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
-            indexes=idx,
-            overrides=overrides,
-        )
-        cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        _attach_storage_inferred(cls, kind=normalized_kind, indexes=indexes)
         return cls
 
     return decorator
 
 
-def external(
+def connect(
     *,
     name: str,
     kind: StorageKind | str = "kv",
@@ -243,30 +297,17 @@ def external(
                 f"@external requires a Backend type-pin on {cls.__name__!r}; "
                 "declare e.g. `class LegacyDb(Relational[Postgres])`."
             )
-        _validate_storage_class(cls, kind=normalized_kind)
-        overrides = ResourceOverrides(
-            backend=pinned_token.name,
-            external=True,
-            external_name=name,
-        )
-        inferred = InferredResource(
-            id=InferredResource.id_for(cls),
-            kind=_STORAGE_KIND_TO_RESOURCE_KIND[normalized_kind],
-            source=SourceLocation.from_object(cls),
-            schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
-            overrides=overrides,
-        )
-        cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        _attach_storage_inferred(cls, kind=normalized_kind, external_name=name)
         return cls
 
     return decorator
 
 
-def function(
+def expose(
     *,
-    retry: RetryPolicy | None = None,
+    retry: Retry | None = None,
     circuit_breaker: CircuitBreaker | None = None,
-    rate_limit: RateLimitPolicy | None = None,
+    rate_limit: RateLimit | None = None,
     bulkhead: Bulkhead | None = None,
 ) -> Callable[[Callable[P, R]], FunctionRef[P, R]]:
     """Declare a Skaal compute function with optional resilience policies.
@@ -288,7 +329,7 @@ def function(
     def decorator(fn: Callable[P, R]) -> FunctionRef[P, R]:
         import contextlib
 
-        overrides = ResourceOverrides(
+        overrides = Overrides(
             resilience=_resilience(
                 retry=retry,
                 circuit_breaker=circuit_breaker,
@@ -296,8 +337,8 @@ def function(
                 bulkhead=bulkhead,
             ),
         )
-        inferred = InferredResource(
-            id=InferredResource.id_for(fn),
+        inferred = BlueprintResource(
+            id=BlueprintResource.id_for(fn),
             kind=ResourceKind.FUNCTION,
             source=SourceLocation.from_object(fn),
             overrides=overrides,
@@ -311,9 +352,9 @@ def function(
 
 def _resilience(
     *,
-    retry: RetryPolicy | None,
+    retry: Retry | None,
     circuit_breaker: CircuitBreaker | None,
-    rate_limit: RateLimitPolicy | None,
+    rate_limit: RateLimit | None,
     bulkhead: Bulkhead | None,
 ) -> ResiliencePolicies | None:
     """Build a `ResiliencePolicies` from the four kwarg policies, or `None`.

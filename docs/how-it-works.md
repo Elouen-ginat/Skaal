@@ -7,7 +7,7 @@ Skaal keeps the application model stable and treats infrastructure selection as 
     <img src="../design_system/components/constraint-tokens.svg" alt="Constraint tokens showing latency, durability, and throughput specifications." />
     <div>
       <h3>1. Declare the behavior you need</h3>
-      <p>Use typed surfaces like <code>Map</code>, <code>Collection</code>, <code>BlobStore</code>, or <code>VectorStore</code>, then attach constraints with decorators such as <code>@storage</code>, <code>@function</code>, <code>@schedule</code>, and <code>@channel</code>.</p>
+      <p>Use typed surfaces like <code>Store</code>, <code>Table</code>, <code>BlobStore</code>, or <code>Topic</code>, then register behavior with decorators such as <code>@app.storage</code>, <code>@app.expose</code>, <code>@app.schedule</code>, and <code>@app.channel</code>.</p>
       <p>The app code describes required behavior, not vendor-specific infrastructure.</p>
     </div>
   </section>

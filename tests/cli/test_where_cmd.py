@@ -47,9 +47,7 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     return "where_fixture_pkg.app:app"
 
 
-def test_where_renders_console_url(
-    fixture_app: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_where_renders_console_url(fixture_app: str, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_state = {
         "resources": [
             {

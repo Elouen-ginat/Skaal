@@ -14,6 +14,8 @@ Phase 4 (ADR 032 §4.9) deletes every legacy per-decorator dunder
 
 from __future__ import annotations
 
+import inspect
+import sys
 import weakref
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -21,20 +23,20 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast, overload
 
 from skaal.inference.model import (
-    InferredResource,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SchemaRef,
     SourceLocation,
 )
 from skaal.types import (
-    BeforeInvoke,
+    BeforeInvocation,
     Bulkhead,
     CircuitBreaker,
     Duration,
     JobHandle,
-    RateLimitPolicy,
-    RetryPolicy,
+    RateLimit,
+    Retry,
     SecondaryIndex,
     SecretRef,
 )
@@ -42,12 +44,12 @@ from skaal.types.invoke import AuthClaims
 from skaal.types.protocols import AsyncPublishTarget
 
 if TYPE_CHECKING:
-    from skaal.channel import Channel
+    from skaal.channel import Topic
     from skaal.schedule import Cron, Every
 
 F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
-ChannelT = TypeVar("ChannelT", bound="Channel[Any]")
+ChannelT = TypeVar("ChannelT", bound="Topic[Any]")
 StorageKind = Literal["kv", "blob", "relational"]
 
 
@@ -91,7 +93,7 @@ class _HasDunderName:
     __name__: str
 
 
-def _attach_inferred(target: Any, inferred: InferredResource) -> None:
+def _attach_inferred(target: Any, inferred: BlueprintResource) -> None:
     """Attach the inference-layer `InferredResource` to a decorated object.
 
     `__skaal_inferred__` is the single contract every consumer (runtime,
@@ -107,9 +109,17 @@ def _attach_inferred(target: Any, inferred: InferredResource) -> None:
 def _inferred_kind(obj: Any) -> ResourceKind | None:
     """Return the `ResourceKind` recorded on ``obj`` by `_attach_inferred`."""
     inferred = getattr(obj, "__skaal_inferred__", None)
-    if isinstance(inferred, InferredResource):
+    if isinstance(inferred, BlueprintResource):
         return inferred.kind
     return None
+
+
+def _caller_module_name() -> str | None:
+    frame = inspect.currentframe()
+    if frame is None or frame.f_back is None or frame.f_back.f_back is None:
+        return None
+    caller = frame.f_back.f_back
+    return caller.f_globals.get("__name__")
 
 
 class Module:
@@ -125,14 +135,42 @@ class Module:
         self._storage: dict[str, Any] = {}
         self._functions: dict[str, Any] = {}
         self._jobs: dict[str, Any] = {}
-        self._channels: dict[str, Channel[Any]] = {}
+        self._channels: dict[str, Topic[Any]] = {}
         self._components: dict[str, Any] = {}
         self._schedules: dict[str, Any] = {}
         self._secrets: dict[str, SecretRef] = {}
         self._exports: set[str] = set()
         self._submodules: dict[str, Module] = {}
-        self._before_invoke: list[BeforeInvoke] = []
+        self._before_invoke: list[BeforeInvocation] = []
         self._runtime_ref: weakref.ReferenceType[Any] | None = None
+        self._source_module_name = _caller_module_name()
+
+    def _autodiscover_declarations(self) -> None:
+        module_name = self._source_module_name
+        if not module_name:
+            return
+        source_module = sys.modules.get(module_name)
+        if source_module is None:
+            return
+        for obj in vars(source_module).values():
+            inferred = getattr(obj, "__skaal_inferred__", None)
+            if not isinstance(inferred, BlueprintResource):
+                continue
+            if inferred.source.module != module_name:
+                continue
+            if inferred.kind in {
+                ResourceKind.STORE,
+                ResourceKind.BLOB,
+                ResourceKind.RELATIONAL,
+            } and isinstance(obj, type):
+                self._storage.setdefault(obj.__name__, obj)
+                continue
+            if inferred.kind is ResourceKind.CHANNEL and isinstance(obj, type):
+                if obj.__name__ in self._channels:
+                    continue
+                instance = obj()
+                _attach_inferred(instance, inferred)
+                self._channels[obj.__name__] = instance
 
     # ── Registration decorators ────────────────────────────────────────────
 
@@ -176,7 +214,7 @@ class Module:
             return decorator
         return decorator(cls_to_decorate)
 
-    def external(
+    def connect(
         self,
         *,
         name: str,
@@ -189,7 +227,7 @@ class Module:
         parameter; ``name`` indexes into ``[env.<name>.backends]`` in
         `skaal.toml` for the connection string.
         """
-        from skaal.decorators import external as _external_dec
+        from skaal.decorators import connect as _external_dec
 
         outer = _external_dec(name=name, kind=kind)
 
@@ -201,36 +239,36 @@ class Module:
         return decorator
 
     @overload
-    def function(
+    def expose(
         self,
         fn_to_decorate: F,
         *,
-        retry: RetryPolicy | None = ...,
+        retry: Retry | None = ...,
         circuit_breaker: CircuitBreaker | None = ...,
-        rate_limit: RateLimitPolicy | None = ...,
+        rate_limit: RateLimit | None = ...,
         bulkhead: Bulkhead | None = ...,
         secrets: list[SecretRef] | None = ...,
     ) -> F: ...
 
     @overload
-    def function(
+    def expose(
         self,
         fn_to_decorate: None = ...,
         *,
-        retry: RetryPolicy | None = ...,
+        retry: Retry | None = ...,
         circuit_breaker: CircuitBreaker | None = ...,
-        rate_limit: RateLimitPolicy | None = ...,
+        rate_limit: RateLimit | None = ...,
         bulkhead: Bulkhead | None = ...,
         secrets: list[SecretRef] | None = ...,
     ) -> Callable[[F], F]: ...
 
-    def function(
+    def expose(
         self,
         fn_to_decorate: F | None = None,
         *,
-        retry: RetryPolicy | None = None,
+        retry: Retry | None = None,
         circuit_breaker: CircuitBreaker | None = None,
-        rate_limit: RateLimitPolicy | None = None,
+        rate_limit: RateLimit | None = None,
         bulkhead: Bulkhead | None = None,
         secrets: list[SecretRef] | None = None,
     ) -> F | Callable[[F], F]:
@@ -240,7 +278,7 @@ class Module:
         so the module form and the bare decorator form construct the
         same `FunctionRef` and the same `InferredResource`.
         """
-        from skaal.decorators import function as _function_dec
+        from skaal.decorators import expose as _function_dec
 
         outer = _function_dec(
             retry=retry,
@@ -266,7 +304,7 @@ class Module:
         self,
         fn_to_decorate: F,
         *,
-        retry: RetryPolicy | None = ...,
+        retry: Retry | None = ...,
     ) -> F: ...
 
     @overload
@@ -274,24 +312,24 @@ class Module:
         self,
         fn_to_decorate: None = ...,
         *,
-        retry: RetryPolicy | None = ...,
+        retry: Retry | None = ...,
     ) -> Callable[[F], F]: ...
 
     def job(
         self,
         fn_to_decorate: F | None = None,
         *,
-        retry: RetryPolicy | None = None,
+        retry: Retry | None = None,
     ) -> F | Callable[[F], F]:
         """Register a background job handler executed by the runtime worker."""
         from skaal.decorators import _resilience as _build_resilience
 
         def decorator(fn: F) -> F:
-            inferred = InferredResource(
-                id=InferredResource.id_for(fn),
+            inferred = BlueprintResource(
+                id=BlueprintResource.id_for(fn),
                 kind=ResourceKind.JOB,
                 source=SourceLocation.from_object(fn),
-                overrides=ResourceOverrides(
+                overrides=Overrides(
                     resilience=_build_resilience(
                         retry=retry,
                         circuit_breaker=None,
@@ -341,12 +379,12 @@ class Module:
 
             instance = cls(buffer=buffer)
             pinned_token = _extract_backend_pin(cls)
-            overrides = ResourceOverrides(
+            overrides = Overrides(
                 backend=pinned_token.name if pinned_token is not None else None,
                 channel_buffer=buffer,
             )
-            inferred = InferredResource(
-                id=InferredResource.id_for(cls),
+            inferred = BlueprintResource(
+                id=BlueprintResource.id_for(cls),
                 kind=ResourceKind.CHANNEL,
                 source=SourceLocation.from_object(cls),
                 schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
@@ -370,6 +408,7 @@ class Module:
 
     def get_channel(self, channel_cls: type[ChannelT]) -> ChannelT:
         """Return the registered channel instance for a decorated `Channel` subclass."""
+        self._autodiscover_declarations()
         channel = self._channels.get(channel_cls.__name__)
         if channel is None:
             raise KeyError(
@@ -423,11 +462,11 @@ class Module:
         """Register a background function triggered on a time-based schedule."""
 
         def decorator(fn: F) -> F:
-            inferred = InferredResource(
-                id=InferredResource.id_for(fn),
+            inferred = BlueprintResource(
+                id=BlueprintResource.id_for(fn),
                 kind=ResourceKind.SCHEDULE,
                 source=SourceLocation.from_object(fn),
-                overrides=ResourceOverrides(
+                overrides=Overrides(
                     trigger=trigger,
                     schedule_timezone=timezone,
                 ),
@@ -444,7 +483,7 @@ class Module:
             return decorator
         return decorator(fn_to_decorate)
 
-    def add_before_invoke(self, hook: BeforeInvoke) -> BeforeInvoke:
+    def add_before_invoke(self, hook: BeforeInvocation) -> BeforeInvocation:
         """Register a hook that runs before every resilience-wrapped invocation."""
         self._before_invoke.append(hook)
         return hook
@@ -465,6 +504,7 @@ class Module:
 
     def export(self, *symbols: Any) -> ModuleExport:
         """Mark symbols as importable by mounting apps."""
+        self._autodiscover_declarations()
         registered: dict[str, dict[str, Any]] = {
             "storage": self._storage,
             "functions": self._functions,
@@ -510,6 +550,8 @@ class Module:
         share_storage: list[str] | None = None,
     ) -> ModuleExport:
         """Mount a `Module` into this `Module`, namespacing its resources."""
+        self._autodiscover_declarations()
+        module._autodiscover_declarations()
         ns: str = namespace if namespace is not None else module.name
         if ns in self._submodules:
             raise ValueError(
@@ -696,6 +738,7 @@ class Module:
     # ── Introspection ──────────────────────────────────────────────────────
 
     def describe(self) -> dict[str, Any]:
+        self._autodiscover_declarations()
         return {
             "name": self.name,
             "storage": list(self._storage.keys()),

@@ -9,7 +9,7 @@ from skaal.binding.model import Target
 from skaal.binding.registry import (
     REGISTRY,
     BackendCapabilities,
-    BackendEntry,
+    BackendSpec,
     default_entry_for,
     lookup,
     lookup_token,
@@ -31,7 +31,7 @@ def test_registry_has_no_duplicate_names() -> None:
 
 def test_every_entry_has_capabilities_and_options_schema() -> None:
     for entry in REGISTRY:
-        assert isinstance(entry, BackendEntry)
+        assert isinstance(entry, BackendSpec)
         assert isinstance(entry.capabilities, BackendCapabilities)
         assert entry.options_schema is not None
 

@@ -20,7 +20,7 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
-from skaal.binding.model import BackendConfig, Environment, ResourceOverride, Target
+from skaal.binding.model import BackendConfig, Environment, EnvOverride, Target
 from skaal.errors import SkaalConfigError
 
 SKAAL_TOML = "skaal.toml"
@@ -107,7 +107,7 @@ def _build_environment(name: str, block: dict[str, Any], source: Path) -> Enviro
         msg = f"{source}: [env.{name}.overrides] must be a table"
         raise SkaalConfigError(msg)
     overrides_section = cast(dict[str, Any], overrides_raw)
-    overrides: dict[str, ResourceOverride] = {
+    overrides: dict[str, EnvOverride] = {
         str(res_id): _build_override(name, str(res_id), value, source)
         for res_id, value in overrides_section.items()
     }
@@ -138,13 +138,13 @@ def _build_environment(name: str, block: dict[str, Any], source: Path) -> Enviro
         raise SkaalConfigError(msg) from exc
 
 
-def _build_override(env_name: str, res_id: str, value: Any, source: Path) -> ResourceOverride:
+def _build_override(env_name: str, res_id: str, value: Any, source: Path) -> EnvOverride:
     if isinstance(value, str):
-        return ResourceOverride(backend=value)
+        return EnvOverride(backend=value)
     if isinstance(value, dict):
         payload = cast(dict[str, Any], value)
         try:
-            return ResourceOverride(**payload)
+            return EnvOverride(**payload)
         except ValidationError as exc:
             msg = (
                 f"{source}: [env.{env_name}.overrides] entry {res_id!r} "

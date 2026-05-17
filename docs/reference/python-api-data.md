@@ -10,10 +10,6 @@ This page covers Skaal's typed storage surfaces and the modules that back them.
 
 ::: skaal.blob
 
-## `skaal.vector`
-
-::: skaal.vector
-
 ## `skaal.relational`
 
 ::: skaal.relational

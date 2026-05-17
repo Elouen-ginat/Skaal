@@ -5,8 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from skaal.api import WhereHit
-from skaal.api import where as api_where
+from skaal.api import Location
+from skaal.api import locate as api_where
 from skaal.cli._errors import cli_error_boundary
 
 app = typer.Typer(
@@ -39,14 +39,12 @@ def where(
     _render(hit)
 
 
-def _render(hit: WhereHit) -> None:
+def _render(hit: Location) -> None:
     """Render `hit` to the terminal."""
     console = Console()
     source = hit.resource.inferred.source
     app_name = source.top_package or source.module or hit.resource.inferred.id
-    console.print(
-        f"[bold]{app_name}[/bold] / stack=[cyan]{hit.stack_name}[/cyan]"
-    )
+    console.print(f"[bold]{app_name}[/bold] / stack=[cyan]{hit.stack_name}[/cyan]")
     console.print(f"resource [magenta]{hit.resource.inferred.id}[/magenta]")
     console.print(f"type     [green]{hit.provider_type}[/green]")
     if hit.physical_id:

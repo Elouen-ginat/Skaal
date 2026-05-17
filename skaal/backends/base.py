@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from skaal.types import BlobObject
+from skaal.types import BlobItem
 from skaal.types.storage import Page
 
 
@@ -117,7 +117,7 @@ class BlobBackend(Protocol):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject: ...
+    ) -> BlobItem: ...
 
     async def put_file(
         self,
@@ -126,13 +126,13 @@ class BlobBackend(Protocol):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject: ...
+    ) -> BlobItem: ...
 
     async def get_bytes(self, key: str) -> bytes: ...
 
     async def download_file(self, key: str, destination: str | Path) -> Path: ...
 
-    async def stat(self, key: str) -> BlobObject | None: ...
+    async def stat(self, key: str) -> BlobItem | None: ...
 
     async def exists(self, key: str) -> bool: ...
 
@@ -144,7 +144,7 @@ class BlobBackend(Protocol):
         *,
         limit: int,
         cursor: str | None,
-    ) -> Page[BlobObject]: ...
+    ) -> Page[BlobItem]: ...
 
     async def close(self) -> None: ...
 

@@ -27,7 +27,7 @@ from typing_extensions import TypeVar
 from skaal.backends._base import Backend
 from skaal.storage import _decode_cursor, _encode_cursor, _normalize_limit
 from skaal.sync import run as _sync_run
-from skaal.types import BlobObject, Page
+from skaal.types import BlobItem, Page
 
 if TYPE_CHECKING:
     from skaal.backends.base import BlobBackend
@@ -46,12 +46,12 @@ def is_blob_model(obj: Any) -> bool:
         `True` when `obj` is a class registered through
         `@app.storage(kind="blob")`.
     """
-    from skaal.inference.model import InferredResource, ResourceKind
+    from skaal.inference.model import BlueprintResource, ResourceKind
 
     if not isinstance(obj, type):
         return False
     inferred = getattr(obj, "__skaal_inferred__", None)
-    return isinstance(inferred, InferredResource) and inferred.kind == ResourceKind.BLOB
+    return isinstance(inferred, BlueprintResource) and inferred.kind == ResourceKind.BLOB
 
 
 def validate_blob_model(store_cls: object) -> None:
@@ -98,6 +98,14 @@ class BlobStore(Generic[B]):
 
     _backend: ClassVar[BlobBackend | None] = None
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls is BlobStore:
+            return
+        from skaal.decorators import _attach_storage_inferred
+
+        _attach_storage_inferred(cls, kind="blob")
+
     @classmethod
     def wire(cls, backend: BlobBackend) -> None:
         """Bind a blob backend to this storage class.
@@ -138,7 +146,7 @@ class BlobStore(Generic[B]):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Store raw bytes under `key`.
 
         Args:
@@ -170,7 +178,7 @@ class BlobStore(Generic[B]):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Upload a file from disk into the blob store.
 
         Args:
@@ -233,7 +241,7 @@ class BlobStore(Generic[B]):
         return await cls._backend.download_file(key, destination)
 
     @classmethod
-    async def stat(cls, key: str) -> BlobObject | None:
+    async def stat(cls, key: str) -> BlobItem | None:
         """Return metadata for `key` without downloading the payload.
 
         Args:
@@ -278,7 +286,7 @@ class BlobStore(Generic[B]):
         *,
         limit: int = 100,
         cursor: str | None = None,
-    ) -> Page[BlobObject]:
+    ) -> Page[BlobItem]:
         """List a single page of object metadata.
 
         Args:
@@ -297,7 +305,7 @@ class BlobStore(Generic[B]):
         return await cls._backend.list_page(prefix=prefix, limit=limit, cursor=cursor)
 
     @classmethod
-    async def list(cls, prefix: str = "") -> builtins.list[BlobObject]:
+    async def list(cls, prefix: str = "") -> builtins.list[BlobItem]:
         """Return all object metadata matching `prefix`.
 
         Args:
@@ -310,7 +318,7 @@ class BlobStore(Generic[B]):
             This helper drains every page into memory. Use `list_page` when you
             need cursor-based pagination.
         """
-        items: builtins.list[BlobObject] = []
+        items: builtins.list[BlobItem] = []
         cursor: str | None = None
         while True:
             page = await cls.list_page(prefix=prefix, limit=1000, cursor=cursor)
@@ -327,7 +335,7 @@ class BlobStore(Generic[B]):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Synchronously store raw bytes under `key`.
 
         Args:
@@ -352,7 +360,7 @@ class BlobStore(Generic[B]):
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Synchronously upload a file from disk.
 
         Args:
@@ -401,7 +409,7 @@ class BlobStore(Generic[B]):
         return _sync_run(cls.download_file(key, destination))
 
     @classmethod
-    def sync_stat(cls, key: str) -> BlobObject | None:
+    def sync_stat(cls, key: str) -> BlobItem | None:
         """Synchronously return metadata for `key`.
 
         Args:
@@ -449,7 +457,7 @@ class BlobStore(Generic[B]):
         *,
         limit: int = 100,
         cursor: str | None = None,
-    ) -> Page[BlobObject]:
+    ) -> Page[BlobItem]:
         """Synchronously list a single page of object metadata.
 
         Args:
@@ -466,7 +474,7 @@ class BlobStore(Generic[B]):
         return _sync_run(cls.list_page(prefix=prefix, limit=limit, cursor=cursor))
 
     @classmethod
-    def sync_list(cls, prefix: str = "") -> builtins.list[BlobObject]:
+    def sync_list(cls, prefix: str = "") -> builtins.list[BlobItem]:
         """Synchronously return all object metadata matching `prefix`.
 
         Args:

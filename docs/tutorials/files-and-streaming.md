@@ -87,10 +87,10 @@ import asyncio
 
 from fastapi.responses import StreamingResponse
 
-from skaal import RetryPolicy
+from skaal import Retry
 
 
-@app.function(retry=RetryPolicy(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
+@app.expose(retry=Retry(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
 async def stream_tokens(prompt: str):
     for token in prompt.split():
         await asyncio.sleep(0.02)
@@ -117,7 +117,7 @@ This is the pattern used in `examples/fastapi_streaming/app.py`.
 ## Where To Go Next
 
 - Read [Python API: Data Surfaces](../reference/python-api-data.md) for `BlobStore` and the typed data APIs.
-- Read [Python API: Types and Policies](../reference/python-api-types.md) for `RetryPolicy` and related resilience objects.
+- Read [Python API: Types and Policies](../reference/python-api-types.md) for `Retry` and related resilience objects.
 - Revisit [Examples](../examples.md) to inspect the full repository apps.
 - Read [HTTP Integration](../http.md) for the mounted ASGI model.
 - Read [CLI](../cli.md) for the operational command loop behind the tutorials.

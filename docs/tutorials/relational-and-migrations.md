@@ -17,13 +17,13 @@ from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel, select
 
-from skaal import App, open_relational_session
+from skaal import App, Table
 
 app = App("todo-comments")
 
 
-@app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
-class Comment(SQLModel, table=True):
+@app.storage(kind="relational")
+class Comment(Table, table=True):
     __tablename__ = "todo_comments"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -32,9 +32,9 @@ class Comment(SQLModel, table=True):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-@app.function()
+@app.expose()
 async def add_comment(todo_id: str, body: str) -> dict:
-    async with open_relational_session(Comment) as session:
+    async with Comment.session() as session:
         comment = Comment(todo_id=todo_id, body=body)
         session.add(comment)
         await session.commit()
@@ -42,9 +42,9 @@ async def add_comment(todo_id: str, body: str) -> dict:
     return comment.model_dump()
 
 
-@app.function()
+@app.expose()
 async def list_comments(todo_id: str) -> dict:
-    async with open_relational_session(Comment) as session:
+    async with Comment.session() as session:
         result = await session.exec(
             select(Comment).where(Comment.todo_id == todo_id).order_by(Comment.id)
         )
@@ -127,7 +127,7 @@ That makes `examples/todo_api/app.py` the best next reference once you are comfo
 
 ## Reference Links
 
-- Read [Python API: Data Surfaces](../reference/python-api-data.md) for `open_relational_session`, relational helpers, and the storage modules around them.
+- Read [Python API: Data Surfaces](../reference/python-api-data.md) for `Table.session()`, migration helpers, and the storage modules around them.
 - Read [CLI Configuration](../cli-configuration.md) for the `pyproject.toml` settings that let migration commands resolve your app implicitly.
 
 ## Continue

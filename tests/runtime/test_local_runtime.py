@@ -7,28 +7,27 @@ from pathlib import Path
 import pytest
 
 from skaal import App, Store
-from skaal.binding import bind
+from skaal.binding import plan as build_plan
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.errors import RuntimeAdapterMissing
 from skaal.inference.model import (
-    InferredPlan,
-    InferredResource,
+    Blueprint,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SourceLocation,
 )
 from skaal.runtime import LocalRuntime
 
 
-def _plan_for(app: App) -> InferredPlan:
-    return app.infer()
+def _plan_for(app: App) -> Blueprint:
+    return app.blueprint()
 
 
 def test_runtime_builds_from_empty_plan() -> None:
     app = App("empty")
-    plan = _plan_for(app)
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(plan, env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
     assert runtime.routes == []
     assert runtime.mounts == []
@@ -40,12 +39,12 @@ def test_runtime_builds_from_empty_plan() -> None:
 def test_runtime_registers_function_route(tmp_path: Path) -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
     paths = [r.path for r in runtime.routes]
     assert "/greet" in paths
@@ -59,7 +58,7 @@ def test_runtime_wires_store_with_sqlite(tmp_path: Path) -> None:
         pass
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
     # The store adapter staged a startup hook for backend.connect().
     assert runtime.startup_hooks
@@ -76,20 +75,20 @@ def test_runtime_raises_on_unsupported_backend() -> None:
     # DynamoDB binds cleanly on an AWS-target env, but the local
     # runtime's store adapter only knows sqlite/redis, so registration
     # surfaces the missing-adapter error.
-    plan = InferredPlan(
+    current_blueprint = Blueprint(
         app="svc",
         resources=(
-            InferredResource(
-                id=InferredResource.id_for(Cache),
+            BlueprintResource(
+                id=BlueprintResource.id_for(Cache),
                 kind=ResourceKind.STORE,
                 source=SourceLocation.from_object(Cache),
-                overrides=ResourceOverrides(backend="dynamodb"),
+                overrides=Overrides(backend="dynamodb"),
             ),
         ),
         fingerprint="cafebabe00000002",
     )
     env = Environment(name="prod", target=Target.AWS, region="us-east-1")
-    bound = bind(plan, env, LockFile())
+    bound = build_plan(current_blueprint, env, LockFile())
     with pytest.raises(RuntimeAdapterMissing):
         LocalRuntime.from_bound_plan(bound, app)
 
@@ -100,12 +99,12 @@ async def test_runtime_function_endpoint_responds(tmp_path: Path) -> None:
 
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def echo(value: str) -> dict[str, str]:
         return {"value": value}
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
     asgi = runtime.build_asgi()
 
@@ -123,12 +122,12 @@ async def test_runtime_function_endpoint_responds(tmp_path: Path) -> None:
 async def test_runtime_invoke_dispatches_in_process() -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def echo(value: str) -> dict[str, str]:
         return {"value": value}
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     result = await runtime.invoke("svc.echo", {"value": "hi"})
@@ -138,7 +137,7 @@ async def test_runtime_invoke_dispatches_in_process() -> None:
 async def test_runtime_invoke_unknown_raises_key_error() -> None:
     app = App("svc")
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     with pytest.raises(KeyError, match=r"svc\.nope"):
@@ -148,13 +147,13 @@ async def test_runtime_invoke_unknown_raises_key_error() -> None:
 async def test_runtime_invoke_stream_yields_items() -> None:
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def stream(prompt: str):
         for token in prompt.split():
             yield token
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     collected = [item async for item in runtime.invoke_stream("svc.stream", {"prompt": "a b c"})]
@@ -164,7 +163,7 @@ async def test_runtime_invoke_stream_yields_items() -> None:
 async def test_runtime_invoke_stream_unknown_raises_key_error() -> None:
     app = App("svc")
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     with pytest.raises(KeyError, match=r"svc\.nope"):
@@ -175,12 +174,12 @@ async def test_async_generator_function_skips_http_route() -> None:
     """Async generators register as streams only; no HTTP route is added."""
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def stream(prompt: str):
         yield prompt
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     assert "svc.stream" in runtime.state.invokable_streams
@@ -193,12 +192,12 @@ async def test_lifespan_binds_runtime_to_app() -> None:
 
     app = App("svc")
 
-    @app.function()
+    @app.expose()
     async def double(x: int) -> dict[str, int]:
         return {"x": x * 2}
 
     env = Environment(name="local", target=Target.LOCAL)
-    bound = bind(app.infer(), env, LockFile())
+    bound = app.plan(env, lock=LockFile())
     runtime = LocalRuntime.from_bound_plan(bound, app)
 
     # Before the lifespan starts, `app.invoke(...)` cannot dispatch.

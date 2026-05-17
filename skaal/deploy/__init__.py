@@ -58,7 +58,7 @@ from skaal.deploy.program import (
     synthesize_stack,
 )
 from skaal.deploy.tags import tags_for
-from skaal.plugins import PluginRegistry, SkaalPlugin, load_plugins
+from skaal.plugins import Plugin, PluginRegistry, load_plugins
 
 __all__ = [
     "AppSpec",
@@ -69,9 +69,9 @@ __all__ = [
     "ConsoleUrlResolver",
     "DeployTarget",
     "ManifestResourceEntry",
+    "Plugin",
     "PluginRegistry",
     "PulumiProgram",
-    "SkaalPlugin",
     "SkaalTags",
     "SynthContext",
     "SynthFn",

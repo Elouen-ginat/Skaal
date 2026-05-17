@@ -6,19 +6,19 @@ import pytest
 from pydantic import ValidationError
 
 from skaal.inference.model import (
+    Blueprint,
+    BlueprintResource,
     Edge,
     EdgeKind,
-    InferredPlan,
-    InferredResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SchemaRef,
     SourceLocation,
 )
 
 
-def _sample_resource(rid: str = "acme.users:Users") -> InferredResource:
-    return InferredResource(
+def _sample_resource(rid: str = "acme.users:Users") -> BlueprintResource:
+    return BlueprintResource(
         id=rid,
         kind=ResourceKind.STORE,
         source=SourceLocation(module="acme.users", qualname="Users", file="acme/users.py", line=10),
@@ -53,7 +53,7 @@ def test_edge_kind_enum_has_five_variants() -> None:
 def test_inferred_resource_round_trips() -> None:
     res = _sample_resource()
     payload = res.model_dump_json(by_alias=True)
-    assert InferredResource.model_validate_json(payload) == res
+    assert BlueprintResource.model_validate_json(payload) == res
 
 
 def test_inferred_resource_schema_field_uses_alias_in_json() -> None:
@@ -71,7 +71,7 @@ def test_inferred_resource_frozen() -> None:
 
 def test_inferred_resource_extra_forbidden() -> None:
     with pytest.raises(ValidationError):
-        InferredResource(
+        BlueprintResource(
             id="x",
             kind=ResourceKind.STORE,
             source=SourceLocation(module="m", qualname="x", file="m.py", line=1),
@@ -80,18 +80,18 @@ def test_inferred_resource_extra_forbidden() -> None:
 
 
 def test_inferred_plan_round_trips() -> None:
-    plan = InferredPlan(
+    plan = Blueprint(
         app="demo",
         resources=(_sample_resource(),),
         edges=(Edge(source_id="a", target_id="b", kind=EdgeKind.READS),),
         fingerprint="cafebabedeadbeef",
     )
     payload = plan.model_dump_json(by_alias=True)
-    assert InferredPlan.model_validate_json(payload) == plan
+    assert Blueprint.model_validate_json(payload) == plan
 
 
 def test_resource_overrides_defaults_are_none() -> None:
-    overrides = ResourceOverrides()
+    overrides = Overrides()
     assert overrides.backend is None
     assert overrides.region is None
     assert overrides.memory_mb is None

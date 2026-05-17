@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from skaal.module import Module, ModuleExport
 
 if TYPE_CHECKING:
-    from skaal.inference import InferredPlan
+    from skaal.binding import Environment, LockFile, Plan
+    from skaal.inference import Blueprint
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -17,7 +19,7 @@ class App(Module):
     """Central registry for a Skaal application.
 
     `App` extends `Module` with HTTP mounting via `mount()`. Storage,
-    function, channel, schedule, job, and attach methods are inherited
+    expose, topic, schedule, job, and attach methods are inherited
     from `Module`. Deployment target and region are environment concerns
     bound through `skaal.toml` and the binding layer (ADR 028 §6.3); they
     are not declared in application code.
@@ -30,7 +32,7 @@ class App(Module):
         class Profiles(Store[Profile]):
             pass
 
-        @app.function()
+        @app.expose()
         async def predict(customer_id: str) -> float:
             ...
     """
@@ -97,16 +99,47 @@ class App(Module):
 
     # ── Inference ──────────────────────────────────────────────────────────
 
-    def infer(self) -> InferredPlan:
-        """Walk this app and return its `InferredPlan`.
+    def blueprint(self) -> Blueprint:
+        """Walk this app and return its `Blueprint`.
 
         The inference layer is the input to the binding layer (Phase 3, see
         ADR 028 §6.2); each call walks the live module graph, so adding a
-        resource at runtime is reflected in the next `infer()` result.
+        resource at runtime is reflected in the next `blueprint()` result.
         """
-        from skaal.inference import infer as _infer
+        from skaal.inference import blueprint as _blueprint
 
-        return _infer(self)
+        return _blueprint(self)
+
+    def plan(
+        self,
+        env: str | Environment = "local",
+        *,
+        toml_path: Path = Path("skaal.toml"),
+        lock_path: Path = Path("skaal.lock"),
+        lock: LockFile | None = None,
+    ) -> Plan:
+        """Return the deployment `Plan` for this app.
+
+        Args:
+            env: Environment name from `skaal.toml`, or a pre-loaded `Environment`.
+            toml_path: Optional path to `skaal.toml` when ``env`` is a name.
+            lock_path: Path to `skaal.lock` when ``lock`` is not supplied.
+            lock: Optional pre-loaded `LockFile`.
+
+        Returns:
+            The bound deployment `Plan` for this app.
+        """
+        from skaal.binding import Environment as LoadedEnvironment
+        from skaal.binding import LockFile as LoadedLockFile
+        from skaal.binding import plan as build_plan
+
+        environment = (
+            env
+            if isinstance(env, LoadedEnvironment)
+            else LoadedEnvironment.load(env, path=toml_path)
+        )
+        resolved_lock = lock if lock is not None else LoadedLockFile.load(lock_path)
+        return build_plan(self.blueprint(), environment, resolved_lock)
 
     # ── Introspection ──────────────────────────────────────────────────────
 

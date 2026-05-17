@@ -20,11 +20,11 @@ from typing import TYPE_CHECKING, Any
 from dotenv import load_dotenv
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Stage a startup hook that loads the configured `.env` file."""
     if bound.backend != "dotenv":
         # Other secret backends (AWS Secrets Manager, GCP Secret Manager)

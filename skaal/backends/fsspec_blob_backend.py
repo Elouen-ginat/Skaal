@@ -11,7 +11,7 @@ from typing import Any
 from fsspec.spec import AbstractFileSystem
 
 from skaal.blob import decode_blob_cursor, encode_blob_cursor, normalize_blob_limit
-from skaal.types import BlobObject, Page
+from skaal.types import BlobItem, Page
 
 
 class FsspecBlobBackend:
@@ -85,14 +85,14 @@ class FsspecBlobBackend:
         key: str,
         info: dict[str, Any],
         meta: dict[str, Any] | None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         size = info.get("size", 0)
         updated_at = self._coerce_updated((meta or {}).get("updated_at"))
         if updated_at is None:
             updated_at = self._coerce_updated(
                 info.get("created") or info.get("mtime") or info.get("updated")
             )
-        return BlobObject(
+        return BlobItem(
             key=self._normalize_key(key),
             size=int(size if isinstance(size, int | float) else 0),
             content_type=(meta or {}).get("content_type"),
@@ -135,7 +135,7 @@ class FsspecBlobBackend:
         *,
         content_type: str | None,
         metadata: dict[str, str] | None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         data_path = self._data_path(key)
         self._ensure_parent(data_path)
         with self._filesystem.open(data_path, "wb") as handle:
@@ -144,7 +144,7 @@ class FsspecBlobBackend:
         meta = self._write_meta_sync(key, content_type=content_type, metadata=metadata, etag=etag)
         return self._build_object(key, self._filesystem.info(data_path), meta)
 
-    def _stat_sync(self, key: str) -> BlobObject | None:
+    def _stat_sync(self, key: str) -> BlobItem | None:
         data_path = self._data_path(key)
         if not self._filesystem.exists(data_path):
             return None
@@ -186,7 +186,7 @@ class FsspecBlobBackend:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         return await asyncio.to_thread(
             self._put_bytes_sync,
             key,
@@ -202,7 +202,7 @@ class FsspecBlobBackend:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         data = await asyncio.to_thread(Path(source).read_bytes)
         return await self.put_bytes(key, data, content_type=content_type, metadata=metadata)
 
@@ -219,7 +219,7 @@ class FsspecBlobBackend:
         await asyncio.to_thread(target.write_bytes, data)
         return target
 
-    async def stat(self, key: str) -> BlobObject | None:
+    async def stat(self, key: str) -> BlobItem | None:
         return await asyncio.to_thread(self._stat_sync, key)
 
     async def exists(self, key: str) -> bool:
@@ -234,7 +234,7 @@ class FsspecBlobBackend:
         *,
         limit: int,
         cursor: str | None,
-    ) -> Page[BlobObject]:
+    ) -> Page[BlobItem]:
         limit = normalize_blob_limit(limit)
         last_key = decode_blob_cursor(cursor, prefix=prefix)
         keys = await asyncio.to_thread(self._list_keys_sync, prefix)

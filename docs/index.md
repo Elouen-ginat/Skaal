@@ -21,7 +21,7 @@ Write classes and functions. Skaal infers the infrastructure, generates the Pulu
 ## What Skaal will be
 
 ```python
-from skaal import App, Store, BlobStore, Channel, Cron
+from skaal import App, BlobStore, Cron, Store, Topic
 from pydantic import BaseModel
 
 class User(BaseModel):
@@ -35,12 +35,12 @@ class Users(Store[User]):
 class Avatars(BlobStore):
     """One bucket. The class is the bucket."""
 
-class SignupEvents(Channel[User]):
+class SignupEvents(Topic[User]):
     """One topic. The class is the topic."""
 
 app = App("acme")
 
-@app.function
+@app.expose
 async def signup(user: User) -> User:
     await Users.put(user.id, user)
     await SignupEvents.publish(user)
@@ -65,7 +65,7 @@ When you need a backend-specific feature, pin the type and get the real SDK clie
 ```python
 from skaal.backends.bigquery import BigQuery
 
-class Sales(Relational[Sale, BigQuery], partition_by="occurred_at"):
+class Sales(Table[BigQuery], partition_by="occurred_at"):
     transaction_id: str = Field(primary_key=True)
 
 bq = await Sales.native()  # google.cloud.bigquery.Client, in every environment
@@ -82,8 +82,8 @@ app.mount("/api", api)
 
 ## How it works
 
-1. **Declare** classes (`Store[T]`, `BlobStore`, `Channel[T]`, `Relational[T, B]`) and functions (`@app.function`, `@app.schedule`, `@app.job`).
-2. **Infer** an environment-independent `InferredPlan` by walking the `App` graph.
+1. **Declare** classes (`Store[T]`, `BlobStore`, `Topic[T]`, `Table[B]`) and functions (`@app.expose`, `@app.schedule`, `@app.job`).
+2. **Infer** an environment-independent `Blueprint` by walking the `App` graph.
 3. **Bind** the plan against an environment (`local`, `aws`, `gcp`) using a fixed defaults table the framework owns.
 4. **Generate** Pulumi programs, Dockerfiles, and handler entrypoints from the bound plan.
 5. **Deploy** via Pulumi. The `skaal.lock` file pins each binding so the next plan is empty unless code changed.
@@ -92,7 +92,7 @@ app.mount("/api", api)
 
 ```bash
 skaal init                      # scaffold a new project
-skaal run                       # local: SQLite + filesystem + in-memory channel
+skaal run                       # local: SQLite + filesystem + in-memory topic
 skaal map                       # source -> deployed-resource tree
 skaal plan --env prod           # diff: code vs lock, or code vs deployed
 skaal deploy --env prod         # Pulumi up against AWS or GCP
@@ -104,7 +104,7 @@ Each verb has one job. There is no constraint DSL, no catalog you maintain, and 
 
 ## Targets
 
-- **Local** — SQLite, filesystem, in-process channels, async functions, APScheduler.
+- **Local** — SQLite, filesystem, in-process topics, async functions, APScheduler.
 - **AWS** — DynamoDB, S3, SQS, Lambda, EventBridge, RDS Postgres, Secrets Manager.
 - **GCP** — Firestore, GCS, Pub/Sub, Cloud Run, Cloud Scheduler, Cloud SQL, Secret Manager.
 

@@ -9,19 +9,19 @@ from pydantic import ValidationError
 
 from skaal.binding.model import (
     BackendConfig,
-    BoundPlan,
-    BoundResource,
     Environment,
+    EnvOverride,
     LockEntry,
     LockFile,
-    ResourceOverride,
+    Plan,
+    PlannedResource,
     Target,
 )
-from skaal.inference.model import InferredResource, ResourceKind, SourceLocation
+from skaal.inference.model import BlueprintResource, ResourceKind, SourceLocation
 
 
-def _sample_inferred(rid: str = "acme.users:Users") -> InferredResource:
-    return InferredResource(
+def _sample_inferred(rid: str = "acme.users:Users") -> BlueprintResource:
+    return BlueprintResource(
         id=rid,
         kind=ResourceKind.STORE,
         source=SourceLocation(module="acme.users", qualname="Users", file="acme/users.py", line=10),
@@ -37,7 +37,7 @@ def test_environment_round_trips() -> None:
         name="prod",
         target=Target.AWS,
         region="eu-west-1",
-        overrides={"acme.users:Users": ResourceOverride(backend="dynamodb")},
+        overrides={"acme.users:Users": EnvOverride(backend="dynamodb")},
         backends={"dynamodb": BackendConfig(region="eu-west-1")},
     )
     payload = env.model_dump_json()
@@ -50,8 +50,8 @@ def test_environment_rejects_extra_keys() -> None:
 
 
 def test_resource_override_round_trips() -> None:
-    override = ResourceOverride(backend="redis", region="us-east-1")
-    assert ResourceOverride.model_validate_json(override.model_dump_json()) == override
+    override = EnvOverride(backend="redis", region="us-east-1")
+    assert EnvOverride.model_validate_json(override.model_dump_json()) == override
 
 
 def test_lock_entry_carries_pin_metadata() -> None:
@@ -76,11 +76,11 @@ def test_lock_file_holds_tuple_keys() -> None:
 
 def test_bound_plan_round_trips() -> None:
     inferred = _sample_inferred()
-    plan = BoundPlan(
+    plan = Plan(
         app="acme",
         environment="local",
         resources=(
-            BoundResource(
+            PlannedResource(
                 inferred=inferred,
                 backend="sqlite",
                 pinned=False,
@@ -88,11 +88,11 @@ def test_bound_plan_round_trips() -> None:
         ),
     )
     payload = plan.model_dump_json(by_alias=True)
-    assert BoundPlan.model_validate_json(payload) == plan
+    assert Plan.model_validate_json(payload) == plan
 
 
 def test_bound_plan_is_frozen() -> None:
-    plan = BoundPlan(app="acme", environment="local")
+    plan = Plan(app="acme", environment="local")
     with pytest.raises(ValidationError):
         plan.app = "other"  # type: ignore[misc]
 
@@ -100,7 +100,7 @@ def test_bound_plan_is_frozen() -> None:
 def test_bound_resource_rejects_extra_keys() -> None:
     inferred = _sample_inferred()
     with pytest.raises(ValidationError):
-        BoundResource.model_validate(
+        PlannedResource.model_validate(
             {
                 "inferred": inferred.model_dump(),
                 "backend": "sqlite",

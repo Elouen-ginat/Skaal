@@ -39,12 +39,12 @@ class CreateTodoRequest(BaseModel):
     title: str
 
 
-@app.storage(read_latency="< 10ms", durability="persistent")
+@app.storage
 class Todos(Store[Todo]):
     pass
 
 
-@app.function()
+@app.expose()
 async def create_todo(id: str, title: str) -> dict:
     if await Todos.get(id) is not None:
         return {"error": f"Todo {id!r} already exists"}
@@ -53,7 +53,7 @@ async def create_todo(id: str, title: str) -> dict:
     return todo.model_dump()
 
 
-@app.function()
+@app.expose()
 async def list_todos() -> dict:
     entries = await Todos.list()
     return {"todos": [todo.model_dump() for _, todo in entries]}

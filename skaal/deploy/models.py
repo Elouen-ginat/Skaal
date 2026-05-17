@@ -31,7 +31,7 @@ from skaal.binding.model import Target
 from skaal.inference.model import ResourceKind
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource, Environment
+    from skaal.binding.model import Environment, PlannedResource
 
 
 class SkaalTags(BaseModel):
@@ -57,7 +57,7 @@ class SkaalTags(BaseModel):
     @classmethod
     def for_resource(
         cls,
-        resource: BoundResource,
+        resource: PlannedResource,
         env: Environment,
         fingerprint: str,
     ) -> SkaalTags:
@@ -127,7 +127,7 @@ class ManifestResourceEntry(BaseModel):
     external: bool
 
     @classmethod
-    def for_resource(cls, resource: BoundResource, *, slug: str) -> ManifestResourceEntry:
+    def for_resource(cls, resource: PlannedResource, *, slug: str) -> ManifestResourceEntry:
         """Build an entry from a bound resource and its rendered slug."""
         return cls(
             id=resource.inferred.id,

@@ -6,13 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from skaal.binding.environment import load_environment, load_environments
-from skaal.binding.model import Target
+from skaal.binding.model import Environment, Target
 from skaal.errors import SkaalConfigError
 
 
 def test_missing_file_returns_local_baseline(tmp_path: Path) -> None:
-    envs = load_environments(tmp_path / "missing.toml")
+    envs = Environment.load_all(path=tmp_path / "missing.toml")
     assert set(envs) == {"local"}
     assert envs["local"].target == Target.LOCAL
 
@@ -26,7 +25,7 @@ target = "aws"
 region = "eu-west-1"
 """.strip()
     )
-    envs = load_environments(path)
+    envs = Environment.load_all(path=path)
     assert envs["prod"].target == Target.AWS
     assert envs["prod"].region == "eu-west-1"
 
@@ -51,7 +50,7 @@ project = "acme-prod"
 dataset = "warehouse"
 """.strip()
     )
-    env = load_environment("prod", path)
+    env = Environment.load("prod", path=path)
     assert env.overrides["acme.users:Users"].backend == "dynamodb"
     assert env.overrides["acme.users:Avatars"].backend == "s3"
     assert env.overrides["acme.users:Avatars"].region == "us-east-1"
@@ -70,7 +69,7 @@ target = "azure"
 """.strip()
     )
     with pytest.raises(SkaalConfigError):
-        load_environments(path)
+        Environment.load_all(path=path)
 
 
 def test_missing_target_raises(tmp_path: Path) -> None:
@@ -82,7 +81,7 @@ region = "eu-west-1"
 """.strip()
     )
     with pytest.raises(SkaalConfigError):
-        load_environments(path)
+        Environment.load_all(path=path)
 
 
 def test_load_environment_raises_when_name_missing(tmp_path: Path) -> None:
@@ -94,11 +93,11 @@ target = "aws"
 """.strip()
     )
     with pytest.raises(SkaalConfigError):
-        load_environment("prod", path)
+        Environment.load("prod", path=path)
 
 
 def test_malformed_toml_raises(tmp_path: Path) -> None:
     path = tmp_path / "skaal.toml"
     path.write_text("not = valid = toml")
     with pytest.raises(SkaalConfigError):
-        load_environments(path)
+        Environment.load_all(path=path)

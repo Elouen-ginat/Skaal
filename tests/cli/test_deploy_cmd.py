@@ -27,7 +27,7 @@ _FIXTURE = textwrap.dedent(
     app = App("deploy-fixture")
 
 
-    @app.function()
+    @app.expose()
     async def greet(name: str) -> dict[str, str]:
         return {"hello": name}
     """

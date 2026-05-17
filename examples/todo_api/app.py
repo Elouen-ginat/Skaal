@@ -37,7 +37,7 @@ from pydantic import BaseModel
 from pydantic import Field as PydanticField
 from sqlmodel import Field, select
 
-from skaal import App, Relational, Store, open_relational_session
+from skaal import App, Store, Table
 
 # ── Domain models ──────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ class Todos(Store[Todo]):
 
 
 @app.storage(kind="relational")
-class Comments(Relational, table=True):
+class Comments(Table, table=True):
     """Structured todo comments stored in the relational tier."""
 
     __tablename__ = "todo_comments"
@@ -100,7 +100,7 @@ class Comments(Relational, table=True):
 
 
 async def _comment_rows(todo_id: str) -> list[Comments]:
-    async with open_relational_session(Comments) as session:
+    async with Comments.session() as session:
         result = await session.exec(
             select(Comments).where(Comments.todo_id == todo_id).order_by(Comments.id)
         )
@@ -110,7 +110,7 @@ async def _comment_rows(todo_id: str) -> list[Comments]:
 # ── Functions ──────────────────────────────────────────────────────────────────
 
 
-@app.function()
+@app.expose()
 async def create_todo(
     id: str,
     title: str,
@@ -132,14 +132,14 @@ async def create_todo(
     return todo.model_dump()
 
 
-@app.function()
+@app.expose()
 async def get_todo(id: str) -> dict:
     """Fetch a single todo by id."""
     todo = await Todos.get(id)
     return todo.model_dump() if todo else {"error": f"Todo {id!r} not found"}
 
 
-@app.function()
+@app.expose()
 async def complete_todo(id: str) -> dict:
     """Mark a todo as done."""
     todo = await Todos.get(id)
@@ -151,7 +151,7 @@ async def complete_todo(id: str) -> dict:
     return todo.model_dump()
 
 
-@app.function()
+@app.expose()
 async def add_attachment(
     id: str, url: str, name: str, mime_type: str = "application/octet-stream"
 ) -> dict:
@@ -164,13 +164,13 @@ async def add_attachment(
     return todo.model_dump()
 
 
-@app.function()
+@app.expose()
 async def add_comment(todo_id: str, author: str, body: str) -> dict:
     """Insert a structured comment for a todo using relational storage."""
     if await Todos.get(todo_id) is None:
         return {"error": f"Todo {todo_id!r} not found"}
 
-    async with open_relational_session(Comments) as session:
+    async with Comments.session() as session:
         comment = Comments(todo_id=todo_id, author=author, body=body)
         session.add(comment)
         await session.commit()
@@ -178,14 +178,14 @@ async def add_comment(todo_id: str, author: str, body: str) -> dict:
     return comment.model_dump()
 
 
-@app.function()
+@app.expose()
 async def list_comments(todo_id: str) -> dict:
     """List structured comments for a todo from the relational store."""
     comments = await _comment_rows(todo_id)
     return {"comments": [comment.model_dump() for comment in comments], "count": len(comments)}
 
 
-@app.function()
+@app.expose()
 async def list_todos(done: bool | None = None) -> dict:
     """List all todos, optionally filtered by done status."""
     entries = await Todos.list()
@@ -195,7 +195,7 @@ async def list_todos(done: bool | None = None) -> dict:
     return {"todos": [t.model_dump() for t in todos], "count": len(todos)}
 
 
-@app.function()
+@app.expose()
 async def delete_todo(id: str) -> dict:
     """Delete a todo by id."""
     await Todos.delete(id)

@@ -19,9 +19,7 @@ from skaal.inference.model import ResourceKind
 
 
 def _build_defaults() -> Mapping[ResourceKind, Mapping[Target, type[Backend[Any]]]]:
-    rows: dict[ResourceKind, dict[Target, type[Backend[Any]]]] = {
-        kind: {} for kind in ResourceKind
-    }
+    rows: dict[ResourceKind, dict[Target, type[Backend[Any]]]] = {kind: {} for kind in ResourceKind}
     for entry in REGISTRY:
         for default in entry.default_for:
             rows[default.kind][default.target] = entry.token_class

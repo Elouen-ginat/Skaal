@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from skaal.api import PlanDiff, diff_plan, render_plan_diff_markdown
-from skaal.binding import load_lock
+from skaal.binding import LockFile
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
 
@@ -56,7 +56,7 @@ def plan(
 ) -> None:
     skaal_app = load_app(target)
     loaded_plan = load_plan(skaal_app, env_name)
-    lock = load_lock(Path("skaal.lock"))
+    lock = LockFile.load(Path("skaal.lock"))
     diff = diff_plan(loaded_plan.bound, lock)
     if output_format is PlanOutputFormat.GITHUB_MARKDOWN:
         typer.echo(render_plan_diff_markdown(diff))

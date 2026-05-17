@@ -31,11 +31,11 @@ from skaal.runtime.middleware import wrap_resilience
 from skaal.types.compute import ResiliencePolicies
 
 if TYPE_CHECKING:
-    from skaal.binding.model import BoundResource
+    from skaal.binding.model import PlannedResource
     from skaal.runtime.local import LocalRuntime
 
 
-def register(runtime: LocalRuntime, bound: BoundResource, target: Any) -> None:
+def register(runtime: LocalRuntime, bound: PlannedResource, target: Any) -> None:
     """Wire ``target`` (the user's callable) onto the runtime."""
     if bound.external:
         # External functions are not provisioned and not routed; the user

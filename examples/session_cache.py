@@ -4,7 +4,7 @@
 flows through the inference layer as ``ResourceOverrides.backend == "redis"``
 and tells the binder to use Redis regardless of environment defaults. TTL
 behaviour is wired in two places: a class-level default via
-``__skaal_default_ttl_seconds__`` and per-call overrides on the
+``default_ttl`` and per-call overrides on the
 ``set`` / ``add`` calls.
 
 Run locally:
@@ -53,24 +53,24 @@ class TokenRecord(BaseModel):
 class Sessions(Store[SessionRecord, Redis]):
     """Session rows expire after 30 minutes unless a write overrides the TTL."""
 
-    __skaal_default_ttl_seconds__: ClassVar[float] = 30 * 60
+    default_ttl: ClassVar[str] = "30m"
 
 
 @app.storage
 class Tokens(Store[TokenRecord, Redis]):
     """Short-lived token cache with per-call TTL overrides."""
 
-    __skaal_default_ttl_seconds__: ClassVar[float] = 15 * 60
+    default_ttl: ClassVar[str] = "15m"
 
 
-@app.function()
+@app.expose()
 async def create_session(session_id: str, user_id: str) -> dict:
     record = SessionRecord(id=session_id, user_id=user_id)
     await Sessions.set(session_id, record)
     return record.model_dump()
 
 
-@app.function()
+@app.expose()
 async def touch_session(session_id: str, extend_for: str = "45m") -> dict:
     session = await Sessions.get(session_id)
     if session is None:
@@ -80,14 +80,14 @@ async def touch_session(session_id: str, extend_for: str = "45m") -> dict:
     return {"session": session.model_dump(), "ttl": extend_for}
 
 
-@app.function()
+@app.expose()
 async def issue_token(token_id: str, scope: str = "api") -> dict:
     token = TokenRecord(id=token_id, scope=scope)
     await Tokens.add(token, ttl="5m")
     return {"token": token.model_dump(), "ttl": "5m"}
 
 
-@app.function()
+@app.expose()
 async def get_session(session_id: str) -> dict:
     session = await Sessions.get(session_id)
     if session is None:
@@ -95,7 +95,7 @@ async def get_session(session_id: str) -> dict:
     return session.model_dump()
 
 
-@app.function()
+@app.expose()
 async def list_sessions() -> dict:
     return {"sessions": [session.model_dump() for _, session in await Sessions.list()]}
 

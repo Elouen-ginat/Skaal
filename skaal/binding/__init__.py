@@ -1,34 +1,31 @@
 """The binding layer (ADR 028 §6.3, ADR 031).
 
-Combines an `InferredPlan` with an `Environment` and the `skaal.lock` file
-to produce a `BoundPlan` — every resource bound to exactly one concrete
+Combines a `Blueprint` with an `Environment` and the `skaal.lock` file
+to produce a `Plan` — every resource bound to exactly one concrete
 backend by deterministic table lookup.
 
-The public surface re-exports the pydantic models, the `bind` function,
-and the TOML loaders/writers; the registry and defaults table are
-framework-internal but available for tests and the Phase 4 deploy layer.
+The public surface re-exports the pydantic models, the `plan` function,
+and the registry/defaults helpers used by the runtime and deploy layers.
 """
 
 from __future__ import annotations
 
-from skaal.binding.bind import bind
+from skaal.binding.bind import plan
 from skaal.binding.defaults import DEFAULTS
-from skaal.binding.environment import load_environment, load_environments
-from skaal.binding.lock import load_lock, write_lock
 from skaal.binding.model import (
     BackendConfig,
-    BoundPlan,
-    BoundResource,
     Environment,
+    EnvOverride,
     LockEntry,
     LockFile,
-    ResourceOverride,
+    Plan,
+    PlannedResource,
     Target,
 )
 from skaal.binding.registry import (
     REGISTRY,
     BackendCapabilities,
-    BackendEntry,
+    BackendSpec,
     lookup,
     lookup_token,
     tokens_for,
@@ -39,20 +36,16 @@ __all__ = [
     "REGISTRY",
     "BackendCapabilities",
     "BackendConfig",
-    "BackendEntry",
-    "BoundPlan",
-    "BoundResource",
+    "BackendSpec",
+    "EnvOverride",
     "Environment",
     "LockEntry",
     "LockFile",
-    "ResourceOverride",
+    "Plan",
+    "PlannedResource",
     "Target",
-    "bind",
-    "load_environment",
-    "load_environments",
-    "load_lock",
     "lookup",
     "lookup_token",
+    "plan",
     "tokens_for",
-    "write_lock",
 ]

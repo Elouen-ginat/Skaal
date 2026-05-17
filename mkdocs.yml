@@ -1,5 +1,5 @@
 site_name: Skaal
-site_description: Infrastructure as Constraints for Python.
+site_description: Code-first infrastructure for Python.
 site_url: https://elouen-ginat.github.io/Skaal/
 repo_url: https://github.com/Elouen-ginat/Skaal
 repo_name: Elouen-ginat/Skaal
@@ -26,6 +26,9 @@ theme:
     - scheme: default
       primary: custom
       accent: custom
+
+exclude_docs: |
+  design/_archive/
 
 plugins:
   - search
@@ -94,21 +97,17 @@ nav:
       - Examples: examples.md
       - CLI: cli.md
       - CLI Configuration: cli-configuration.md
-      - Catalogs: catalogs.md
       - HTTP Integration: http.md
   - Reference:
       - Python API:
           - Overview: reference/python-api.md
           - Core and Decorators: reference/python-api-core.md
           - Data Surfaces: reference/python-api-data.md
-          - Patterns and Agents: reference/python-api-patterns.md
           - Components and Scheduling: reference/python-api-components.md
           - CLI-Parity API: reference/python-api-cli-parity.md
           - Types and Policies: reference/python-api-types.md
       - Design System: design_system/index.md
       - Design Assets: design_system/ASSETS.md
-  - Architecture:
-      - Constraint Model: design/001-infrastructure-as-constraints.md
 
 extra:
   homepage: https://elouen-ginat.github.io/Skaal/
@@ -126,8 +125,9 @@ extra:
     - label: Examples
       link: examples/
   footer_tagline: >-
-    Infrastructure as constraints for Python. A Z3-backed planner that turns
-    latency, durability, and throughput requirements into a deployable stack.
+    Code-first infrastructure for Python. Declare typed primitives and
+    decorated functions; Skaal infers the architecture, binds it to your
+    target, and deploys it.
   footer_groups:
     - title: Docs
       links:
@@ -137,8 +137,6 @@ extra:
           link: tutorials/
         - label: How It Works
           link: how-it-works/
-        - label: Catalogs
-          link: catalogs/
         - label: Examples
           link: examples/
     - title: Reference
@@ -149,8 +147,6 @@ extra:
           link: cli/
         - label: CLI Configuration
           link: cli-configuration/
-        - label: Constraint Model
-          link: design/001-infrastructure-as-constraints/
         - label: Design System
           link: design_system/
     - title: Project
@@ -174,9 +170,6 @@ extra:
       links:
         - label: Pulumi
           link: https://www.pulumi.com/docs/
-          external: true
-        - label: Z3
-          link: https://z3prover.github.io/api/html/
           external: true
         - label: FastAPI
           link: https://fastapi.tiangolo.com/

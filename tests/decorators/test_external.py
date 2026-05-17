@@ -1,4 +1,4 @@
-"""Tests for the `@app.external` decorator (ADR 032 §4.4)."""
+"""Tests for the `@app.connect` decorator (ADR 032 §4.4)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def test_external_requires_type_pin() -> None:
 
     with pytest.raises(SkaalConfigError, match="type-pin"):
 
-        @app.external(name="legacy")
+        @app.connect(name="legacy")
         class LegacyDb(Store[Row]):
             pass
 
@@ -28,7 +28,7 @@ def test_external_requires_type_pin() -> None:
 def test_external_with_pin_marks_overrides_external() -> None:
     app = App("test-external-pin")
 
-    @app.external(name="legacy_db")
+    @app.connect(name="legacy_db")
     class LegacyDb(Store[Row, Postgres]):
         pass
 
@@ -41,7 +41,7 @@ def test_external_with_pin_marks_overrides_external() -> None:
 def test_external_kv_with_redis_pin() -> None:
     app = App("test-external-redis")
 
-    @app.external(name="session_cache", kind="kv")
+    @app.connect(name="session_cache", kind="kv")
     class SessionCache(Store[Row, Redis]):
         pass
 

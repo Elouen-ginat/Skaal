@@ -1,11 +1,11 @@
-"""Shared `BoundPlan` diff shapes used by the CLI, API, and PR comments."""
+"""Shared `Plan` diff shapes used by the CLI, API, and PR comments."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from skaal.binding.model import BoundPlan, BoundResource, LockEntry, LockFile
+from skaal.binding.model import LockEntry, LockFile, Plan, PlannedResource
 
 MIXED_FINGERPRINT_MARKER = "mixed"
 
@@ -24,14 +24,14 @@ class PlanChange:
 
 @dataclass(frozen=True)
 class PlanDiff:
-    """The current bound plan plus its changes against `skaal.lock`."""
+    """The current plan plus its changes against `skaal.lock`."""
 
-    bound: BoundPlan
+    bound: Plan
     deployed_fingerprint: str | None
     changes: tuple[PlanChange, ...]
 
 
-def diff_plan(bound: BoundPlan, lock: LockFile) -> PlanDiff:
+def diff_plan(bound: Plan, lock: LockFile) -> PlanDiff:
     """Return the current-vs-locked diff for deployable resources.
 
     Args:
@@ -42,9 +42,7 @@ def diff_plan(bound: BoundPlan, lock: LockFile) -> PlanDiff:
         The plan diff against the lock entries for the same environment.
     """
     current = {
-        resource.inferred.id: resource
-        for resource in bound.resources
-        if not resource.external
+        resource.inferred.id: resource for resource in bound.resources if not resource.external
     }
     locked = {
         resource_id: entry
@@ -103,7 +101,7 @@ def diff_plan(bound: BoundPlan, lock: LockFile) -> PlanDiff:
     )
 
 
-def diff_bound_plans(current: BoundPlan, baseline: BoundPlan) -> PlanDiff:
+def diff_bound_plans(current: Plan, baseline: Plan) -> PlanDiff:
     """Return the structural diff between two bound plans.
 
     Args:
@@ -115,14 +113,10 @@ def diff_bound_plans(current: BoundPlan, baseline: BoundPlan) -> PlanDiff:
         to move from `baseline` to `current`.
     """
     current_resources = {
-        resource.inferred.id: resource
-        for resource in current.resources
-        if not resource.external
+        resource.inferred.id: resource for resource in current.resources if not resource.external
     }
     baseline_resources = {
-        resource.inferred.id: resource
-        for resource in baseline.resources
-        if not resource.external
+        resource.inferred.id: resource for resource in baseline.resources if not resource.external
     }
 
     changes: list[PlanChange] = []
@@ -263,7 +257,7 @@ def render_plan_diff_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint: str) -> str:
+def _update_details(resource: PlannedResource, entry: LockEntry, bound_fingerprint: str) -> str:
     """Describe how `resource` differs from its locked snapshot."""
     details: list[str] = []
     if entry.backend != resource.backend:
@@ -279,7 +273,7 @@ def _update_details(resource: BoundResource, entry: LockEntry, bound_fingerprint
     return "; ".join(details)
 
 
-def _update_bound_details(resource: BoundResource, baseline: BoundResource) -> str:
+def _update_bound_details(resource: PlannedResource, baseline: PlannedResource) -> str:
     """Describe how `resource` differs from `baseline`."""
     details: list[str] = []
     if baseline.inferred.kind != resource.inferred.kind:

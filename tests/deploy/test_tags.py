@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.binding.model import BoundResource, Environment, Target
+from skaal.binding.model import Environment, PlannedResource, Target
 from skaal.deploy import SkaalTags, tags_for
 from skaal.inference.model import (
-    InferredResource,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SourceLocation,
 )
 
@@ -21,15 +21,15 @@ def _make_resource(
     backend: str = "redis",
     kind: ResourceKind = ResourceKind.STORE,
     external: bool = False,
-) -> BoundResource:
-    """Build a `BoundResource` whose ``id`` and ``source`` agree."""
-    inferred = InferredResource(
+) -> PlannedResource:
+    """Build a `PlannedResource` whose ``id`` and ``source`` agree."""
+    inferred = BlueprintResource(
         id=f"{module}:{qualname}",
         kind=kind,
         source=SourceLocation(module=module, qualname=qualname, file="?", line=1),
-        overrides=ResourceOverrides(),
+        overrides=Overrides(),
     )
-    return BoundResource(
+    return PlannedResource(
         inferred=inferred,
         backend=backend,
         pinned=False,

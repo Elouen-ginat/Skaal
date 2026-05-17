@@ -20,18 +20,9 @@ This reference is split by submodule so you can jump directly to the slice you n
 	<section class="skaal-example-card">
 		<div>
 			<h3>Data Surfaces</h3>
-			<p><code>skaal.storage</code>, <code>skaal.blob</code>, <code>skaal.vector</code>, <code>skaal.relational</code>, and <code>skaal.channel</code>.</p>
+			<p><code>skaal.storage</code>, <code>skaal.blob</code>, <code>skaal.relational</code>, and <code>skaal.channel</code>.</p>
 			<div class="skaal-example-links">
 				<a href="python-api-data/">Open reference</a>
-			</div>
-		</div>
-	</section>
-	<section class="skaal-example-card">
-		<div>
-			<h3>Patterns and Agents</h3>
-			<p><code>skaal.agent</code>, <code>skaal.patterns</code>, and the workflow primitives layered on top of them.</p>
-			<div class="skaal-example-links">
-				<a href="python-api-patterns/">Open reference</a>
 			</div>
 		</div>
 	</section>
@@ -68,4 +59,4 @@ This reference is split by submodule so you can jump directly to the slice you n
 
 - If you are writing app code, start with [Core and Decorators](python-api-core.md) and [Data Surfaces](python-api-data.md).
 - If you are driving Skaal from scripts or tests, start with [CLI-Parity API](python-api-cli-parity.md).
-- If you need policy objects like `RetryPolicy`, `CircuitBreaker`, or migration result types, start with [Types and Policies](python-api-types.md).
+- If you need policy objects like `Retry`, `CircuitBreaker`, or migration result types, start with [Types and Policies](python-api-types.md).

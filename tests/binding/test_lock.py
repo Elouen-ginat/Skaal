@@ -5,12 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from skaal.binding.lock import load_lock, write_lock
 from skaal.binding.model import LockEntry, LockFile
 
 
 def test_absent_file_returns_empty_lock(tmp_path: Path) -> None:
-    lock = load_lock(tmp_path / "missing.lock")
+    lock = LockFile.load(tmp_path / "missing.lock")
     assert lock == LockFile()
 
 
@@ -33,8 +32,8 @@ def test_write_then_load_round_trips(tmp_path: Path) -> None:
         },
     )
     path = tmp_path / "skaal.lock"
-    write_lock(path, original)
-    reloaded = load_lock(path)
+    original.save(path)
+    reloaded = LockFile.load(path)
     assert reloaded.version == original.version
     assert reloaded.entries == original.entries
 
@@ -54,6 +53,6 @@ backend = "dynamodb"
 pinned_at = "2026-05-12T14:00:00+00:00"
 """.strip()
     )
-    lock = load_lock(path)
+    lock = LockFile.load(path)
     assert lock.entries[("dev", "acme.users:Users")].backend == "sqlite"
     assert lock.entries[("prod", "acme.users:Users")].backend == "dynamodb"
