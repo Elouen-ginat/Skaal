@@ -118,6 +118,7 @@ class ExternalObservabilityConfig(ExternalComponentConfig):
 
 class AppRefConfig(ExternalComponentConfig):
     timeout_ms: int
+    fallback_url: str | None = None
 
 
 ComponentConfig: TypeAlias = (

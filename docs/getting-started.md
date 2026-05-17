@@ -32,25 +32,23 @@ skaal run
 
 The scaffold writes `[tool.skaal] app = "demo.app:app"`, which means later commands like `skaal migrate relational upgrade` can resolve your app without repeating `MODULE:APP` on every call.
 
-### Run the bundled counter example
+### Run the bundled quickstart example
 
 If you want the shortest path to a running app, use the repository example directly:
 
 ```bash
-pip install "skaal[examples]"
-skaal run examples.counter:app
+pip install "skaal[examples]" dash dash-bootstrap-components
+python examples/01_quickstart/app.py
 ```
 
-Then open a second terminal and try:
+The example mounts a Dash UI alongside the Skaal runtime. Open
+[http://localhost:8050](http://localhost:8050) and click the buttons, or
+hit the underlying functions over HTTP from a second terminal:
 
 ```bash
-curl -s http://127.0.0.1:8000/_skaal/invoke/increment \
+curl -s http://127.0.0.1:8050/_skaal/invoke/increment \
     -H "Content-Type: application/json" \
     -d '{"name": "hits"}'
-
-curl -s http://127.0.0.1:8000/_skaal/invoke/list_counts \
-    -H "Content-Type: application/json" \
-    -d '{}'
 ```
 
 ## The Progressive Tutorial Track
@@ -72,7 +70,7 @@ If you want the overview first, read [Tutorial Overview](tutorials/index.md).
 The CLI revolves around the plan file.
 
 ```bash
-skaal plan examples.counter:app --target local --catalog catalogs/local.toml
+skaal plan examples.01_quickstart.app:app --target local --catalog catalogs/local.toml
 skaal diff
 skaal build --out artifacts
 skaal deploy --artifacts-dir artifacts

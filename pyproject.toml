@@ -314,8 +314,14 @@ skips = ["B101"]  # assert_used — fine in non-test code with our usage pattern
 # stack       = "dev"                       # Pulumi stack name
 # gcp_project = "my-gcp-project"            # GCP only
 
-[tool.skaal.build.modules."examples.07_file_upload_api.app"]
+[tool.skaal.build.modules."examples.02_storage_tour.app"]
 dependencies = ["python-multipart>=0.0.5"]
+
+[tool.skaal.build.modules."examples.04_fullstack_split.backend"]
+dependencies = ["python-multipart>=0.0.5"]
+
+[tool.skaal.build.modules."examples.04_fullstack_split.frontend"]
+dependencies = ["dash>=2.16", "dash-bootstrap-components>=1.5", "httpx>=0.27"]
 
 [tool.skaal.build.targets.local]
 dependencies = ["skaal[serve,runtime]", "gunicorn>=22.0"]

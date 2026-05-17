@@ -54,7 +54,7 @@ class Todos(Map[str, dict]):
     pass
 ```
 
-Run `skaal plan --explain` and the choice is auditable, not magic:
+Run `skaal plan` and the choice is auditable, not magic:
 
 ```text
 Storage.Todos     3 candidates evaluated
@@ -107,9 +107,9 @@ For HTTP, mount FastAPI, Starlette, or Dash and invoke Skaal compute from your h
 4. **Deploy** to local, AWS, or GCP via the generated Pulumi stack.
 
 ```bash
-skaal plan   --app myapp:app --catalog catalogs/local.toml
-skaal build  --app myapp:app --target local --catalog catalogs/local.toml
-skaal deploy --app myapp:app --target local --catalog catalogs/local.toml
+skaal plan   myapp:app --catalog catalogs/local.toml
+skaal build  --out artifacts
+skaal deploy --artifacts-dir artifacts
 ```
 
 Generated artifacts land under `artifacts/` and are checked-in friendly. You can stop using Skaal at any time and keep the Pulumi output. See [docs/faq](https://elouen-ginat.github.io/Skaal/faq/) for the eject path.

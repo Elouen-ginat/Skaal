@@ -1,61 +1,54 @@
 # Example Apps
 
-The repository includes example apps that cover the shapes Skaal is meant to support in practice: simple services, mounted HTTP APIs, streaming responses, dashboards, uploads, and mesh-oriented patterns.
+Four end-to-end examples cover the surface Skaal is meant to support in
+practice. Each one is small, ships with a Dash interface so you can poke
+it from a browser, and lives in its own folder under `examples/`.
 
 <div class="skaal-example-grid">
   <section class="skaal-example-card">
     <div>
-      <h3>Hello World</h3>
-      <p>The smallest end-to-end app model for learning how <code>App</code>, typed storage, and the local run loop fit together.</p>
+      <h3>01 — Quickstart</h3>
+      <p>The smallest end-to-end Skaal app. A Dash UI exercises a single
+      <code>Store[int]</code> behind <code>@app.function</code>s. Start here if
+      you have never seen Skaal before.</p>
       <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/01_hello_world">Browse example</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/01_quickstart">Browse example</a>
       </div>
     </div>
   </section>
   <section class="skaal-example-card">
     <div>
-      <h3>Todo API</h3>
-      <p>A practical CRUD API shape that shows Skaal alongside a mounted HTTP framework.</p>
+      <h3>02 — Storage tour</h3>
+      <p>One Dash page, four storage tiers: KV with secondary index,
+      relational SQLModel rows, blob uploads, and vector semantic search.
+      All declared with the same <code>@app.storage</code> decorator.</p>
       <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/02_todo_api">Browse example</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/02_storage_tour">Browse example</a>
       </div>
     </div>
   </section>
   <section class="skaal-example-card">
     <div>
-      <h3>Dash App and Task Dashboard</h3>
-      <p>UI-oriented examples that show Skaal as the application and data layer underneath a dashboard surface.</p>
+      <h3>03 — Agents and jobs</h3>
+      <p>Virtual actors (<code>@app.agent</code>), background jobs
+      (<code>@app.job</code> + <code>app.enqueue</code>), scheduled tasks
+      (<code>@app.schedule(Every(...))</code>), and resilient functions with
+      <code>RetryPolicy</code>, all wired into one Dash UI.</p>
       <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/03_dash_app">Dash app</a>
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/05_task_dashboard">Task dashboard</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/03_agents_and_jobs">Browse example</a>
       </div>
     </div>
   </section>
   <section class="skaal-example-card">
     <div>
-      <h3>FastAPI Streaming and Uploads</h3>
-      <p>Examples for streaming responses and multipart workflows using the mounted-ASGI model.</p>
+      <h3>04 — Fullstack split</h3>
+      <p>Two Skaal apps in one repo. A backend with
+      <code>Store[Task]</code> and <code>@app.function</code>s; a frontend
+      that holds no storage but declares an <code>AppRef</code> to the
+      backend and mounts a Dash UI. Includes a Makefile that chains both
+      <code>skaal deploy</code> runs.</p>
       <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/06_fastapi_streaming">Streaming</a>
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/07_file_upload_api">File uploads</a>
-      </div>
-    </div>
-  </section>
-  <section class="skaal-example-card">
-    <div>
-      <h3>Mesh Counter</h3>
-      <p>An example focused on the optional distributed mesh runtime surface and actor-style composition.</p>
-      <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/04_mesh_counter">Browse example</a>
-      </div>
-    </div>
-  </section>
-  <section class="skaal-example-card">
-    <div>
-      <h3>Team Directory and top-level app examples</h3>
-      <p>The repository also includes simpler top-level examples like <code>team_directory.py</code>, <code>todo_api.py</code>, <code>fastapi_streaming.py</code>, and <code>file_upload_api.py</code> for direct entry-point inspection.</p>
-      <div class="skaal-example-links">
-        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples">Browse examples directory</a>
+        <a href="https://github.com/Elouen-ginat/Skaal/tree/main/examples/04_fullstack_split">Browse example</a>
       </div>
     </div>
   </section>
@@ -63,10 +56,27 @@ The repository includes example apps that cover the shapes Skaal is meant to sup
 
 ## Which example to start from
 
-- Start with Hello World if you are learning the application model.
-- Start with Todo API if you want a real HTTP service shape.
-- Start with Dash or Task Dashboard if you want a UI-first example.
-- Start with FastAPI Streaming or File Upload API if your workload depends on streaming or multipart behavior.
-- Start with Mesh Counter if you want to inspect the distributed runtime direction.
+- **01 — Quickstart** if you are learning the application model.
+- **02 — Storage tour** if you want to see the storage tier breadth in one
+  place.
+- **03 — Agents and jobs** if you want to inspect the dynamic, time-driven
+  surface (actors, jobs, schedules, retries).
+- **04 — Fullstack split** if you are sketching a real split deployment
+  with two Skaal apps (one backend, one frontend) calling each other via
+  `AppRef`.
 
-These examples are the fastest way to see how Skaal behaves outside a stripped-down API reference.
+Each example folder has its own `README.md` with the exact commands. The
+short version is: install `skaal[serve,examples]` (plus extras the example
+mentions), then run `python examples/<name>/app.py` and open
+[http://localhost:8050](http://localhost:8050). For example 04 you start
+the FastAPI backend on port 8000 first, then the Dash frontend on port
+8050 in a second terminal.
+
+## Going further — custom backends
+
+The decorators in these examples are the user-facing surface, but every
+backend selected by the solver is just a class implementing the
+`StorageBackend` (or `BlobBackend`, channel) Protocol. See
+[Extending Skaal — Custom Backends](custom-backends.md) for a walkthrough
+that adds a new key-value backend, registers it via entry points, and
+plugs it into a catalog so the solver can pick it.

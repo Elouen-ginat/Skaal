@@ -63,10 +63,16 @@ def plan(
     target_app: str | None = typer.Argument(
         None,
         help=(
-            "App to plan as 'module:variable', e.g. 'examples.counter:app'. "
-            "Falls back to 'app' in [tool.skaal] of pyproject.toml."
+            "App to plan. Either 'module:variable' (e.g. 'examples.counter:app') "
+            "or the name of an entry in [tool.skaal.apps]. Falls back to "
+            "'app' in [tool.skaal] of pyproject.toml."
         ),
-        metavar="MODULE:APP",
+        metavar="[MODULE:APP|APP_NAME]",
+    ),
+    all_apps: bool = typer.Option(
+        False,
+        "--all",
+        help="Plan every app declared in [tool.skaal.apps] in topological order.",
     ),
     target: str | None = typer.Option(
         None,
@@ -103,6 +109,29 @@ def plan(
     from skaal.plan import PLAN_FILE_NAME
 
     cfg = SkaalSettings()
+
+    # Multi-app: --all or a positional app-name from [tool.skaal.apps].
+    if all_apps:
+        steps = api.plan_all()
+        for step in steps:
+            marker = "OK " if step.success else "FAIL"
+            log.info("[%s] %s", marker, step.name)
+        if any(not s.success for s in steps):
+            raise typer.Exit(code=1)
+        return
+
+    if target_app and ":" not in target_app and target_app in cfg.apps:
+        from skaal.cli._orchestrator import plan_all as _plan_all
+
+        graph = api.project_graph()
+        steps = _plan_all(graph, only=[target_app])
+        for step in steps:
+            marker = "OK " if step.success else "FAIL"
+            log.info("[%s] %s", marker, step.name)
+        if any(not s.success for s in steps):
+            raise typer.Exit(code=1)
+        return
+
     resolved_app = target_app or cfg.app
     resolved_target = target or cfg.target
 
@@ -110,7 +139,9 @@ def plan(
         raise ValueError(
             "missing MODULE:APP.\n"
             "  Pass it as an argument: skaal plan mypackage.app:skaal_app\n"
-            "  Or set 'app' in [tool.skaal] of pyproject.toml."
+            "  Or set 'app' in [tool.skaal] of pyproject.toml.\n"
+            "  Or declare apps under [tool.skaal.apps.<name>] and use "
+            "`skaal plan --all`."
         )
 
     skaal_app = api.resolve_app(resolved_app)

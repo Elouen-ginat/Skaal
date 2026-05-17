@@ -183,7 +183,7 @@ def test_generate_artifacts_includes_declared_module_build_dependencies(tmp_path
     output_dir = tmp_path / "artifacts"
     (tmp_path / "pyproject.toml").write_text(
         """
-[tool.skaal.build.modules.\"examples.07_file_upload_api.app\"]
+[tool.skaal.build.modules.\"examples.02_storage_tour.app\"]
 dependencies = [\"python-multipart>=0.0.5\"]
 """.strip(),
         encoding="utf-8",
@@ -195,7 +195,7 @@ dependencies = [\"python-multipart>=0.0.5\"]
         app,
         plan,
         output_dir=output_dir,
-        source_module="examples.07_file_upload_api.app",
+        source_module="examples.02_storage_tour.app",
     )
 
     pyproject = (output_dir / "pyproject.toml").read_text(encoding="utf-8")

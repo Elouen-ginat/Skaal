@@ -28,6 +28,16 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def build(
+    app_name: str | None = typer.Argument(
+        None,
+        help="Name of an app declared in [tool.skaal.apps] to build only.",
+        metavar="[APP_NAME]",
+    ),
+    all_apps: bool = typer.Option(
+        False,
+        "--all",
+        help="Build every app declared in [tool.skaal.apps] in topological order.",
+    ),
     region: str | None = typer.Option(
         None,
         "--region",
@@ -77,7 +87,30 @@ def build(
     from skaal.deploy import get_target
     from skaal.plan import PLAN_FILE_NAME, PlanFile
 
-    cfg = SkaalSettings().for_stack(stack)
+    cfg = SkaalSettings()
+
+    if all_apps:
+        steps = api.build_all(dev=dev)
+        for step in steps:
+            marker = "OK " if step.success else "FAIL"
+            log.info("[%s] %s", marker, step.name)
+        if any(not s.success for s in steps):
+            raise typer.Exit(code=1)
+        return
+
+    if app_name and app_name in cfg.apps:
+        from skaal.cli._orchestrator import build_all as _build_all
+
+        graph = api.project_graph()
+        steps = _build_all(graph, only=[app_name], dev=dev)
+        for step in steps:
+            marker = "OK " if step.success else "FAIL"
+            log.info("[%s] %s", marker, step.name)
+        if any(not s.success for s in steps):
+            raise typer.Exit(code=1)
+        return
+
+    cfg = cfg.for_stack(stack)
     resolved_region = region or cfg.region
     resolved_out = out or cfg.out
 

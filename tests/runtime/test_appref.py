@@ -39,10 +39,56 @@ def test_resolve_base_url_raises_when_neither_set(monkeypatch):
         ref._resolve_base_url()
 
 
-def test_resolve_base_url_raises_no_config():
+def test_resolve_base_url_raises_no_config(monkeypatch):
+    monkeypatch.delenv("SKAAL_APPREF_SVC_URL", raising=False)
     ref = AppRef("svc")
     with pytest.raises(RuntimeError):
         ref._resolve_base_url()
+
+
+def test_resolve_base_url_auto_env_fallback(monkeypatch):
+    """When the orchestrator sets SKAAL_APPREF_<NAME>_URL, AppRef picks it up."""
+    monkeypatch.setenv("SKAAL_APPREF_BACKEND_URL", "https://backend-abc.run.app")
+    ref = AppRef("backend")
+    assert ref._resolve_base_url() == "https://backend-abc.run.app"
+
+
+def test_resolve_base_url_auto_env_fallback_dashed_name(monkeypatch):
+    """Dashes in the app name normalize to underscores in the env var."""
+    monkeypatch.setenv("SKAAL_APPREF_PAYMENT_API_URL", "https://pay.example.com")
+    ref = AppRef("payment-api")
+    assert ref._resolve_base_url() == "https://pay.example.com"
+
+
+def test_explicit_base_url_wins_over_auto_env(monkeypatch):
+    monkeypatch.setenv("SKAAL_APPREF_SVC_URL", "https://from-env")
+    ref = AppRef("svc", base_url="https://explicit")
+    assert ref._resolve_base_url() == "https://explicit"
+
+
+@pytest.mark.asyncio
+async def test_call_with_auto_resolved_url_appends_invoke_prefix(httpx_mock, monkeypatch):
+    """AppRef("name") with no base_url posts to /_skaal/invoke/<fn>."""
+    monkeypatch.setenv("SKAAL_APPREF_BACKEND_URL", "http://backend:8000")
+    httpx_mock.add_response(json={"ok": True})
+
+    ref = AppRef("backend")
+    await ref.call("create_task", id="x", title="t")
+
+    request = httpx_mock.get_requests()[0]
+    assert str(request.url) == "http://backend:8000/_skaal/invoke/create_task"
+
+
+@pytest.mark.asyncio
+async def test_call_with_explicit_base_url_does_not_add_prefix(httpx_mock):
+    """Explicit base_url= keeps the existing path semantics."""
+    httpx_mock.add_response(json={"ok": True})
+
+    ref = AppRef("svc", base_url="http://svc:8000")
+    await ref.call("ping")
+
+    request = httpx_mock.get_requests()[0]
+    assert str(request.url) == "http://svc:8000/ping"
 
 
 # ── __skaal_component__ metadata ────────────────────────────────────────────────

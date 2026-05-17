@@ -469,6 +469,11 @@ class AppRef(ExternalComponent):
         payments = AppRef("payments", base_url_secret=Secret("PAYMENTS_SERVICE_URL"))
         app.attach(payments)
 
+        # Or, in a multi-app project where the orchestrator injects the URL
+        # automatically:
+        backend = AppRef("backend")    # name only — resolved by `skaal deploy --all`
+        app.attach(backend)
+
         result = await payments.charge(amount=100, currency="USD")
         # or explicitly:
         result = await payments.call("charge", amount=100, currency="USD")
@@ -483,10 +488,21 @@ class AppRef(ExternalComponent):
         base_url: str | None = None,
         base_url_secret: SecretRef | None = None,
         timeout_ms: int = 30_000,
+        fallback_url: str | None = None,
     ) -> None:
         super().__init__(name, connection_string=base_url, secret=base_url_secret)
         self.timeout_ms = timeout_ms
+        self.fallback_url = fallback_url.rstrip("/") if fallback_url else None
+        # Tracks whether the user supplied a URL explicitly. Determines whether
+        # `call()` appends `/_skaal/invoke/` (auto path) or just `/` (the user
+        # already shaped the URL, possibly without the invoke prefix).
+        self._explicit_base_url = base_url is not None or base_url_secret is not None
         self.__skaal_component__["timeout_ms"] = timeout_ms
+
+    @staticmethod
+    def _auto_env_var_for(name: str) -> str:
+        """Return the env var name an orchestrator injects for *name*."""
+        return f"SKAAL_APPREF_{name.upper().replace('-', '_')}_URL"
 
     def _resolve_base_url(self) -> str:
         if self.connection_string:
@@ -495,14 +511,57 @@ class AppRef(ExternalComponent):
             url = os.environ.get(self.secret.env_var)
             if url:
                 return url.rstrip("/")
-        target = self.secret.env_var if self.secret else "<unset>"
-        raise RuntimeError(f"AppRef {self.name!r}: set base_url= or the {target!r} env var.")
+        # Multi-app orchestrator fallback: ``skaal deploy --all`` and
+        # ``skaal run --all`` set this env var from the producing app's last
+        # deploy URL or local port. Lets ``AppRef("backend")`` work without
+        # an explicit ``base_url=`` when the backend is part of the same
+        # project graph.
+        auto_var = self._auto_env_var_for(self.name)
+        auto_url = os.environ.get(auto_var)
+        if auto_url:
+            return auto_url.rstrip("/")
+        if self.fallback_url is not None:
+            return self.fallback_url
+        target = self.secret.env_var if self.secret else auto_var
+        raise RuntimeError(
+            f"AppRef {self.name!r}: set base_url=, base_url_secret=, or the "
+            f"{target!r} env var (auto-injected by `skaal deploy --all` "
+            f"and `skaal run --all`)."
+        )
+
+    @property
+    def url(self) -> str:
+        """Resolved base URL for this app reference.
+
+        Returns:
+            The URL resolved from `base_url`, `base_url_secret`, the
+            auto-injected env var, or `fallback_url`, in that order.
+
+        Raises:
+            RuntimeError: If no URL source is configured.
+        """
+        return self._resolve_base_url()
+
+    def _build_call_url(self, fn_name: str) -> str:
+        """Compose the full POST URL for *fn_name*.
+
+        When the user supplied an explicit ``base_url=`` or
+        ``base_url_secret=``, append only ``/{fn_name}`` so they control
+        whether the URL already includes ``/_skaal/invoke``. When the URL
+        was auto-resolved from ``SKAAL_APPREF_<NAME>_URL``, prepend the
+        canonical Skaal invoke prefix so the call hits the runtime's
+        registered function endpoint.
+        """
+        base = self._resolve_base_url()
+        if self._explicit_base_url:
+            return f"{base}/{fn_name}"
+        return f"{base}/_skaal/invoke/{fn_name}"
 
     async def call(self, fn_name: str, **kwargs: Any) -> Any:
-        """Call a function on the remote Skaal app via ``POST /{fn_name}``."""
+        """Call a function on the remote Skaal app via ``POST``."""
         import httpx
 
-        url = f"{self._resolve_base_url()}/{fn_name}"
+        url = self._build_call_url(fn_name)
         timeout = httpx.Timeout(self.timeout_ms / 1000)
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=kwargs)

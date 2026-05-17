@@ -92,6 +92,7 @@ nav:
       - Comparison: comparison.md
       - FAQ: faq.md
       - Examples: examples.md
+      - Custom Backends: custom-backends.md
       - CLI: cli.md
       - CLI Configuration: cli-configuration.md
       - Catalogs: catalogs.md

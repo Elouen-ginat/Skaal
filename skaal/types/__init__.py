@@ -100,6 +100,7 @@ from skaal.types.patterns import (
     SagaPatternMetadata,
     SagaStepMetadata,
 )
+from skaal.types.project import AppNode, ProjectGraph, build_project_graph
 from skaal.types.protocols import (
     AsyncPublishRef,
     AsyncPublishTarget,
@@ -146,6 +147,7 @@ __all__ = [
     "AccessPattern",
     "AgentsService",
     "AppLike",
+    "AppNode",
     "AppRefConfig",
     "AsyncClosable",
     "AsyncPublishRef",
@@ -223,6 +225,7 @@ __all__ = [
     "PatternConfig",
     "PatternMetadata",
     "Persistent",
+    "ProjectGraph",
     "ProjectionDeadLetterRef",
     "ProjectionDeadLetterSink",
     "ProjectionFailureError",
@@ -293,6 +296,7 @@ __all__ = [
     "Throughput",
     "Violation",
     "apply_migrations",
+    "build_project_graph",
     "migrate_from",
 ]
 

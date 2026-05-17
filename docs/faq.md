@@ -66,7 +66,7 @@ To keep downstream forks of the framework itself open. The generated output is p
 - Residency requirement not present on any backend in the active target.
 - Conflicting durability + throughput pairs that no single backend covers.
 
-Run `skaal plan --explain` to see candidate-by-candidate rejection reasons.
+Run `skaal plan` to see candidate-by-candidate rejection reasons in the solver output.
 
 ### Can I pin a backend instead of letting the solver choose?
 
