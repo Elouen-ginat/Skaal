@@ -183,10 +183,15 @@ def test_gcp_required_services_include_cloud_run_and_firestore() -> None:
     bound = app.plan(env, lock=LockFile())
 
     services = set(_gcp_required_services(bound))
-    assert "run.googleapis.com" in services
-    assert "artifactregistry.googleapis.com" in services
-    assert "iam.googleapis.com" in services
-    assert "firestore.googleapis.com" in services
+    expected_services = {
+        "serviceusage.googleapis.com",
+        "compute.googleapis.com",
+        "run.googleapis.com",
+        "artifactregistry.googleapis.com",
+        "iam.googleapis.com",
+        "firestore.googleapis.com",
+    }
+    assert services == expected_services
 
 
 def test_gcp_service_state_rejects_unknown_service_before_network(
