@@ -1,232 +1,244 @@
 # Configuring your environments
 
-Skaal has two configuration surfaces during the redesign:
+`[tool.skaal]` in `pyproject.toml` is now the main Skaal configuration surface.
+It can define the default app target, the default environment and target, path
+defaults, local runtime defaults, logging, backend defaults, and named
+environments.
 
-- `skaal.toml` defines named environments for binding and deployment.
-- `[tool.skaal]` in `pyproject.toml` still provides CLI defaults and logging configuration.
-
-Use `skaal.toml` first. Use `[tool.skaal]` as the compatibility layer for command defaults.
+`skaal.toml` is still supported, but it is now the compatibility and
+environment-catalog layer rather than the primary place to put project-level
+defaults.
 
 ## Resolution Order
 
-For CLI defaults, Skaal resolves values in this order:
+Skaal resolves config in this order:
 
 1. explicit CLI flags or Python keyword arguments
 2. `SKAAL_*` environment variables
 3. `.skaal.env`
 4. `[tool.skaal]` in the nearest `pyproject.toml`
-5. built-in defaults
+5. `skaal.toml`
+6. built-in defaults
 
-For environments, Skaal resolves values from `skaal.toml` itself:
+That means `pyproject.toml` wins over `skaal.toml`, and env vars win over both.
 
-- `skaal plan/build/deploy/run/map/where/trace --env <name>` loads `[env.<name>]`
-- if `skaal.toml` is missing, Skaal synthesizes one baseline environment named `local`
-
-Two related behaviors sit beside the shared CLI settings:
+Two related behaviors sit beside the structured settings model:
 
 - `SKAAL_LOG_FORMAT` and `SKAAL_LOG_LEVEL` affect CLI logging.
-- `SKAAL_ENV` affects `skaal run` hot-reload auto mode and is treated as a runtime behavior flag rather than a normal structured setting.
+- `SKAAL_ENV` still controls `skaal run` hot-reload auto mode. It is not the
+	same thing as `SKAAL_DEFAULT_ENVIRONMENT`.
 
 ## File Discovery
 
-- `skaal.toml` is discovered by walking upward from the current working directory.
-- `pyproject.toml` is discovered by walking upward from the current working directory until Skaal finds the nearest file.
-- `.skaal.env` is loaded as an optional dotenv file from the working directory.
-- Paths such as `out = "artifacts"` are interpreted relative to the current working directory.
+- `pyproject.toml` is discovered by walking upward from the current working
+	directory.
+- `skaal.toml` is discovered the same way, unless `[tool.skaal].toml` or
+	`[tool.skaal.paths].toml` points at a different file.
+- `.skaal.env` is loaded from the current working directory when it exists.
+- Relative paths such as `out = "artifacts"` or `lock = "custom.lock"` are
+	interpreted relative to the current working directory.
 
-## `skaal.toml`
+## Recommended `pyproject.toml`
 
-This is the main environment file:
+This is the preferred project-level shape:
 
 ```toml
-[env.local]
-target = "local"
+[tool.skaal]
+app = "examples.todo_api:app"
+default_environment = "dev"
+default_target = "local"
+default_region = "eu-west-3"
+toml = "skaal.toml"
+lock = "skaal.lock"
+out = "artifacts"
 
-[env.prod]
+[tool.skaal.run]
+host = "127.0.0.1"
+port = 8000
+
+[tool.skaal.logging]
+level = "INFO"
+format = "text"
+loggers = { "skaal.deploy" = "DEBUG" }
+
+[tool.skaal.backend_defaults.gcp]
+project = "acme-prod"
+
+[tool.skaal.backend_defaults.dynamodb]
+table_prefix = "acme-"
+
+[tool.skaal.environments.dev]
+region = "eu-west-1"
+
+[tool.skaal.environments.prod]
 target = "aws"
-region = "us-east-1"
+region = "eu-west-3"
 
-[env.prod.backends.aws]
-table_prefix = "prod-"
-lambda_defaults.memory = 1024
+[tool.skaal.environments.prod.overrides]
+"examples.todo_api:Todos" = "dynamodb"
+"examples.todo_api:Assets" = { backend = "s3", region = "us-east-1" }
+
+[tool.skaal.environments.prod.backends.bigquery]
+dataset = "warehouse"
 ```
 
-Supported keys on `[env.<name>]`:
+With that in place, the everyday loop gets shorter:
+
+```bash
+skaal plan
+skaal build
+skaal run
+skaal deploy --preview
+```
+
+The positional `module:attribute` target and `--env` flag become optional when
+the configured defaults are enough.
+
+## `[tool.skaal]` Keys
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `app` | string | Default `module:attribute` target for CLI commands when you omit it. |
+| `default_environment` | string | Default environment name used when `--env` is omitted. |
+| `default_target` | `local` / `aws` / `gcp` | Default target used when an environment omits `target`, or when Skaal synthesizes a baseline environment. |
+| `default_region` | string | Default region applied when an environment omits `region`. |
+| `toml` | path | Override the discovered `skaal.toml` path. |
+| `lock` | path | Default `skaal.lock` path. |
+| `out` | path | Base output directory for `skaal build`, `skaal deploy`, and `skaal destroy`. Skaal appends `/<env>` by default. |
+| `run` | table | Local runtime defaults such as `host` and `port`. |
+| `logging` | table | CLI logging defaults. |
+| `backend_defaults` | table of backend configs | Per-backend defaults merged into every environment unless the environment overrides them. |
+| `environments` | table of named environments | Named environment definitions keyed by environment name. |
+
+## `[tool.skaal.run]`
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `host` | string | Default host for `skaal run`. |
+| `port` | integer | Default port for `skaal run`. |
+
+## `[tool.skaal.logging]`
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `level` | string | Default root log level such as `WARNING`, `INFO`, or `DEBUG`. |
+| `format` | `text` or `json` | Default CLI logging format. |
+| `loggers` | table | Per-logger level overrides, for example `{ "skaal.deploy" = "INFO" }`. |
+
+## Environment Shape
+
+Named environments live under `[tool.skaal.environments.<name>]` in
+`pyproject.toml`, or under `[env.<name>]` in `skaal.toml`.
+
+Supported keys on one environment:
 
 | Key | Meaning |
 | --- | --- |
-| `target` | Required. One of `local`, `aws`, or `gcp`. |
-| `region` | Optional region override for that environment. |
-| `overrides` | Optional per-resource binding overrides. |
+| `target` | Optional. When omitted, inherits `default_target` or `[defaults].target`. |
+| `region` | Optional. When omitted, inherits `default_region` or `[defaults].region`. |
+| `overrides` | Optional per-resource backend overrides. String shorthand is accepted. |
 | `backends` | Optional per-backend configuration tables. |
 
-Supported keys on `[env.<name>.backends.<backend>]` include:
+Supported backend config keys:
 
 - `region`
 - `project`
 - `dataset`
 - `emulator`
 - `table_prefix`
-- any extra target-specific options under `options`
+- any extra backend-specific keys, which Skaal preserves under `options`
 
-Example override block:
+## `skaal.toml` Compatibility
+
+`skaal.toml` can still carry the same information, especially for teams that
+prefer a separate environment catalog.
 
 ```toml
+[defaults]
+target = "aws"
+region = "eu-west-1"
+
+[backend_defaults.dynamodb]
+table_prefix = "acme-"
+
+[env.dev]
+region = "eu-west-1"
+
+[env.prod]
+region = "eu-west-3"
+
 [env.prod.overrides]
-"examples.todo_api.Todos" = "dynamodb"
+"examples.todo_api:Todos" = "dynamodb"
+
+[env.prod.backends.gcp]
+project = "acme-prod"
+dataset = "warehouse"
 ```
 
-## Full `pyproject.toml` Example
-
-This example shows the CLI default surface that still lives in `[tool.skaal]`:
-
-```toml
-[tool.skaal]
-app = "todo_api:app"
-out = "artifacts"
-
-stack = "dev"
-gcp_project = "todo-dev"
-overrides = { cloudRunMemory = "1Gi", cloudRunMinInstances = 1 }
-deletion_protection = false
-env = { APP_ENV = "development", FEATURE_SEARCH = "on" }
-invokers = ["allUsers"]
-labels = { service = "todo-api", owner = "platform" }
-pre_deploy = [["skaal", "migrate", "relational", "upgrade"]]
-post_deploy = [["python", "scripts/smoke_test.py"]]
-
-[tool.skaal.logging]
-level = "INFO"
-format = "text"
-loggers = { "skaal.deploy" = "INFO", "httpx" = "WARNING" }
-
-[tool.skaal.stacks.dev]
-region = "us-east-1"
-env = { APP_ENV = "development" }
-labels = { stage = "dev", service = "todo-api" }
-pre_deploy = [["skaal", "migrate", "relational", "upgrade"]]
-
-[tool.skaal.stacks.prod]
-region = "europe-west1"
-gcp_project = "todo-prod"
-overrides = { cloudRunMemory = "2Gi", cloudRunMinInstances = 1 }
-deletion_protection = true
-env = { APP_ENV = "production" }
-invokers = ["group:platform@example.com"]
-labels = { stage = "prod", service = "todo-api" }
-pre_deploy = [["skaal", "migrate", "relational", "upgrade"]]
-post_deploy = [["python", "scripts/notify_deploy.py"]]
-```
-
-## `[tool.skaal]` Keys
-
-| Key | Type | Used by | Meaning |
-| --- | --- | --- | --- |
-| `app` | string | `run`, `plan`, migration commands, Python API parity helpers | Default `MODULE:APP` when you omit it on the command line. |
-| `out` | path | `build` | Default output directory for generated artifacts. |
-| `stack` | string | `build`, `deploy`, `stacks` | Default stack profile or Pulumi stack name. |
-| `gcp_project` | string | `deploy` | Default GCP project for GCP deploys. |
-| `overrides` | table / dict | `deploy` | Raw Pulumi config overrides applied during deploy. |
-| `deletion_protection` | bool | `deploy` | Shortcut that expands into Cloud SQL deletion-protection overrides. |
-| `env` | table / dict | `deploy` | Literal environment variables baked into the compute container. |
-| `invokers` | array of strings | `deploy` | IAM members allowed to invoke the service. |
-| `labels` | table / dict | `deploy` | Labels applied to supporting resources. |
-| `pre_deploy` | array of argv arrays | `deploy` | Commands run before `pulumi up`. |
-| `post_deploy` | array of argv arrays | `deploy` | Commands run after a successful deploy. |
-| `stacks` | table of stack profiles | `build`, `deploy`, `stacks` | Named per-stack overrides declared under `[tool.skaal.stacks.<name>]`. |
-
-## `[tool.skaal.stacks.<name>]` Keys
-
-Stack profiles can override the deploy-oriented fields above on a per-environment basis. These are the supported keys:
-
-- `region`
-- `gcp_project`
-- `overrides`
-- `deletion_protection`
-- `env`
-- `invokers`
-- `labels`
-- `pre_deploy`
-- `post_deploy`
-
-Profiles are applied as whole-field overrides, not deep merges. In practice that means:
-
-- if a stack profile sets `labels`, that profile's `labels` value replaces the base one
-- if a stack profile sets `pre_deploy`, it replaces the base list rather than appending to it
-
-Keep full per-stack values in the profile when you need deterministic results.
-
-## `[tool.skaal.logging]` Keys
-
-CLI logging reads a separate nested section under `[tool.skaal.logging]`:
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `level` | string | Default root log level such as `WARNING`, `INFO`, or `DEBUG`. |
-| `format` | `text` or `json` | Default CLI output format. |
-| `loggers` | table / dict | Per-logger level overrides, for example `{ "skaal.deploy" = "INFO" }`. |
-
-CLI flags still win over this section. For example, `skaal -vv plan ...` overrides `level = "WARNING"` from the config file.
+`pyproject.toml` still wins when both files define the same field.
 
 ## Environment Variables
 
-### Shared settings env vars
+The structured model supports both simple flat env vars and nested `__`
+notation.
 
-These variables map onto the shared settings model.
-
-| Variable | Maps to | Example |
-| --- | --- | --- |
-| `SKAAL_APP` | `tool.skaal.app` | `examples.counter:app` |
-| `SKAAL_OUT` | `tool.skaal.out` | `artifacts` |
-| `SKAAL_STACK` | `tool.skaal.stack` | `prod` |
-| `SKAAL_GCP_PROJECT` | `tool.skaal.gcp_project` | `my-gcp-project` |
-| `SKAAL_OVERRIDES` | `tool.skaal.overrides` | `{"cloudRunMemory":"2Gi","cloudRunMinInstances":1}` |
-| `SKAAL_DELETION_PROTECTION` | `tool.skaal.deletion_protection` | `true` |
-| `SKAAL_ENV` | reload auto-mode behavior | `development` |
-| `SKAAL_INVOKERS` | `tool.skaal.invokers` | `["allUsers"]` |
-| `SKAAL_LABELS` | `tool.skaal.labels` | `{"service":"todo-api","stage":"prod"}` |
-| `SKAAL_PRE_DEPLOY` | `tool.skaal.pre_deploy` | `[["skaal","migrate","relational","upgrade"]]` |
-| `SKAAL_POST_DEPLOY` | `tool.skaal.post_deploy` | `[["python","scripts/smoke_test.py"]]` |
-| `SKAAL_STACKS` | `tool.skaal.stacks` | `{"prod":{"target":"gcp","region":"europe-west1"}}` |
-
-For list and dict values, Skaal relies on `pydantic-settings`, so pass JSON strings in environment variables.
-
-### Logging env vars
-
-These affect CLI logging directly:
+### Common flat env vars
 
 | Variable | Meaning |
 | --- | --- |
-| `SKAAL_LOG_FORMAT` | Override logging format with `text` or `json`. |
-| `SKAAL_LOG_LEVEL` | Override the root log level with values such as `WARNING`, `INFO`, or `DEBUG`. |
+| `SKAAL_APP` | Default `module:attribute` app target. |
+| `SKAAL_DEFAULT_ENVIRONMENT` | Default environment name used when `--env` is omitted. |
+| `SKAAL_DEFAULT_TARGET` | Default target for synthesized or partially-defined environments. |
+| `SKAAL_DEFAULT_REGION` | Default region fallback. |
+| `SKAAL_TOML` | Override the discovered `skaal.toml` path. |
+| `SKAAL_LOCK` | Override the default lock-file path. |
+| `SKAAL_OUT` | Override the base build-output directory. |
+| `SKAAL_RUN_HOST` | Default host for `skaal run`. |
+| `SKAAL_RUN_PORT` | Default port for `skaal run`. |
+| `SKAAL_LOG_LEVEL` | Override the root log level. |
+| `SKAAL_LOG_FORMAT` | Override the log format with `text` or `json`. |
+| `SKAAL_LOG_LOGGERS` | JSON object of per-logger overrides. |
+| `SKAAL_ENVIRONMENTS` | JSON object containing named environments. |
+| `SKAAL_BACKEND_DEFAULTS` | JSON object containing backend defaults. |
 
-### Generated hook env vars
+### Nested env vars
 
-During post-deploy hooks, Skaal exports Pulumi outputs as environment variables named `SKAAL_OUTPUT_<KEY>`. Those are generated by Skaal for hook commands; you do not normally set them yourself.
+Nested objects can be expressed with `__` separators. For example:
+
+```dotenv
+SKAAL_ENVIRONMENTS__prod__target=aws
+SKAAL_ENVIRONMENTS__prod__region=eu-west-3
+SKAAL_ENVIRONMENTS__prod__backends__gcp__project=acme-prod
+```
+
+For dict and list payloads in flat variables, pass JSON strings.
 
 ## `.skaal.env` Example
 
-If you prefer keeping local defaults in a dotenv file instead of exporting them in your shell, create `.skaal.env` in the working directory:
+If you prefer local machine defaults in a dotenv file:
 
 ```dotenv
-SKAAL_APP=todo_api:app
-SKAAL_STACK=dev
+SKAAL_APP=examples.todo_api:app
+SKAAL_DEFAULT_ENVIRONMENT=dev
+SKAAL_OUT=artifacts
 SKAAL_LOG_FORMAT=text
 ```
 
-This is useful for machine-local defaults. For project-wide environment shape, prefer `skaal.toml`.
+Use `.skaal.env` for machine-local overrides. Use `pyproject.toml` for shared
+project defaults.
 
 ## Recommended Split
 
-For most teams, this split stays readable:
-
-- put named environments and backend options in `skaal.toml`
-- put stable project defaults in `[tool.skaal]`
-- put per-environment deploy behavior in `[tool.skaal.stacks.<name>]`
-- use `.skaal.env` for local machine-only overrides
-- use direct CLI flags for one-off command changes
+- Put stable project defaults in `[tool.skaal]` inside `pyproject.toml`.
+- Put named environments in `[tool.skaal.environments]` unless your team prefers
+	a separate `skaal.toml` catalog.
+- Use `backend_defaults` for shared backend config such as table prefixes or a
+	GCP project id.
+- Use `.skaal.env` for developer-machine overrides.
+- Use direct CLI flags for one-off commands.
 
 ## Related References
 
-- Read [CLI](cli.md) for the command surface that consumes these settings.
-- Read [Python API: CLI-Parity API](reference/python-api-cli-parity.md) if you want the in-process `skaal.api` equivalents.
+- Read [CLI](cli.md) for the commands that consume these settings.
+- Read [Python API: CLI-Parity API](reference/python-api-cli-parity.md) if you
+	want the in-process `skaal.api` equivalents.

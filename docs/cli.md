@@ -130,6 +130,7 @@ Common failure:
 Run a Skaal app locally:
 
 ```bash
+skaal run
 skaal run examples.counter:app
 skaal run examples.counter:app --env local
 skaal run examples.counter:app --host 0.0.0.0 --port 9000
@@ -139,8 +140,8 @@ Key options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--env`, `-e` | Select an environment from `skaal.toml`. Defaults to `local`. |
-| `--host`, `--port` | Bind the local server to a different address or port. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. When omitted, Skaal falls back to `[tool.skaal].default_environment`, then `local`. |
+| `--host`, `--port` | Bind the local server to a different address or port. When omitted, Skaal uses `[tool.skaal.run]`. |
 
 What you see:
 
@@ -169,6 +170,7 @@ Common failures:
 `skaal plan` loads the app, binds it to one environment, loads `skaal.lock`, and prints the changes.
 
 ```bash
+skaal plan
 skaal plan examples.counter:app --env local
 skaal plan examples.todo_api:app --env prod --format github-markdown
 ```
@@ -177,7 +179,7 @@ Useful options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--env`, `-e` | Select an environment from `skaal.toml`. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. When omitted, Skaal falls back to `[tool.skaal].default_environment`, then the command's built-in default. |
 | `--format` | Output as a terminal table or GitHub-flavored Markdown. |
 
 What you see:
@@ -233,6 +235,7 @@ Common failures:
 `skaal build` binds the app for one environment and renders deploy artifacts.
 
 ```bash
+skaal build
 skaal build examples.todo_api:app --env prod
 skaal build examples.todo_api:app --env prod --out artifacts/prod
 skaal build examples.todo_api:app --env prod --python-version 3.12
@@ -242,8 +245,8 @@ Key options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--env`, `-e` | Select an environment from `skaal.toml`. |
-| `--out`, `-o` | Output directory for generated artifacts. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. When omitted, Skaal falls back to `[tool.skaal].default_environment`, then the command's built-in default. |
+| `--out`, `-o` | Output directory for generated artifacts. When omitted, Skaal uses `[tool.skaal].out/<env>` or `.skaal/build/<env>`. |
 | `--python-version` | Python version for the rendered base image. |
 
 What you see:
@@ -270,9 +273,10 @@ Common failures:
 
 `skaal deploy` renders the artifacts for one environment and then runs Pulumi through the Automation API.
 
-For AWS targets, run `skaal doctor` before the first deploy. Skaal expects the Pulumi CLI, Docker CLI, and an AWS credential source visible through the normal AWS SDK chain.
+For cloud targets, run `skaal doctor` before the first deploy. Skaal expects the Pulumi CLI, Docker CLI, and cloud credentials visible through the normal AWS or GCP SDK chain.
 
 ```bash
+skaal deploy --preview
 skaal deploy examples.todo_api:app --env prod
 skaal deploy examples.todo_api:app --env prod --preview
 skaal deploy examples.todo_api:app --env prod --yes
@@ -282,11 +286,11 @@ Important options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--env`, `-e` | Select an environment from `skaal.toml`. |
-| `--out`, `-o` | Override the render directory for this deploy. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. When omitted, Skaal falls back to `[tool.skaal].default_environment`, then `prod`. |
+| `--out`, `-o` | Override the render directory for this deploy. When omitted, Skaal uses `[tool.skaal].out/<env>` or `.skaal/build/<env>`. |
 | `--preview` | Run `pulumi preview` instead of `pulumi up`. |
 | `--yes`, `-y` | Apply without interactive confirmation. |
-| `--lock` | Choose a non-default `skaal.lock` path. |
+| `--lock` | Choose a non-default `skaal.lock` path. When omitted, Skaal uses `[tool.skaal].lock` or `skaal.lock`. |
 
 What you see:
 
@@ -304,8 +308,10 @@ Common failures:
 
 - Pulumi CLI or SDKs are not installed.
 - Docker is not installed or not running.
-- `skaal[deploy,aws]` or the relevant target extras are missing.
+- `skaal[deploy,aws]`, `skaal[deploy,gcp]`, or the relevant target extras are missing.
 - AWS credentials resolve to the wrong account or no credentials are detected.
+- GCP credentials or project selection are missing for the chosen environment.
+- For GCP deploys, Skaal now fails early if the active project is missing required APIs such as Cloud Run, Artifact Registry, Firestore, Pub/Sub, or other services implied by the bound plan.
 - You chose the wrong environment or target-specific backend options are missing.
 
 ### `skaal destroy`
@@ -319,6 +325,7 @@ Common failures:
 `skaal destroy` renders the artifacts for one environment, selects the existing Pulumi stack, destroys it, and removes the stack itself.
 
 ```bash
+skaal destroy --yes
 skaal destroy examples.todo_api:app --env prod
 skaal destroy examples.todo_api:app --env prod --yes
 ```
@@ -327,10 +334,10 @@ Important options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--env`, `-e` | Select an environment from `skaal.toml`. |
-| `--out`, `-o` | Override the render directory for this destroy run. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. When omitted, Skaal falls back to `[tool.skaal].default_environment`, then `prod`. |
+| `--out`, `-o` | Override the render directory for this destroy run. When omitted, Skaal uses `[tool.skaal].out/<env>` or `.skaal/build/<env>`. |
 | `--yes`, `-y` | Destroy without interactive confirmation. |
-| `--lock` | Choose a non-default `skaal.lock` path for binding. |
+| `--lock` | Choose a non-default `skaal.lock` path for binding. When omitted, Skaal uses `[tool.skaal].lock` or `skaal.lock`. |
 
 What you see:
 
@@ -382,7 +389,7 @@ Common failures:
 
 ### `skaal stubs` and `skaal doctor`
 
-`skaal stubs` emits a typed `.pyi` package for another Skaal app. `skaal doctor` checks that Python, Pulumi, Docker, and the Skaal package import cleanly, and it reports the visible AWS auth source for deploy troubleshooting.
+`skaal stubs` emits a typed `.pyi` package for another Skaal app. `skaal doctor` checks that Python, Pulumi, Docker, and the Skaal package import cleanly, and it reports the visible AWS and GCP auth signals for deploy troubleshooting.
 
 ```bash
 skaal stubs --from examples.todo_api:app --to .stubs/todo_api
@@ -392,7 +399,7 @@ skaal doctor
 What you see:
 
 - `stubs`: the package name, destination, and resource count.
-- `doctor`: Python version, Pulumi availability, Docker availability, AWS auth source and region, and Skaal version.
+- `doctor`: Python version, Pulumi availability, Docker availability, AWS auth source and region, GCP auth source and project, and Skaal version.
 
 What gets written:
 
@@ -420,8 +427,9 @@ Across the CLI, Skaal resolves settings in this order:
 2. `SKAAL_*` environment variables
 3. `.skaal.env`
 4. `[tool.skaal]` in `pyproject.toml`
+5. `skaal.toml`
 
-That is why the scaffolded project is convenient: once `[tool.skaal] app` and optional stack settings are present, the daily command loop gets much shorter.
+That is why the scaffolded project is convenient: once `[tool.skaal] app`, `default_environment`, and optional path defaults are present, the daily command loop gets much shorter.
 
 For a full `pyproject.toml` example, stack-profile guidance, logging config, and a complete list of supported `SKAAL_*` environment variables, read [CLI Configuration](cli-configuration.md).
 
