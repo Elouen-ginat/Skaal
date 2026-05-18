@@ -301,6 +301,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             ctx.pulumi_name,
             location=ctx.env.region or "us-central1",
             ingress=self._ingress(ctx),
+            deletion_protection=False,
             template=gcp.cloudrunv2.ServiceTemplateArgs(
                 service_account=service_account.email,
                 timeout=f"{self._timeout_s(ctx)}s",

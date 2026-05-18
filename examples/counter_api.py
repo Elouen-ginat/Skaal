@@ -1,10 +1,14 @@
-"""Counter API — minimal FastAPI + Store app for the AWS deploy tutorial.
+"""Counter API — minimal FastAPI + Store app for the cloud deploy tutorials.
 
 Run locally:
 
     skaal run examples.counter_api:app --env local
 
 Deploy to AWS:
+
+    skaal deploy examples.counter_api:app --env prod --yes
+
+Deploy to GCP:
 
     skaal deploy examples.counter_api:app --env prod --yes
 """

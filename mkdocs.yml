@@ -85,6 +85,7 @@ nav:
       - 1. Your first app: tutorials/first-app.md
       - 2. Adding HTTP routes: tutorials/http-api.md
       - 3. Deploying a simple AWS app: tutorials/planning-and-deployment.md
+      - 3b. Deploying a simple GCP app: tutorials/gcp-deployment.md
       - 4. Relational data: tutorials/relational-and-migrations.md
       - 5. Files and Streaming: tutorials/files-and-streaming.md
   - Guides:

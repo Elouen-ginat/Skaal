@@ -16,8 +16,11 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from skaal.cli.deploy_cmd import _print_stack_outputs
+from skaal import App, Store
+from skaal.binding.model import BackendConfig, Environment, LockFile, Target
+from skaal.cli.deploy_cmd import _gcp_required_services, _preflight_gcp_target, _print_stack_outputs
 from skaal.cli.main import app as cli_app
+from skaal.errors import SkaalDeployError
 
 runner = CliRunner()
 
@@ -106,3 +109,76 @@ def test_print_stack_outputs_renders_values() -> None:
     rendered = buffer.getvalue()
     assert "Stack outputs:" in rendered
     assert "public_url = https://example.execute-api.aws" in rendered
+
+
+def test_preflight_gcp_requires_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = App("deploy-fixture")
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(name="prod", target=Target.GCP, region="us-central1")
+    bound = app.plan(env, lock=LockFile())
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GCP_PROJECT", raising=False)
+
+    with pytest.raises(SkaalDeployError, match="project id"):
+        _preflight_gcp_target(bound, env)
+
+
+def test_preflight_gcp_requires_enabled_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = App("deploy-fixture")
+
+    @app.storage
+    class Sessions(Store[int]):
+        pass
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(
+        name="prod",
+        target=Target.GCP,
+        region="us-central1",
+        backends={"gcp": BackendConfig(project="acme-prod")},
+    )
+    bound = app.plan(env, lock=LockFile())
+
+    monkeypatch.setattr("skaal.cli.deploy_cmd._resolve_gcp_access_token", lambda: "token")
+    monkeypatch.setattr(
+        "skaal.cli.deploy_cmd._gcp_service_state",
+        lambda project, service, token: (
+            "DISABLED" if service == "firestore.googleapis.com" else "ENABLED"
+        ),
+    )
+
+    with pytest.raises(SkaalDeployError, match=r"firestore\.googleapis\.com"):
+        _preflight_gcp_target(bound, env)
+
+
+def test_gcp_required_services_include_cloud_run_and_firestore() -> None:
+    app = App("deploy-fixture")
+
+    @app.storage
+    class Sessions(Store[int]):
+        pass
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(
+        name="prod",
+        target=Target.GCP,
+        region="us-central1",
+        backends={"gcp": BackendConfig(project="acme-prod")},
+    )
+    bound = app.plan(env, lock=LockFile())
+
+    services = set(_gcp_required_services(bound))
+    assert "run.googleapis.com" in services
+    assert "artifactregistry.googleapis.com" in services
+    assert "iam.googleapis.com" in services
+    assert "firestore.googleapis.com" in services

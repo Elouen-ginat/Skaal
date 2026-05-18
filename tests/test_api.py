@@ -438,6 +438,7 @@ def test_doctor_reports_local_environment() -> None:
 
     assert report.python_version
     assert report.aws_auth_source
+    assert report.gcp_auth_source
     assert report.skaal_version
 
 
