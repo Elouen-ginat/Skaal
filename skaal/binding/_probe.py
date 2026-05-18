@@ -13,6 +13,8 @@ leaves the field unset.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -89,8 +91,36 @@ def detect_aws_auth() -> str:
     return "not-detected"
 
 
+# ── Docker daemon ─────────────────────────────────────────────────────────────
+
+
+def detect_docker_daemon() -> str:
+    """Describe Docker daemon state.
+
+    Returns one of:
+        - ``"not-installed"`` if the ``docker`` CLI is not on ``PATH``
+        - ``"not-running"`` if the CLI is present but ``docker info`` fails
+        - ``"running"`` if the daemon responds within 5 s
+
+    Used by the deploy preflight (Cloud Run / Lambda image builds need a
+    live daemon) and surfaced in ``skaal doctor``.
+    """
+    if shutil.which("docker") is None:
+        return "not-installed"
+    try:
+        completed = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return "not-running"
+    return "running" if completed.returncode == 0 else "not-running"
+
+
 __all__ = [
     "detect_aws_auth",
+    "detect_docker_daemon",
     "detect_gcp_auth",
     "resolve_aws_region",
     "resolve_gcp_project",

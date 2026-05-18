@@ -170,10 +170,12 @@ class SynthContext(Generic[ConfigT]):
 
     @property
     def tags(self) -> dict[str, str]:
-        """Skaal tags for this resource, ready for Pulumi `tags=` kwargs."""
+        """Skaal tags/labels for this resource, in the shape the active
+        target expects (AWS-shaped colons for AWS, GCP-safe underscores
+        and lowercased values for GCP)."""
         return SkaalTags.for_resource(
             self.resource, self.env, self.bound.app_fingerprint
-        ).as_mapping()
+        ).as_mapping(target=self.env.target)
 
     @property
     def pulumi_name(self) -> str:

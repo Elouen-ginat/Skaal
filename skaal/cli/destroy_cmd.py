@@ -17,6 +17,7 @@ from skaal.binding.model import Environment, Plan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import AppSpec, load_app, load_plan
 from skaal.cli._params import Argument, Option
+from skaal.cli._pulumi import apply_pulumi_defaults
 from skaal.deploy import PulumiProgram, build_artefacts, get_target, pulumi_program_for
 from skaal.errors import MissingExtraError, SkaalDeployError
 
@@ -101,6 +102,7 @@ def _destroy_pulumi(
     console: Console,
 ) -> None:
     """Invoke the Pulumi Automation API to destroy and remove an existing stack."""
+    apply_pulumi_defaults(console)
     try:
         from pulumi import automation as auto
     except ImportError as exc:

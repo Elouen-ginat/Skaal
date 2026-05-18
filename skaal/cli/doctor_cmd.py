@@ -12,6 +12,7 @@ from rich.table import Table
 
 from skaal.binding._probe import (
     detect_aws_auth,
+    detect_docker_daemon,
     detect_gcp_auth,
     resolve_aws_region,
     resolve_gcp_project,
@@ -76,8 +77,18 @@ def _print_toolchain(console: Console) -> None:
     table.add_row("Python", sys.version.split()[0])
     table.add_row("Skaal", skaal_version)
     table.add_row("Pulumi CLI", shutil.which("pulumi") or _missing("not on PATH"))
-    table.add_row("Docker CLI", shutil.which("docker") or _missing("not on PATH"))
+    table.add_row("Docker", _docker_status())
     console.print(table)
+
+
+def _docker_status() -> str:
+    state = detect_docker_daemon()
+    path = shutil.which("docker")
+    if state == "running":
+        return f"{path} [dim](daemon up)[/dim]"
+    if state == "not-installed":
+        return _missing("not on PATH")
+    return f"{path} [yellow](daemon not running)[/yellow]"
 
 
 def _print_environment(console: Console, env: Environment) -> None:

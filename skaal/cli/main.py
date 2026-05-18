@@ -9,6 +9,8 @@ The CLI surface in `0.4.0-alpha` is:
 scheduled for their respective later phases and are not registered here.
 """
 
+import sys
+
 import typer
 
 from skaal.cli._logging import LogFormat, configure_cli_logging
@@ -44,6 +46,19 @@ app.add_typer(stubs_app, name="stubs")
 app.add_typer(doctor_app, name="doctor")
 
 
+def _force_utf8_streams() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so Rich output (box-drawing
+    characters, arrows, etc.) renders on Windows consoles whose default
+    code page is `cp1252`. Without this, `console.print("foo → bar")`
+    crashes with `UnicodeEncodeError: 'charmap'` on a default Windows
+    install.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 @app.callback()
 def _root(
     verbose: int = Option(
@@ -66,6 +81,7 @@ def _root(
         case_sensitive=False,
     ),
 ) -> None:
+    _force_utf8_streams()
     configure_cli_logging(verbose=verbose, quiet=quiet, fmt=log_format)
 
 

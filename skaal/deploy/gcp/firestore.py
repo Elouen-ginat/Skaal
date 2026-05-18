@@ -48,10 +48,13 @@ class FirestoreSynth(SynthModule[GcpConfig]):
 
     def synthesize(self, ctx: SynthContext[GcpConfig]) -> SynthResult:
         cfg = ctx.config.firestore
+        # Prefer the active environment's region so Firestore lives next to
+        # Cloud Run; fall back to the configured Firestore default (a
+        # multi-region like ``nam5``) only when ``env.region`` is unset.
         database = gcp.firestore.Database(
             ctx.pulumi_name,
             name=ctx.resource_slug,
-            location_id=cfg.location_id,
+            location_id=ctx.env.region or cfg.location_id,
             type=cfg.type_,
         )
         env_key = f"{cfg.env_var_prefix}{ctx.slug_key}"
