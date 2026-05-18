@@ -281,11 +281,9 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
                     gcp.cloudrunv2.ServiceTemplateContainerArgs(
                         image=image.image_name,
                         envs=env_list,
-                        ports=[
-                            gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
-                                container_port=self._port(ctx),
-                            )
-                        ],
+                        ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
+                            container_port=self._port(ctx),
+                        ),
                         resources=gcp.cloudrunv2.ServiceTemplateContainerResourcesArgs(
                             limits={"cpu": self._cpu(ctx), "memory": self._memory(ctx)},
                         ),

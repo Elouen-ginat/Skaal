@@ -8,9 +8,7 @@ from typing import Any
 
 import pytest
 
-from skaal.backends.dynamodb_backend import DynamoBackend
-from skaal.backends.firestore_backend import FirestoreBackend
-from skaal.backends.redis_backend import RedisBackend
+from skaal.backends.implementations import DynamoBackend, FirestoreBackend, RedisBackend
 from skaal.storage import _decode_cursor
 from skaal.types.storage import SecondaryIndex
 

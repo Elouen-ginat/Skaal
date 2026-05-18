@@ -188,7 +188,7 @@ def _connection_for_aws_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported AWS runtime store backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.BLOB:
         if backend == "s3":
@@ -197,7 +197,7 @@ def _connection_for_aws_resource(
                 env_var_keys=(f"{config.s3.env_var_prefix}{slug_key}",),
                 options=options,
             )
-        raise ValueError(f"Unsupported AWS runtime blob backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.RELATIONAL:
         if backend == "postgres":
@@ -209,7 +209,7 @@ def _connection_for_aws_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported AWS runtime relational backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.CHANNEL:
         if backend == "sqs":
@@ -226,7 +226,7 @@ def _connection_for_aws_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported AWS runtime channel backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.SECRET:
         if backend == "aws-secrets-manager":
@@ -237,7 +237,7 @@ def _connection_for_aws_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported AWS runtime secret backend {backend!r}.")
+        return None
 
     return None
 
@@ -265,7 +265,7 @@ def _connection_for_gcp_resource(
                 env_var_keys=(f"SKAAL_REDIS_{slug_key}_URL",),
                 options=options,
             )
-        raise ValueError(f"Unsupported GCP runtime store backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.BLOB:
         if backend == "gcs":
@@ -274,7 +274,7 @@ def _connection_for_gcp_resource(
                 env_var_keys=(f"{config.gcs.env_var_prefix}{slug_key}",),
                 options=options,
             )
-        raise ValueError(f"Unsupported GCP runtime blob backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.RELATIONAL:
         if backend == "postgres":
@@ -295,7 +295,7 @@ def _connection_for_gcp_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported GCP runtime relational backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.CHANNEL:
         if backend == "pubsub":
@@ -312,7 +312,7 @@ def _connection_for_gcp_resource(
                 env_var_keys=(f"SKAAL_REDIS_{slug_key}_URL",),
                 options=options,
             )
-        raise ValueError(f"Unsupported GCP runtime channel backend {backend!r}.")
+        return None
 
     if kind is ResourceKind.SECRET:
         if backend == "gcp-secret-manager":
@@ -323,7 +323,7 @@ def _connection_for_gcp_resource(
                 ),
                 options=options,
             )
-        raise ValueError(f"Unsupported GCP runtime secret backend {backend!r}.")
+        return None
 
     return None
 

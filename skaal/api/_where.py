@@ -152,7 +152,8 @@ def _select_deployed_resource(
 def _deployment_resources(deployment: StackMapping) -> tuple[StackMapping, ...]:
     resources = _field(deployment, "resources")
     if isinstance(resources, (list, tuple)):
-        return tuple(_coerce_mapping(resource) for resource in resources)
+        typed_resources = cast(tuple[object, ...] | list[object], resources)
+        return tuple(_coerce_mapping(resource) for resource in typed_resources)
     nested = _field(deployment, "deployment")
     if nested is not None:
         return _deployment_resources(_coerce_mapping(nested))
@@ -171,7 +172,8 @@ def _tagged_resource_id(container: StackMapping) -> str | None:
     for tag_field in ("tags", "tagsAll"):
         tags = _field(container, tag_field)
         if isinstance(tags, Mapping):
-            resource_id = tags.get("skaal:resource_id")
+            typed_tags = cast(Mapping[str, Any], tags)
+            resource_id = typed_tags.get("skaal:resource_id")
             if isinstance(resource_id, str):
                 return resource_id
     return None

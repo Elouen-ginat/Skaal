@@ -22,6 +22,7 @@ from rich.console import Console
 from skaal.binding.model import Environment, LockEntry, LockFile, Plan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.cli._params import Argument, Option
 from skaal.deploy import (
     PulumiProgram,
     build_artefacts,
@@ -40,41 +41,41 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def deploy(
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "prod",
         "--env",
         "-e",
         help="Environment name from `skaal.toml`.",
     ),
-    out_dir: Path | None = typer.Option(
+    out_dir: Path | None = Option(
         None,
         "--out",
         "-o",
         help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
     ),
-    preview: bool = typer.Option(
+    preview: bool = Option(
         False,
         "--preview",
         help="Run `pulumi preview` instead of `pulumi up`.",
     ),
-    yes: bool = typer.Option(
+    yes: bool = Option(
         False,
         "--yes",
         "-y",
         help="Skip the interactive confirmation prompt and apply immediately.",
     ),
-    lock_path: Path = typer.Option(
+    lock_path: Path = Option(
         Path("skaal.lock"),
         "--lock",
         help="Path to `skaal.lock` (created on first deploy).",
     ),
-    dev: bool = typer.Option(
+    dev: bool = Option(
         False,
         "--dev",
         help=(

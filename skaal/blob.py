@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, overload
 
 from typing_extensions import TypeVar
 
@@ -30,7 +30,9 @@ from skaal.sync import run as _sync_run
 from skaal.types import BlobItem, Page
 
 if TYPE_CHECKING:
+    from skaal.backends._native_types import BlobFilesystem
     from skaal.backends.base import BlobBackend
+    from skaal.backends.tokens.blob import S3, FilesystemBlob, Gcs
 
 
 B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
@@ -121,6 +123,18 @@ class BlobStore(Generic[B]):
             raise NotImplementedError(
                 f"{cls.__name__} blob store not wired. Use LocalRuntime or deploy first."
             )
+
+    @classmethod
+    @overload
+    async def native(cls: type[BlobStore[S3]]) -> BlobFilesystem: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[BlobStore[Gcs]]) -> BlobFilesystem: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[BlobStore[FilesystemBlob]]) -> BlobFilesystem: ...
 
     @classmethod
     async def native(cls) -> Any:

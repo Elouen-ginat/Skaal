@@ -70,17 +70,17 @@ jobs:
           ENV_NAME: ${{ steps.resolve-target.outputs.env_name }}
         run: |
           if [ -z "$TARGET" ]; then
-            python - <<'PY'
-            from pathlib import Path
+          python - <<'PY'
+          from pathlib import Path
 
-            Path("/tmp/skaal-infra-diff.md").write_text(
-                "## Skaal infra diff\n\n"
-                "No infra diff was generated because no Skaal app target is configured.\n"
-                "Set the `SKAAL_PLAN_TARGET` repository variable or `[tool.skaal].app`\n"
-                "in `pyproject.toml` to enable PR infra comments.\n",
-                encoding="utf-8",
-            )
-            PY
+          Path("/tmp/skaal-infra-diff.md").write_text(
+              "## Skaal infra diff\n\n"
+              "No infra diff was generated because no Skaal app target is configured.\n"
+              "Set the `SKAAL_PLAN_TARGET` repository variable or `[tool.skaal].app`\n"
+              "in `pyproject.toml` to enable PR infra comments.\n",
+              encoding="utf-8",
+          )
+          PY
             exit 0
           fi
 

@@ -9,7 +9,7 @@ from skaal.runtime._registry import RuntimeBackendFactoryContext
 
 
 def build_sqlite_store(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.sqlite_backend import SqliteBackend
+    from skaal.backends.implementations.data import SqliteBackend
 
     bound = require_planned_resource(context)
     path: str = bound.options.get("path", "skaal_local.db")
@@ -18,7 +18,7 @@ def build_sqlite_store(context: RuntimeBackendFactoryContext) -> Any:
 
 def build_redis_store(context: RuntimeBackendFactoryContext) -> Any:
     try:
-        from skaal.backends.redis_backend import RedisBackend
+        from skaal.backends.implementations.data import RedisBackend
     except Exception as exc:  # pragma: no cover - import error path
         raise MissingExtraError(
             "redis adapter requires `redis>=5` — install the `redis` extra."
@@ -30,7 +30,7 @@ def build_redis_store(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_filesystem_blob(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.file_blob_backend import FileBlobBackend
+    from skaal.backends.implementations.blob import FileBlobBackend
 
     bound = require_planned_resource(context)
     root: str = bound.options.get("root", "./skaal_blob")
@@ -38,7 +38,7 @@ def build_filesystem_blob(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_sqlite_relational(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.sqlite_backend import SqliteBackend
+    from skaal.backends.implementations.data import SqliteBackend
 
     bound = require_planned_resource(context)
     path: str = bound.options.get("path", "skaal_local.db")
@@ -57,7 +57,7 @@ def build_bigquery_relational(context: RuntimeBackendFactoryContext) -> Any:
     via `BackendConfig` on the planned resource; falling back to per-env
     overrides keeps `skaal run` against real BigQuery one TOML edit away.
     """
-    from skaal.backends.bigquery_backend import BigQueryBackend
+    from skaal.backends.implementations.data import BigQueryBackend
 
     bound = require_planned_resource(context)
     project = ""

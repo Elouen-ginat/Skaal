@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from skaal.backends.sqlite_backend import SqliteBackend
+from skaal.backends.implementations import SqliteBackend
 
 
 @pytest.mark.asyncio

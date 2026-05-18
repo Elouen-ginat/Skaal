@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from skaal.backends.postgres_backend import PostgresBackend
+from skaal.backends.implementations import PostgresBackend
 from skaal.types.storage import SecondaryIndex
 
 

@@ -8,6 +8,7 @@ dispatcher both see the new backend.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, ClassVar
@@ -99,6 +100,12 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     # mutable and persists across tests).
     target = skaal.deploy.aws.TARGET
     builtin = set(target.supported_backends())
+    try:
+        asyncio.get_event_loop()
+    except DeprecationWarning:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
     pulumi.runtime.set_mocks(_Mocks(), preview=False)
 
     def fake_entry_points(group: str | None = None, **_: object) -> tuple[Any, ...]:

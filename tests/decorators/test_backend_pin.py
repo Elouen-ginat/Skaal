@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Field
 
 from skaal import App, BlobStore, Store, Table, Topic
-from skaal.backends._tokens import S3, Postgres, Redis, RedisChannel, Sqlite
+from skaal.backends.tokens import S3, Postgres, Redis, RedisChannel, Sqlite
 from skaal.decorators import _extract_backend_pin
 
 
@@ -103,6 +103,8 @@ def test_relational_pinned_populates_overrides_backend() -> None:
 
     @app.storage(kind="relational")
     class Comments(Table[Postgres], table=True):
+        __tablename__ = "comments_backend_pin"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -115,6 +117,8 @@ def test_relational_un_pinned_has_no_backend_override() -> None:
 
     @app.storage(kind="relational")
     class Notes(Table, table=True):
+        __tablename__ = "notes_backend_pin"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -135,11 +139,15 @@ def test_relational_two_distinct_pins_do_not_alias() -> None:
 
     @app_a.storage(kind="relational")
     class CommentsA(Table[Postgres], table=True):
+        __tablename__ = "comments_backend_pin_a"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
     @app_b.storage(kind="relational")
     class CommentsB(Table[Sqlite], table=True):
+        __tablename__ = "comments_backend_pin_b"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
@@ -149,10 +157,14 @@ def test_relational_two_distinct_pins_do_not_alias() -> None:
 
 def test_extract_backend_pin_helper_on_relational() -> None:
     class PinnedRelational(Table[Postgres], table=True):
+        __tablename__ = "pinned_relational_backend_pin"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
     class UnPinnedRelational(Table, table=True):
+        __tablename__ = "unpinned_relational_backend_pin"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 

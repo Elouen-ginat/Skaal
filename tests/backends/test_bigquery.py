@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.backends._tokens import BigQuery
+from skaal.backends.tokens import BigQuery
 from skaal.binding.model import Target
 from skaal.binding.registry import lookup, lookup_token
 

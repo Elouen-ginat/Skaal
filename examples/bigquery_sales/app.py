@@ -35,7 +35,7 @@ from typing import Any
 from sqlmodel import Field
 
 from skaal import App, Table
-from skaal.backends.bigquery import BigQuery
+from skaal.backends.tokens import BigQuery
 
 app = App("bigquery-sales")
 
@@ -71,7 +71,7 @@ async def record_sale(
     await Sale.migrate()
     client: Any = await Sale.native()
     occurred = occurred_at or datetime.now(timezone.utc).isoformat()
-    row = {
+    row: dict[str, Any] = {
         "id": id,
         "sku": sku,
         "customer": customer,

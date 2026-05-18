@@ -6,18 +6,27 @@ import json
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-from fsspec.spec import AbstractFileSystem
+import fsspec
 
+from skaal.backends._native_types import BlobFilesystem
 from skaal.blob import decode_blob_cursor, encode_blob_cursor, normalize_blob_limit
 from skaal.types import BlobItem, Page
+
+if TYPE_CHECKING:
+
+    def _filesystem(protocol: str) -> BlobFilesystem: ...
+else:
+
+    def _filesystem(protocol: str) -> BlobFilesystem:
+        return cast(BlobFilesystem, fsspec.filesystem(protocol))
 
 
 class FsspecBlobBackend:
     def __init__(
         self,
-        filesystem: AbstractFileSystem,
+        filesystem: BlobFilesystem,
         root_path: str,
         namespace: str | None = None,
     ) -> None:
@@ -106,7 +115,12 @@ class FsspecBlobBackend:
         if not self._filesystem.exists(meta_path):
             return None
         with self._filesystem.open(meta_path, "rb") as handle:
-            return json.loads(handle.read().decode("utf-8"))
+            raw_meta = handle.read()
+        if isinstance(raw_meta, bytes):
+            text = raw_meta.decode("utf-8")
+        else:
+            text = raw_meta
+        return cast(dict[str, Any], json.loads(text))
 
     def _write_meta_sync(
         self,
@@ -116,7 +130,7 @@ class FsspecBlobBackend:
         metadata: dict[str, str] | None,
         etag: str,
     ) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "content_type": content_type,
             "etag": etag,
             "updated_at": datetime.now(UTC).isoformat(),
@@ -159,7 +173,7 @@ class FsspecBlobBackend:
         if not self._filesystem.exists(self._root_path):
             return []
         try:
-            paths = list(self._filesystem.find(self._root_path, withdirs=False))
+            paths = self._filesystem.find(self._root_path, withdirs=False)
         except FileNotFoundError:
             return []
         root_prefix = f"{self._normalize_path(self._root_path).lstrip('/')}/"
@@ -210,7 +224,10 @@ class FsspecBlobBackend:
         data_path = self._data_path(key)
         if not await asyncio.to_thread(self._filesystem.exists, data_path):
             raise FileNotFoundError(key)
-        return await asyncio.to_thread(self._filesystem.cat_file, data_path)
+        raw = await asyncio.to_thread(self._filesystem.cat_file, data_path)
+        if isinstance(raw, str):
+            return raw.encode("utf-8")
+        return raw
 
     async def download_file(self, key: str, destination: str | Path) -> Path:
         data = await self.get_bytes(key)
@@ -254,3 +271,51 @@ class FsspecBlobBackend:
         close = getattr(self._filesystem, "close", None)
         if callable(close):
             await asyncio.to_thread(close)
+
+    async def native(self) -> BlobFilesystem:
+        return self._filesystem
+
+
+class FileBlobBackend(FsspecBlobBackend):
+    def __init__(self, root_path: str | Path, namespace: str | None = None) -> None:
+        base = Path(root_path)
+        self.root = base / namespace if namespace else base
+        super().__init__(_filesystem("file"), str(base.resolve()), namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"FileBlobBackend(root={str(self.root)!r})"
+
+
+class S3BlobBackend(FsspecBlobBackend):
+    def __init__(
+        self,
+        bucket: str,
+        namespace: str | None = None,
+        filesystem: Any | None = None,
+    ) -> None:
+        self.bucket = bucket
+        self.namespace = namespace.strip("/") if namespace else ""
+        fs = filesystem or _filesystem("s3")
+        super().__init__(fs, bucket, namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"S3BlobBackend(bucket={self.bucket!r}, namespace={self.namespace!r})"
+
+
+class GCSBlobBackend(FsspecBlobBackend):
+    def __init__(
+        self,
+        bucket: str,
+        namespace: str | None = None,
+        filesystem: Any | None = None,
+    ) -> None:
+        self.bucket_name = bucket
+        self.namespace = namespace.strip("/") if namespace else ""
+        fs = filesystem or _filesystem("gcs")
+        super().__init__(fs, bucket, namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"GCSBlobBackend(bucket={self.bucket_name!r}, namespace={self.namespace!r})"
+
+
+__all__ = ["FileBlobBackend", "FsspecBlobBackend", "GCSBlobBackend", "S3BlobBackend"]

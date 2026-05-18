@@ -1,4 +1,4 @@
-"""In-memory storage backend and backward-compat wiring for plain classes."""
+"""Local in-memory backend implementations and helper re-exports."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import builtins
 import time
 from typing import Any
 
-# Re-export for backward compatibility — canonical location is now skaal.storage.
 from skaal.storage import _deserialize as _deserialize
 from skaal.storage import _list_page_from_entries as _list_page_from_entries
 from skaal.storage import _query_index_from_entries as _query_index_from_entries
@@ -14,26 +13,10 @@ from skaal.storage import _scan_page_from_entries as _scan_page_from_entries
 from skaal.storage import _serialize as _serialize
 from skaal.sync import run as _sync_bridge_run
 
-# ── Sync/async bridge ─────────────────────────────────────────────────────────
-
-# Backward-compatible private alias; public callers should use skaal.sync.run
-# or skaal.sync_run instead of importing from a backend module.
 _sync_run = _sync_bridge_run
 
 
-# ── LocalMap ───────────────────────────────────────────────────────────────────
-
-
 class LocalMap:
-    """
-    In-memory key-value store that satisfies the :class:`~skaal.backends.base.StorageBackend`
-    protocol.
-
-    Used by :class:`~skaal.runtime.local.LocalRuntime` to back storage classes
-    during local development and testing.  All methods are async to match the
-    production backend interface.
-    """
-
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
         self._expires_at: dict[str, float] = {}
@@ -115,7 +98,6 @@ class LocalMap:
         return None
 
     async def increment_counter(self, key: str, delta: int = 1) -> int:
-        """Atomically increment a counter using a lock."""
         async with self._lock:
             current = int(self._data.get(key, 0))
             new_value = current + delta
@@ -123,7 +105,6 @@ class LocalMap:
             return new_value
 
     async def atomic_update(self, key: str, fn: Any, *, ttl: float | None = None) -> Any:
-        """Atomically read, apply fn to the raw value, write back, and return the result."""
         async with self._lock:
             self._purge_expired_locked()
             current = self._data.get(key)
@@ -144,3 +125,14 @@ class LocalMap:
 
     def __repr__(self) -> str:
         return f"LocalMap({len(self._data)} keys)"
+
+
+__all__ = [
+    "LocalMap",
+    "_deserialize",
+    "_list_page_from_entries",
+    "_query_index_from_entries",
+    "_scan_page_from_entries",
+    "_serialize",
+    "_sync_run",
+]

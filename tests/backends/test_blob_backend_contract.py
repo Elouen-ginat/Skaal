@@ -6,9 +6,7 @@ import pytest
 from fsspec.implementations.memory import MemoryFileSystem
 
 from skaal.backends.base import BlobBackend
-from skaal.backends.file_blob_backend import FileBlobBackend
-from skaal.backends.gcs_blob_backend import GCSBlobBackend
-from skaal.backends.s3_blob_backend import S3BlobBackend
+from skaal.backends.implementations import FileBlobBackend, GCSBlobBackend, S3BlobBackend
 
 
 def _local_backend(tmp_path: Path) -> FileBlobBackend:

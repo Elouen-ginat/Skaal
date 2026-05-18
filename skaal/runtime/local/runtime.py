@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
@@ -26,6 +26,52 @@ JobPayload = dict[str, Any]
 ScheduleEntry = tuple[PlannedResource, Callable[..., Awaitable[Any]]]
 
 
+class _UvicornModule(Protocol):
+    def run(self, app: ASGIApp, *, host: str, port: int, log_level: str) -> None: ...
+
+
+def _relational_backend_map() -> dict[str, Any]:
+    return {}
+
+
+def _job_queue_map() -> dict[str, asyncio.Queue[JobPayload]]:
+    return {}
+
+
+def _schedule_list() -> list[ScheduleEntry]:
+    return []
+
+
+def _invokable_map() -> dict[str, Callable[..., Awaitable[Any]]]:
+    return {}
+
+
+def _invokable_stream_map() -> dict[str, Callable[..., AsyncIterator[Any]]]:
+    return {}
+
+
+def _route_list() -> list[_Route]:
+    return []
+
+
+def _mount_list() -> list[_Mount]:
+    return []
+
+
+def _startup_hook_list() -> list[StartupHook]:
+    return []
+
+
+def _shutdown_hook_list() -> list[ShutdownHook]:
+    return []
+
+
+def _uvicorn() -> _UvicornModule:
+    import importlib
+
+    return cast(_UvicornModule, importlib.import_module("uvicorn"))
+
+
 @dataclass(frozen=True)
 class _Route:
     method: str
@@ -43,13 +89,15 @@ class _Mount:
 class RuntimeState:
     """Typed adapter-side registries the runtime carries."""
 
-    relational_backends: dict[str, Any] = field(default_factory=dict)
-    job_queues: dict[str, asyncio.Queue[JobPayload]] = field(default_factory=dict)
-    schedules: list[ScheduleEntry] = field(default_factory=list)
+    relational_backends: dict[str, Any] = field(default_factory=_relational_backend_map)
+    job_queues: dict[str, asyncio.Queue[JobPayload]] = field(default_factory=_job_queue_map)
+    schedules: list[ScheduleEntry] = field(default_factory=_schedule_list)
     scheduler_started: bool = False
     scheduler: Any = None
-    invokables: dict[str, Callable[..., Awaitable[Any]]] = field(default_factory=dict)
-    invokable_streams: dict[str, Callable[..., AsyncIterator[Any]]] = field(default_factory=dict)
+    invokables: dict[str, Callable[..., Awaitable[Any]]] = field(default_factory=_invokable_map)
+    invokable_streams: dict[str, Callable[..., AsyncIterator[Any]]] = field(
+        default_factory=_invokable_stream_map
+    )
 
 
 @dataclass
@@ -58,10 +106,10 @@ class LocalRuntime:
 
     bound: Plan
     app: App
-    routes: list[_Route] = field(default_factory=list)
-    mounts: list[_Mount] = field(default_factory=list)
-    startup_hooks: list[StartupHook] = field(default_factory=list)
-    shutdown_hooks: list[ShutdownHook] = field(default_factory=list)
+    routes: list[_Route] = field(default_factory=_route_list)
+    mounts: list[_Mount] = field(default_factory=_mount_list)
+    startup_hooks: list[StartupHook] = field(default_factory=_startup_hook_list)
+    shutdown_hooks: list[ShutdownHook] = field(default_factory=_shutdown_hook_list)
     state: RuntimeState = field(default_factory=RuntimeState)
 
     @classmethod
@@ -97,7 +145,7 @@ class LocalRuntime:
         runtime: LocalRuntime = self
 
         @asynccontextmanager
-        async def _lifespan(_: Starlette) -> AsyncIterator[None]:
+        async def _lifespan(_: Starlette) -> AsyncGenerator[None, None]:
             runtime.app._bind_runtime(runtime)
             try:
                 for startup in runtime.startup_hooks:
@@ -139,10 +187,8 @@ class LocalRuntime:
             await hook()
 
     def serve(self, host: str = "127.0.0.1", port: int = 8000) -> None:
-        import uvicorn
-
         asgi: ASGIApp = self.build_asgi()
-        uvicorn.run(asgi, host=host, port=port, log_level="info")
+        _uvicorn().run(asgi, host=host, port=port, log_level="info")
 
     def _resolve(self, resource: PlannedResource) -> Any:
         self.app._autodiscover_declarations()

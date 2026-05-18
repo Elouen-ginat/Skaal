@@ -9,12 +9,16 @@ Redis Streams regardless of the active environment's defaults.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any, Generic
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Generic, cast, overload
 
 from typing_extensions import TypeVar
 
 from skaal.backends._base import Backend
+
+if TYPE_CHECKING:
+    from skaal.backends._native_types import RedisNativeClient, SqsClientProtocol
+    from skaal.backends.tokens.messaging import RedisChannel, Sqs
 
 T = TypeVar("T")
 B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
@@ -56,13 +60,16 @@ class Topic(Generic[T, B]):
                 "bound plan in Phase 4 of ADR 028."
             )
 
-        send = getattr(self._backend, "send", None)
-        if callable(send):
+        send = cast(Callable[[T], Awaitable[None]] | None, getattr(self._backend, "send", None))
+        if send is not None:
             await send(item)
             return
 
-        publish = getattr(self._backend, "publish", None)
-        if callable(publish):
+        publish = cast(
+            Callable[[str, T], Awaitable[None]] | None,
+            getattr(self._backend, "publish", None),
+        )
+        if publish is not None:
             await publish(self._topic_name(), item)
             return
 
@@ -74,14 +81,20 @@ class Topic(Generic[T, B]):
         if self._backend is None:
             raise NotImplementedError("Topic.receive() has no backend wired yet.")
 
-        receive = getattr(self._backend, "receive", None)
-        if callable(receive):
+        receive = cast(
+            Callable[[], AsyncIterator[T]] | None,
+            getattr(self._backend, "receive", None),
+        )
+        if receive is not None:
             async for item in receive():
                 yield item
             return
 
-        subscribe = getattr(self._backend, "subscribe", None)
-        if callable(subscribe):
+        subscribe = cast(
+            Callable[[str], AsyncIterator[T]] | None,
+            getattr(self._backend, "subscribe", None),
+        )
+        if subscribe is not None:
             async for item in subscribe(self._topic_name()):
                 yield item
             return
@@ -89,6 +102,12 @@ class Topic(Generic[T, B]):
         raise NotImplementedError(
             f"Topic backend {self._backend_name!r} does not expose receive()/subscribe()."
         )
+
+    @overload
+    async def native(self: Topic[T, RedisChannel]) -> RedisNativeClient: ...
+
+    @overload
+    async def native(self: Topic[T, Sqs]) -> SqsClientProtocol: ...
 
     async def native(self) -> Any:
         """Return the native SDK client for the wired channel backend.

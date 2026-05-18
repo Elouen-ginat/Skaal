@@ -25,7 +25,7 @@ repos:
 
   # Python lint + format (Ruff). Keep in sync with `ruff` in pyproject.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.12
+    rev: v0.15.13
     hooks:
       - id: ruff
         args: [--fix]
@@ -35,7 +35,7 @@ repos:
 
   # Type checking (MyPy). Keep `rev` in sync with `mypy` in pyproject typecheck group.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.2
+    rev: v2.1.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -50,6 +50,15 @@ repos:
           - z3-solver>=4.12
         args: [--ignore-missing-imports]
         exclude: ^(tests/|examples/|skaal/deploy/templates/)
+
+  # Type checking (Pyright). Mirrors the dedicated CI job command exactly.
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
 
   # YAML linting
   - repo: https://github.com/adrienverge/yamllint

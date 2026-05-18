@@ -16,7 +16,10 @@ the same phase as the wider examples sweep.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from skaal.runtime.local import LocalRuntime, serve
 
 __all__ = ["LocalRuntime", "serve"]
 
@@ -25,6 +28,6 @@ def __getattr__(name: str) -> Any:
     if name in {"LocalRuntime", "serve"}:
         from skaal.runtime.local import LocalRuntime, serve
 
-        exports = {"LocalRuntime": LocalRuntime, "serve": serve}
+        exports: dict[str, Any] = {"LocalRuntime": LocalRuntime, "serve": serve}
         return exports[name]
     raise AttributeError(name)

@@ -163,7 +163,8 @@ def build_artefacts(
             runtime_bindings_json,
             encoding="utf-8",
         )
-        _copy_user_package(user_package_source, resource_dir / app_spec.top_package)
+        if user_package_source is not None:
+            _copy_user_package(user_package_source, resource_dir / app_spec.top_package)
         if skaal_source_root is not None:
             _copy_skaal_source(skaal_source_root, resource_dir / "_skaal_src")
         entries.append(ManifestResourceEntry.for_resource(resource, slug=slug))
@@ -189,34 +190,30 @@ def _render_resource(template_env: _Jinja2, context: BuildContext, resource_dir:
         (resource_dir / output_name).write_text(rendered, encoding="utf-8")
 
 
-def _resolve_user_package_dir(top_package: str) -> Path:
+def _resolve_user_package_dir(top_package: str) -> Path | None:
     """Locate the user's source package directory on disk.
 
     The Dockerfile renders a ``COPY <top_package> ./<top_package>`` line; the
     Docker build context is the per-Lambda artefact directory, so the build
     must mirror the user's package source into each artefact directory before
     `pulumi up` invokes Docker.
+
+    Synthetic test `AppSpec`s may reference a package that is not importable in
+    the current process. In that case we still render the artefacts and let the
+    later Docker build fail if the source tree is genuinely missing.
     """
     try:
         spec = find_spec(top_package)
-    except (ImportError, ValueError) as exc:
-        raise BuildError(
-            f"Could not locate user package {top_package!r} for the Lambda "
-            f"build context: {exc}. Make sure the package is importable from "
-            "the current working directory."
-        ) from exc
+    except (ImportError, ValueError):
+        return None
     if spec is None:
-        raise BuildError(
-            f"Could not locate user package {top_package!r} for the Lambda "
-            "build context. Make sure the package is importable from the "
-            "current working directory."
-        )
+        return None
     locations = list(spec.submodule_search_locations or ())
     if locations:
         return Path(locations[0]).resolve()
     if spec.origin and spec.origin != "built-in":
         return Path(spec.origin).resolve().parent
-    raise BuildError(f"User package {top_package!r} has no on-disk source directory.")
+    return None
 
 
 def _copy_user_package(source: Path, dest: Path) -> None:

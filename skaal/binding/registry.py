@@ -21,7 +21,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from skaal.backends._base import Backend
-from skaal.backends._tokens import (
+from skaal.backends.tokens import (
     ALL_TOKENS,
     S3,
     ApigwLambda,
@@ -89,6 +89,10 @@ class BackendDefault(BaseModel):
     target: Target
 
 
+def _backend_defaults() -> frozenset[BackendDefault]:
+    return frozenset()
+
+
 class BackendSpec(BaseModel):
     """One row of the registry (ADR 028 §6.12)."""
 
@@ -103,7 +107,7 @@ class BackendSpec(BaseModel):
     targets: frozenset[Target]
     capabilities: BackendCapabilities = BackendCapabilities()
     options_schema: type[BaseModel] = BackendOptions
-    default_for: frozenset[BackendDefault] = Field(default_factory=frozenset)
+    default_for: frozenset[BackendDefault] = Field(default_factory=_backend_defaults)
 
     @property
     def token_class(self) -> type[Backend[Any]]:
@@ -395,7 +399,7 @@ def _reset_for_tests() -> None:
 def _registry_consistency_check() -> None:
     """Assert at import time that every token is registered exactly once."""
     seen: set[type[Backend[Any]]] = set()
-    default_cells: set[BackendDefault] = set()
+    default_cells: set[tuple[ResourceKind, Target]] = set()
     for entry in REGISTRY:
         token = entry.token_class
         if token in seen:
@@ -416,25 +420,24 @@ def _registry_consistency_check() -> None:
                     f"{token.__name__}, but that backend does not host {default.kind.value!r}"
                 )
                 raise RuntimeError(msg)
-            if default in default_cells:
+            default_cell = (default.kind, default.target)
+            if default_cell in default_cells:
                 msg = (
                     f"default cell ({default.kind.value}, {default.target.value}) is claimed by "
                     f"more than one backend"
                 )
                 raise RuntimeError(msg)
-            default_cells.add(default)
+            default_cells.add(default_cell)
     missing = set(ALL_TOKENS) - seen
     if missing:
         names = ", ".join(sorted(t.__name__ for t in missing))
         msg = f"backend tokens missing from REGISTRY: {names}"
         raise RuntimeError(msg)
-    expected_defaults = {
-        BackendDefault(kind=kind, target=target) for kind in ResourceKind for target in Target
-    }
+    expected_defaults = {(kind, target) for kind in ResourceKind for target in Target}
     missing_defaults = expected_defaults - default_cells
     if missing_defaults:
         cells = ", ".join(
-            sorted(f"({cell.kind.value}, {cell.target.value})" for cell in missing_defaults)
+            sorted(f"({kind.value}, {target.value})" for kind, target in missing_defaults)
         )
         msg = f"default cells missing from REGISTRY: {cells}"
         raise RuntimeError(msg)

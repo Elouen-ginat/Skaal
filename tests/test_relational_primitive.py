@@ -14,7 +14,7 @@ from sqlmodel import Field, SQLModel
 
 from skaal import Table
 from skaal.backends._base import Backend
-from skaal.backends._tokens import Postgres, Sqlite
+from skaal.backends.tokens import Postgres, Sqlite
 
 
 def test_relational_subclass_is_sqlmodel() -> None:

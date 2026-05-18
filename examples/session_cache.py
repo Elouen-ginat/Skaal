@@ -30,7 +30,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from skaal import App, Store
-from skaal.backends.redis import Redis
+from skaal.backends.tokens import Redis
 
 app = App("session-cache")
 api = FastAPI(title="Skaal Session Cache Example")

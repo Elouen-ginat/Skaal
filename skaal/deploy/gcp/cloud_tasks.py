@@ -17,7 +17,7 @@ from typing import Any, ClassVar
 import pulumi
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import CloudTasksCloudRun
+from skaal.backends.tokens import CloudTasksCloudRun
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.gcp._cloud_run import CloudRunScaffold, CloudRunSynth, PreScaffold
 from skaal.deploy.gcp._config import GcpConfig

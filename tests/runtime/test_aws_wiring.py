@@ -10,8 +10,7 @@ import pytest
 from sqlmodel import Field
 
 from skaal import App, BlobStore, Secret, Store, Table, Topic
-from skaal.backends.postgres import Postgres
-from skaal.backends.redis_channel import RedisChannel
+from skaal.backends.tokens import Postgres, RedisChannel
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.errors import RuntimeWiringError
 from skaal.runtime.aws import wire_app_from_environment

@@ -58,7 +58,14 @@ from typing import (
 from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
+    from skaal.backends._native_types import (
+        DynamoDbClientProtocol,
+        FirestoreClientProtocol,
+        RedisNativeClient,
+        SqliteNativeClient,
+    )
     from skaal.backends.base import StorageBackend
+    from skaal.backends.tokens.data import DynamoDB, Firestore, Redis, Sqlite
 
 from skaal.backends._base import Backend
 from skaal.serialization import deserialize_value as _deserialize
@@ -555,6 +562,22 @@ class Store(Generic[T, B]):
         """Release any resources held by the backend."""
         if cls._backend is not None:
             await cls._backend.close()
+
+    @classmethod
+    @overload
+    async def native(cls: type[Store[T, Redis]]) -> RedisNativeClient: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[Store[T, Sqlite]]) -> SqliteNativeClient: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[Store[T, DynamoDB]]) -> DynamoDbClientProtocol: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[Store[T, Firestore]]) -> FirestoreClientProtocol: ...
 
     @classmethod
     async def native(cls) -> Any:

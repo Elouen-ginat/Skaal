@@ -85,7 +85,7 @@ It tells Skaal which target you are binding for and any backend-specific options
 A **Backend** is the concrete implementation behind a primitive. You can let Skaal choose from the environment, or you can type-pin the primitive.
 
 ```python
-from skaal.backends.redis import Redis
+from skaal.backends.tokens import Redis
 
 
 @app.storage

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.backends.sqlite_backend import SqliteBackend
+from skaal.backends.implementations import SqliteBackend
 from skaal.types.storage import SecondaryIndex
 
 

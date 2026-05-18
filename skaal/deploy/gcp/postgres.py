@@ -17,7 +17,7 @@ from typing import ClassVar
 import pulumi
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import Postgres
+from skaal.backends.tokens import Postgres
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -88,7 +88,9 @@ class CloudSqlPostgresSynth(SynthModule[GcpConfig]):
         secret = gcp.secretmanager.Secret(
             f"{ctx.pulumi_name}-secret",
             secret_id=f"{ctx.resource_slug}-conn",
-            replication=gcp.secretmanager.SecretReplicationArgs(auto={}),
+            replication=gcp.secretmanager.SecretReplicationArgs(
+                auto=gcp.secretmanager.SecretReplicationAutoArgs()
+            ),
             labels=ctx.tags,
         )
         secret_value = pulumi.Output.json_dumps(

@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.backends._tokens import S3
+from skaal.backends.tokens import S3
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

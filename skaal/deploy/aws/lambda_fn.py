@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from skaal.backends._tokens import Lambda
+from skaal.backends.tokens import Lambda
 from skaal.deploy._protocol import SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._lambda import LambdaSynth
 from skaal.deploy.aws._where import AWS_LAMBDA_FUNCTION, WHERE_PRIMARY, lambda_console_url

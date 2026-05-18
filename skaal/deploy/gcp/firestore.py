@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import Firestore
+from skaal.backends.tokens import Firestore
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

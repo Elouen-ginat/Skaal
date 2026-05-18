@@ -12,6 +12,7 @@ from rich.tree import Tree
 from skaal.api import ResourceMap, ResourceMapEntry
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+from skaal.cli._params import Argument, Option
 
 app = typer.Typer(
     help="Print the source-to-resource tree and emit `.skaal/map.json`.",
@@ -22,19 +23,19 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def map(
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "local",
         "--env",
         "-e",
         help="Environment name from `skaal.toml` (defaults to `local`).",
     ),
-    out_path: Path = typer.Option(
+    out_path: Path = Option(
         Path(".skaal/map.json"),
         "--out",
         "-o",

@@ -14,6 +14,7 @@ import typer
 
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_bound_plan
+from skaal.cli._params import Argument, Option
 
 app = typer.Typer(
     help="Run a Skaal app locally.",
@@ -25,20 +26,20 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def run(
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "local",
         "--env",
         "-e",
         help="Environment name from `skaal.toml` (defaults to `local`).",
     ),
-    host: str = typer.Option("127.0.0.1", "--host", help="Bind host."),
-    port: int = typer.Option(8000, "--port", "-p", help="Bind port."),
+    host: str = Option("127.0.0.1", "--host", help="Bind host."),
+    port: int = Option(8000, "--port", "-p", help="Bind port."),
 ) -> None:
     skaal_app = load_app(target)
     bound = load_bound_plan(skaal_app, env_name)

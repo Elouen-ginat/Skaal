@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import GcpSecretManager
+from skaal.backends.tokens import GcpSecretManager
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,
@@ -59,7 +59,9 @@ class SecretManagerSynth(SynthModule[GcpConfig]):
                 ),
             )
         else:
-            replication = gcp.secretmanager.SecretReplicationArgs(auto={})
+            replication = gcp.secretmanager.SecretReplicationArgs(
+                auto=gcp.secretmanager.SecretReplicationAutoArgs()
+            )
         secret = gcp.secretmanager.Secret(
             ctx.pulumi_name,
             secret_id=ctx.resource_slug,

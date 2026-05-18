@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.backends._tokens import ALL_TOKENS, Redis, Sqlite
+from skaal.backends.tokens import ALL_TOKENS, Redis, Sqlite
 from skaal.binding.model import Target
 from skaal.binding.registry import (
     REGISTRY,

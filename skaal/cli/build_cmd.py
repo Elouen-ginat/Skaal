@@ -19,6 +19,7 @@ from rich.console import Console
 
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.cli._params import Argument, Option
 from skaal.deploy import build_artefacts
 
 app = typer.Typer(
@@ -31,30 +32,30 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def build(
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "local",
         "--env",
         "-e",
         help="Environment name from `skaal.toml`.",
     ),
-    out_dir: Path | None = typer.Option(
+    out_dir: Path | None = Option(
         None,
         "--out",
         "-o",
         help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
     ),
-    python_version: str = typer.Option(
+    python_version: str = Option(
         "3.11",
         "--python-version",
         help="Python minor version embedded in the Dockerfile base image.",
     ),
-    dev: bool = typer.Option(
+    dev: bool = Option(
         False,
         "--dev",
         help=(
