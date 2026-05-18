@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from skaal.binding.model import BackendConfig, Environment, EnvOverride, Target
@@ -46,14 +46,22 @@ def _find_upward(filename: str, *, start: Path | None = None) -> Path | None:
     return None
 
 
-def _read_toml_file(path: Path | None) -> dict[str, Any]:
+def _read_toml_file(path: Path | None, *, strict: bool = False) -> dict[str, Any]:
     """Return parsed TOML content or an empty dict on missing/unreadable files."""
     if path is None or not path.exists():
         return {}
     try:
         with path.open("rb") as fh:
             parsed = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError as exc:
+        if strict:
+            msg = f"cannot read {path}: {exc}"
+            raise SkaalConfigError(msg) from exc
+        return {}
+    except tomllib.TOMLDecodeError as exc:
+        if strict:
+            msg = f"{path} is not valid TOML: {exc}"
+            raise SkaalConfigError(msg) from exc
         return {}
     return cast(dict[str, Any], parsed)
 
@@ -112,7 +120,51 @@ def _normalize_environment_blocks(raw: Any) -> dict[str, Any]:
     for raw_name, raw_block in _string_key_mapping(raw).items():
         if not isinstance(raw_block, dict):
             continue
-        result[str(raw_name)] = _string_key_mapping(raw_block)
+        block = _string_key_mapping(raw_block)
+        normalized_block: dict[str, Any] = {}
+        for key, value in block.items():
+            if key == "overrides":
+                normalized_block[key] = _normalize_overrides(value)
+                continue
+            if key == "backends":
+                normalized_block[key] = _normalize_backend_configs(value)
+                continue
+            normalized_block[key] = value
+        result[str(raw_name)] = normalized_block
+    return result
+
+
+def _normalize_overrides(raw: Any) -> dict[str, Any]:
+    """Normalize shorthand override values into `EnvOverride` payloads."""
+    result: dict[str, Any] = {}
+    for raw_name, raw_value in _string_key_mapping(raw).items():
+        if isinstance(raw_value, str):
+            result[str(raw_name)] = {"backend": raw_value}
+            continue
+        if isinstance(raw_value, dict):
+            result[str(raw_name)] = _string_key_mapping(raw_value)
+            continue
+        result[str(raw_name)] = raw_value
+    return result
+
+
+def _normalize_backend_configs(raw: Any) -> dict[str, Any]:
+    """Normalize backend tables, preserving unknown keys under `options`."""
+    known = {"region", "project", "dataset", "emulator", "table_prefix", "options"}
+    result: dict[str, Any] = {}
+    for raw_name, raw_value in _string_key_mapping(raw).items():
+        if not isinstance(raw_value, dict):
+            result[str(raw_name)] = raw_value
+            continue
+        payload = _string_key_mapping(raw_value)
+        options = _string_key_mapping(payload.get("options"))
+        extra = {key: value for key, value in payload.items() if key not in known}
+        normalized = {
+            key: value for key, value in payload.items() if key in known and key != "options"
+        }
+        if options or extra:
+            normalized["options"] = {**options, **extra}
+        result[str(raw_name)] = normalized
     return result
 
 
@@ -270,7 +322,7 @@ def load_skaal_toml_section(path: Path | None = None) -> dict[str, Any]:
             toml_path = paths.get("toml")
             if isinstance(toml_path, str):
                 path = Path(toml_path)
-    return _read_toml_file(path or find_skaal_toml())
+    return _read_toml_file(path or find_skaal_toml(), strict=True)
 
 
 # ── pydantic-settings custom source ───────────────────────────────────────────
@@ -560,18 +612,23 @@ def load_settings(*, toml_path: Path | None = None) -> SkaalSettings:
         EnvVarSource(settings_cls),
     ):
         merged = _merge_settings_data(merged, source())
-    return SkaalSettings.model_construct(
-        defaults=DefaultsSettings.model_validate(merged.get("defaults", {})),
-        paths=PathSettings.model_validate(merged.get("paths", {})),
-        run=RunSettings.model_validate(merged.get("run", {})),
-        logging=LoggingSettings.model_validate(merged.get("logging", {})),
-        backend_defaults=TypeAdapter(dict[str, BackendConfig]).validate_python(
-            merged.get("backend_defaults", {})
-        ),
-        environments=TypeAdapter(dict[str, EnvironmentSettings]).validate_python(
-            merged.get("environments", {})
-        ),
-    )
+    try:
+        return SkaalSettings.model_construct(
+            defaults=DefaultsSettings.model_validate(merged.get("defaults", {})),
+            paths=PathSettings.model_validate(merged.get("paths", {})),
+            run=RunSettings.model_validate(merged.get("run", {})),
+            logging=LoggingSettings.model_validate(merged.get("logging", {})),
+            backend_defaults=TypeAdapter(dict[str, BackendConfig]).validate_python(
+                merged.get("backend_defaults", {})
+            ),
+            environments=TypeAdapter(dict[str, EnvironmentSettings]).validate_python(
+                merged.get("environments", {})
+            ),
+        )
+    except ValidationError as exc:
+        source_path = toml_path or find_skaal_toml() or find_pyproject() or Path("<settings>")
+        msg = f"{source_path}: settings failed validation: {exc.errors()}"
+        raise SkaalConfigError(msg) from exc
 
 
 def reset_settings_cache() -> None:

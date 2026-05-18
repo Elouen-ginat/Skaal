@@ -11,7 +11,7 @@ from skaal.errors import SkaalConfigError
 
 
 def test_missing_file_returns_local_baseline(tmp_path: Path) -> None:
-    envs = Environment.load_all(path=tmp_path / "missing.toml")
+    envs = Environment.load_all(path=tmp_path / "missing.toml").list_environments()
     assert set(envs) == {"local"}
     assert envs["local"].target == Target.LOCAL
 
@@ -25,9 +25,10 @@ target = "aws"
 region = "eu-west-1"
 """.strip()
     )
-    envs = Environment.load_all(path=path)
-    assert envs["prod"].target == Target.AWS
-    assert envs["prod"].region == "eu-west-1"
+    config = Environment.load_all(path=path)
+    env = config.require_environment("prod")
+    assert env.target == Target.AWS
+    assert env.region == "eu-west-1"
 
 
 def test_load_env_with_overrides_and_backends(tmp_path: Path) -> None:
@@ -69,7 +70,7 @@ target = "azure"
 """.strip()
     )
     with pytest.raises(SkaalConfigError):
-        Environment.load_all(path=path)
+        Environment.load_all(path=path).list_environments()
 
 
 def test_missing_target_raises(tmp_path: Path) -> None:
@@ -81,7 +82,7 @@ region = "eu-west-1"
 """.strip()
     )
     with pytest.raises(SkaalConfigError):
-        Environment.load_all(path=path)
+        Environment.load_all(path=path).list_environments()
 
 
 def test_load_environment_raises_when_name_missing(tmp_path: Path) -> None:
@@ -100,4 +101,4 @@ def test_malformed_toml_raises(tmp_path: Path) -> None:
     path = tmp_path / "skaal.toml"
     path.write_text("not = valid = toml")
     with pytest.raises(SkaalConfigError):
-        Environment.load_all(path=path)
+        Environment.load_all(path=path).list_environments()
