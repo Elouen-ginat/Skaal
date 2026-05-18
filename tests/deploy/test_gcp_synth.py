@@ -167,7 +167,7 @@ def test_synth_stack_pubsub_for_channel() -> None:
 def test_synth_stack_bigquery_for_pinned_table() -> None:
     from sqlmodel import Field
 
-    from skaal.backends.bigquery import BigQuery
+    from skaal.backends.tokens import BigQuery
     from skaal.table import Table
 
     app = App("svc")

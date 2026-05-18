@@ -14,7 +14,7 @@ from typing import Any, ClassVar
 import pulumi
 import pulumi_aws as aws
 
-from skaal.backends._tokens import ApigwLambda
+from skaal.backends.tokens import ApigwLambda
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold

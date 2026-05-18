@@ -38,7 +38,7 @@ class Backend(Generic[NativeClientT]):
 
     Subclasses populate the three class variables below; the framework never
     instantiates them. They are imported at user-code sites (`from
-    skaal.backends.redis import Redis`) and used as the second generic
+    skaal.backends.tokens import Redis`) and used as the second generic
     parameter on primitive classes (`Store[User, Redis]`) once Phase 4 wires
     that syntax. The same token is the registry key (`token.name`) and the
     binder's source of truth for `kinds` and `targets` checks.

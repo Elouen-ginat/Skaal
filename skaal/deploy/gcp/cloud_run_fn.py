@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from skaal.backends._tokens import CloudRun
+from skaal.backends.tokens import CloudRun
 from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.gcp._cloud_run import CloudRunSynth
 from skaal.deploy.gcp._config import GcpConfig

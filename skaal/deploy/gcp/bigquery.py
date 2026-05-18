@@ -20,7 +20,7 @@ from typing import ClassVar
 
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import BigQuery
+from skaal.backends.tokens import BigQuery
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

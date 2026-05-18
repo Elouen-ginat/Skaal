@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import pulumi_gcp as gcp
 
-from skaal.backends._tokens import GcpSecretManager
+from skaal.backends.tokens import GcpSecretManager
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

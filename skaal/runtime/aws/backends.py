@@ -12,7 +12,7 @@ from skaal.runtime._registry import RuntimeBackendFactoryContext
 
 
 def build_dynamodb_store(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.dynamodb_backend import DynamoBackend
+    from skaal.backends.implementations.data import DynamoBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -23,7 +23,7 @@ def build_dynamodb_store(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_redis_store(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.redis_backend import RedisBackend
+    from skaal.backends.implementations.data import RedisBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -33,7 +33,7 @@ def build_redis_store(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_s3_blob(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.s3_blob_backend import S3BlobBackend
+    from skaal.backends.implementations.blob import S3BlobBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -43,7 +43,7 @@ def build_s3_blob(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_postgres_relational(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.postgres_backend import PostgresBackend
+    from skaal.backends.implementations.data import PostgresBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -61,7 +61,7 @@ def build_postgres_relational(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_redis_channel(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.redis_channel import RedisStreamChannel
+    from skaal.backends.implementations.messaging import RedisStreamChannel
 
     binding = require_binding(context)
     env = require_env(context)
@@ -71,7 +71,7 @@ def build_redis_channel(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_sqs_channel(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.sqs_channel_backend import SqsChannelBackend
+    from skaal.backends.implementations.messaging import SqsChannelBackend
 
     binding = require_binding(context)
     env = require_env(context)

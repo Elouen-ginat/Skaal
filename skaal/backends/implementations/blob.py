@@ -8,8 +8,10 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+import fsspec
 from fsspec.spec import AbstractFileSystem
 
+from skaal.backends._native_types import BlobFilesystem
 from skaal.blob import decode_blob_cursor, encode_blob_cursor, normalize_blob_limit
 from skaal.types import BlobItem, Page
 
@@ -254,3 +256,51 @@ class FsspecBlobBackend:
         close = getattr(self._filesystem, "close", None)
         if callable(close):
             await asyncio.to_thread(close)
+
+    async def native(self) -> BlobFilesystem:
+        return self._filesystem
+
+
+class FileBlobBackend(FsspecBlobBackend):
+    def __init__(self, root_path: str | Path, namespace: str | None = None) -> None:
+        base = Path(root_path)
+        self.root = base / namespace if namespace else base
+        super().__init__(fsspec.filesystem("file"), str(base.resolve()), namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"FileBlobBackend(root={str(self.root)!r})"
+
+
+class S3BlobBackend(FsspecBlobBackend):
+    def __init__(
+        self,
+        bucket: str,
+        namespace: str | None = None,
+        filesystem: Any | None = None,
+    ) -> None:
+        self.bucket = bucket
+        self.namespace = namespace.strip("/") if namespace else ""
+        fs = filesystem or fsspec.filesystem("s3")
+        super().__init__(fs, bucket, namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"S3BlobBackend(bucket={self.bucket!r}, namespace={self.namespace!r})"
+
+
+class GCSBlobBackend(FsspecBlobBackend):
+    def __init__(
+        self,
+        bucket: str,
+        namespace: str | None = None,
+        filesystem: Any | None = None,
+    ) -> None:
+        self.bucket_name = bucket
+        self.namespace = namespace.strip("/") if namespace else ""
+        fs = filesystem or fsspec.filesystem("gcs")
+        super().__init__(fs, bucket, namespace=namespace)
+
+    def __repr__(self) -> str:
+        return f"GCSBlobBackend(bucket={self.bucket_name!r}, namespace={self.namespace!r})"
+
+
+__all__ = ["FileBlobBackend", "FsspecBlobBackend", "GCSBlobBackend", "S3BlobBackend"]

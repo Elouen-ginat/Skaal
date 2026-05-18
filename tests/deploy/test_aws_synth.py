@@ -125,7 +125,7 @@ def test_synth_stack_store_emits_dynamodb_then_lambda(tmp_path: Path) -> None:
 def test_synth_stack_skips_external_resources(tmp_path: Path) -> None:
     """Resources marked external are not synthesised."""
     from skaal import connect
-    from skaal.backends.postgres import Postgres
+    from skaal.backends.tokens import Postgres
 
     app = App("svc")
 

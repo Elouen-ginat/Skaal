@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast, overload
 
 from sqlmodel import SQLModel
 from typing_extensions import TypeVar
@@ -27,6 +27,13 @@ from skaal.backends._base import Backend
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from skaal.backends._native_types import (
+        AsyncpgPoolProtocol,
+        BigQueryClientProtocol,
+        SqliteNativeClient,
+    )
+    from skaal.backends.tokens.data import BigQuery, Postgres, Sqlite
 
 
 B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
@@ -83,6 +90,18 @@ class Table(SQLModel, Generic[B]):
             ):
                 sub.__skaal_backend_pin__ = backend_arg
         return sub
+
+    @classmethod
+    @overload
+    async def native(cls: type[Table[Postgres]]) -> AsyncpgPoolProtocol: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[Table[Sqlite]]) -> SqliteNativeClient: ...
+
+    @classmethod
+    @overload
+    async def native(cls: type[Table[BigQuery]]) -> BigQueryClientProtocol: ...
 
     @classmethod
     async def native(cls) -> Any:

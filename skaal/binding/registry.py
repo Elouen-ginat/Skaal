@@ -21,7 +21,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from skaal.backends._base import Backend
-from skaal.backends._tokens import (
+from skaal.backends.tokens import (
     ALL_TOKENS,
     S3,
     ApigwLambda,

@@ -6,7 +6,7 @@ import pytest
 from pydantic import BaseModel
 
 from skaal import App, Store
-from skaal.backends._tokens import Postgres, Redis
+from skaal.backends.tokens import Postgres, Redis
 from skaal.errors import SkaalConfigError
 
 

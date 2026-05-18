@@ -6,10 +6,10 @@ runs the `recent_sales` function from `examples/bigquery_sales/` against a
 real BigQuery dataset and asserts the returned client is the typed
 `google.cloud.bigquery.Client` (the criterion's `.native()` guarantee).
 
-The example itself is the §7.1 leftover blocked on a `BigQuery` backend
-token landing in `skaal/backends/`; until that ships the import fails and
-the test skips with a clear reason. Once the token lands the test starts
-exercising the live path automatically.
+The example itself is the §7.1 leftover blocked on the grouped
+`skaal.backends.tokens` package being available; until that ships the import
+fails and the test skips with a clear reason. Once the token lands the test
+starts exercising the live path automatically.
 """
 
 from __future__ import annotations
@@ -26,10 +26,10 @@ def test_bigquery_native_returns_real_client() -> None:
     requires_bigquery_gate()
 
     try:
-        importlib.import_module("skaal.backends.bigquery")
+        importlib.import_module("skaal.backends.tokens")
     except ModuleNotFoundError as exc:
         pytest.skip(
-            "`skaal.backends.bigquery` not yet registered — the BigQuery "
+            "`skaal.backends.tokens` not yet registered — the BigQuery "
             f"backend token is a Phase 7 §7.1 leftover ({exc})."
         )
 

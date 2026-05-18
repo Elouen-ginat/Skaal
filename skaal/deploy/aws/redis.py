@@ -13,7 +13,7 @@ from typing import ClassVar
 import pulumi
 import pulumi_aws as aws
 
-from skaal.backends._tokens import Redis, RedisChannel
+from skaal.backends.tokens import Redis, RedisChannel
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

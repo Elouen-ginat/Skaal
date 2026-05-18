@@ -12,7 +12,7 @@ from skaal.runtime._registry import RuntimeBackendFactoryContext
 
 
 def build_firestore_store(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.firestore_backend import FirestoreBackend
+    from skaal.backends.implementations.data import FirestoreBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -23,7 +23,7 @@ def build_firestore_store(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_gcs_blob(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.gcs_blob_backend import GCSBlobBackend
+    from skaal.backends.implementations.blob import GCSBlobBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -33,7 +33,7 @@ def build_gcs_blob(context: RuntimeBackendFactoryContext) -> Any:
 
 
 def build_pubsub_channel(context: RuntimeBackendFactoryContext) -> Any:
-    from skaal.backends.sqs_channel_backend import SqsChannelBackend  # placeholder
+    from skaal.backends.implementations.messaging import SqsChannelBackend  # placeholder
 
     # Pub/Sub channel runtime backend lands behind the same protocol as the
     # SQS channel backend. The real Pub/Sub adapter is registered when the
@@ -55,7 +55,7 @@ def build_postgres_relational(context: RuntimeBackendFactoryContext) -> Any:
     ``SKAAL_DB_<slug>_SECRET`` (Secret Manager secret id holding the
     username/password/dbname JSON).
     """
-    from skaal.backends.postgres_backend import PostgresBackend
+    from skaal.backends.implementations.data import PostgresBackend
 
     binding = require_binding(context)
     env = require_env(context)
@@ -77,7 +77,7 @@ def build_postgres_relational(context: RuntimeBackendFactoryContext) -> Any:
 
 def build_bigquery_relational(context: RuntimeBackendFactoryContext) -> Any:
     """Build a `BigQueryBackend` from the GCP synth's emitted env vars."""
-    from skaal.backends.bigquery_backend import BigQueryBackend
+    from skaal.backends.implementations.data import BigQueryBackend
 
     binding = require_binding(context)
     env = require_env(context)

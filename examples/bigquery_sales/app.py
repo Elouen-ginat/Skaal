@@ -35,7 +35,7 @@ from typing import Any
 from sqlmodel import Field
 
 from skaal import App, Table
-from skaal.backends.bigquery import BigQuery
+from skaal.backends.tokens import BigQuery
 
 app = App("bigquery-sales")
 

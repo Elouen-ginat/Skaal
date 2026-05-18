@@ -10,11 +10,15 @@ Redis Streams regardless of the active environment's defaults.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, overload
 
 from typing_extensions import TypeVar
 
 from skaal.backends._base import Backend
+
+if TYPE_CHECKING:
+    from skaal.backends._native_types import RedisNativeClient, SqsClientProtocol
+    from skaal.backends.tokens.messaging import RedisChannel, Sqs
 
 T = TypeVar("T")
 B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
@@ -89,6 +93,12 @@ class Topic(Generic[T, B]):
         raise NotImplementedError(
             f"Topic backend {self._backend_name!r} does not expose receive()/subscribe()."
         )
+
+    @overload
+    async def native(self: Topic[T, RedisChannel]) -> RedisNativeClient: ...
+
+    @overload
+    async def native(self: Topic[T, Sqs]) -> SqsClientProtocol: ...
 
     async def native(self) -> Any:
         """Return the native SDK client for the wired channel backend.

@@ -10,12 +10,10 @@ assertions run there.
 Phase 5a covers the rows that do not depend on `.native()` typing:
 
 - Decorator preserves signatures (call sites preserve `(user: User)
-  -> CoroutineType[Any, Any, User]`)
+    -> CoroutineType[Any, Any, User]`)
 - Pydantic models round-trip through `model_validate_json`
 - `Overrides.backend` reveals `str | None`, not `Any`
-
-Phase 5b extends the table to `.native()` typing once each `Backend`
-token has its `NativeClient: type[ConcreteSDK]` declaration in place.
+- `await Cache.native()` narrows to the backend token's concrete client type
 """
 
 from __future__ import annotations
@@ -43,7 +41,7 @@ _PROBE = textwrap.dedent(
     from pydantic import BaseModel
 
     from skaal import App, Blueprint, Overrides, Store
-    from skaal.backends.redis import Redis
+    from skaal.backends.tokens import Redis
 
 
     class User(BaseModel):
@@ -77,10 +75,11 @@ _PROBE = textwrap.dedent(
     reveal_type(plan.model_validate_json("{}"))
     reveal_type(overrides.backend)
 
-    # Phase 5b: `.native()` exists on every primitive and resolves to the
-    # wired backend's SDK client. Phase 5a return type is `Any` (narrowing
-    # per-token is its own follow-up); the contract here is "the method
-    # exists and is awaitable" — un-pinned classes must still find it.
+    async def probe_native() -> None:
+        reveal_type(await Cache.native())
+
+    # `.native()` exists on every primitive and pinned classes narrow to the
+    # concrete client type exposed by the backend token.
     reveal_type(Users.native)
     reveal_type(Cache.native)
     """
@@ -151,16 +150,21 @@ def test_overrides_backend_is_str_or_none(
 def test_native_method_exists_on_primitives(
     pyright_diagnostics: list[dict[str, Any]],
 ) -> None:
-    """`Store.native` and `BlobStore.native` are reachable as awaitables.
+    """`Store.native` remains reachable as an awaitable classmethod.
 
-    Phase 5b's `.native()` typing contract requires the method to exist
-    on every primitive — pinned or not. The Phase 5a return type is
-    ``Coroutine[Any, Any, Any]``; per-token narrowing to the concrete
-    SDK client (`redis.asyncio.Redis`, `aiosqlite.Connection`, …) is a
-    deferred polish item once each backend token gains a typed
-    ``NativeClient`` declaration.
+    Pinned primitives still expose the async classmethod itself; the
+    narrowed client type appears once user code awaits it.
     """
     messages = _messages(pyright_diagnostics)
     native_messages = [m for m in messages if "native" in m.lower()]
     assert any("Users.native" in m for m in native_messages), messages
     assert any("Cache.native" in m for m in native_messages), messages
+
+
+def test_pinned_store_native_reveals_redis_client(
+    pyright_diagnostics: list[dict[str, Any]],
+) -> None:
+    """`await Cache.native()` narrows to the Redis client type."""
+    messages = _messages(pyright_diagnostics)
+    native_msg = next((m for m in messages if "await Cache.native()" in m), "")
+    assert "Redis" in native_msg, messages

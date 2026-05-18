@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pulumi_aws as aws
 
-from skaal.backends._tokens import Postgres
+from skaal.backends.tokens import Postgres
 from skaal.deploy._protocol import (
     SynthContext,
     SynthModule,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.backends._tokens import DynamoDB, Redis, RedisChannel
+from skaal.backends.tokens import DynamoDB, Redis, RedisChannel
 from skaal.binding.registry import lookup_token
 from skaal.deploy._protocol import SynthSpec
 from skaal.inference.model import ResourceKind
