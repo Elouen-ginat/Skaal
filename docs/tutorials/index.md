@@ -8,7 +8,7 @@ Skaal is easiest to learn as a sequence, not as a reference dump. Each tutorial 
 | --- | --- | --- |
 | [1. Your first app](first-app.md) | `App`, `Store`, `@app.storage`, `@app.expose`, local run loop | `examples/counter.py` |
 | [2. Adding HTTP routes](http-api.md) | Mounted ASGI, `app.invoke(...)`, public routes | `examples/todo_api/app.py`, `examples/fastapi_streaming/app.py` |
-| [3. Planning and deploying](planning-and-deployment.md) | `skaal.toml`, `skaal.lock`, build artifacts, deploy loop | `skaal/cli/*.py`, `examples/todo_api/app.py` |
+| [3. Deploying a simple AWS app](planning-and-deployment.md) | AWS preflight, `skaal.toml`, `skaal.lock`, preview, deploy, live verification | `examples/counter_api.py`, `skaal/cli/*.py` |
 | [4. Relational data](relational-and-migrations.md) | SQLModel storage, `Table.session()`, relational model shape | `examples/todo_api/app.py` |
 | [5. Files and Streaming](files-and-streaming.md) | `BlobStore`, pagination, `app.invoke_stream(...)` | `examples/file_upload_api/app.py`, `examples/fastapi_streaming/app.py` |
 

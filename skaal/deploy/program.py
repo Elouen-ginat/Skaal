@@ -22,6 +22,7 @@ optional extras installed.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -75,7 +76,8 @@ def pulumi_program_for(bound: Plan, env: Environment, build_dir: Path) -> Pulumi
         _import_target_package(env)
         target = get_target(env.target)
         _require_extras(target.required_extras())
-        synthesize_stack(bound, env, build_dir)
+        results = synthesize_stack(bound, env, build_dir)
+        _export_stack_outputs(bound, results)
 
     return program
 
@@ -185,6 +187,46 @@ def _require_extras(extras: tuple[str, ...]) -> None:
             "`pip install 'skaal[deploy,aws]'` "
             f"(missing modules: {', '.join(missing)})."
         )
+
+
+def _export_stack_outputs(bound: Plan, results: Mapping[str, SynthResult]) -> None:
+    """Export any user-facing stack outputs advertised by synth results."""
+    import pulumi
+
+    scoped_outputs: dict[str, object] = {}
+    key_counts: dict[str, int] = {}
+
+    for resource in bound.resources:
+        result = results.get(resource.inferred.id)
+        if result is None:
+            continue
+        slug = _normalize_output_key(_slug_for_resource(resource))
+        for key, value in result.outputs.items():
+            normalized_key = _normalize_output_key(key)
+            scoped_outputs[f"{slug}_{normalized_key}"] = value
+            key_counts[normalized_key] = key_counts.get(normalized_key, 0) + 1
+
+    for key, value in scoped_outputs.items():
+        pulumi.export(key, value)
+
+    if not scoped_outputs:
+        return
+
+    if any(count == 1 for count in key_counts.values()):
+        for resource in bound.resources:
+            result = results.get(resource.inferred.id)
+            if result is None:
+                continue
+            for key, value in result.outputs.items():
+                normalized_key = _normalize_output_key(key)
+                if key_counts.get(normalized_key) == 1:
+                    pulumi.export(normalized_key, value)
+
+
+def _normalize_output_key(raw: str) -> str:
+    """Return a Pulumi-export key safe for CLI display and shell use."""
+    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", raw).strip("_")
+    return normalized or "output"
 
 
 __all__ = ["PulumiProgram", "pulumi_program_for", "synthesize_stack"]

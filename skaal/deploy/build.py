@@ -90,9 +90,10 @@ def build_artefacts(
         out_dir: Destination directory. Defaults to
             ``./.skaal/build/<env.name>``.
         requirements: Extra ``[project].dependencies`` rendered into
-            ``pyproject.toml``. Defaults to ``("skaal[runtime,aws]",)`` —
-            every transitive third-party dep flows through skaal's
-            optional-dependency table in ``pyproject.toml``.
+            ``pyproject.toml``. Defaults to a Skaal extra set derived
+            from the target resource kinds — for example,
+            ``("skaal[runtime,aws]",)`` for plain Lambda functions and
+            ``("skaal[runtime,aws,fastapi]",)`` for mounted ASGI apps.
         python_version: Python minor version embedded in the Dockerfile
             base image and the rendered ``requires-python`` marker.
 
@@ -125,7 +126,9 @@ def build_artefacts(
         )
 
     resolved_requirements: tuple[str, ...] = (
-        tuple(requirements) if requirements is not None else _default_requirements(env.target)
+        tuple(requirements)
+        if requirements is not None
+        else _default_requirements(env.target, target_resources)
     )
     if dev:
         resolved_requirements = _rewrite_requirements_for_dev(resolved_requirements)
@@ -316,7 +319,9 @@ def _slug_for(resource: PlannedResource) -> str:
     return resource_slug(resource)
 
 
-def _default_requirements(target: Target) -> tuple[str, ...]:
+def _default_requirements(
+    target: Target, resources: Iterable[PlannedResource] = ()
+) -> tuple[str, ...]:
     """Default `[project].dependencies` for the rendered `pyproject.toml`.
 
     Returns only `skaal[...]` extras — every transitive third-party
@@ -325,9 +330,10 @@ def _default_requirements(target: Target) -> tuple[str, ...]:
     optional-dependency table in ``pyproject.toml``. Pinning bare
     package names here would split the dependency source-of-truth.
     """
-    if target is Target.GCP:
-        return ("skaal[runtime,gcp]",)
-    return ("skaal[runtime,aws]",)
+    extras = ["runtime", target.value]
+    if any(resource.inferred.kind is ResourceKind.ASGI_SERVICE for resource in resources):
+        extras.append("fastapi")
+    return (f"skaal[{','.join(extras)}]",)
 
 
 def _template_root(target: Target) -> Path:

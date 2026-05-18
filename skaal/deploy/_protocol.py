@@ -88,12 +88,17 @@ class SynthResult:
             their runtime container. A `DynamoDB` synth advertises
             ``{"SKAAL_TABLE_<slug>": table.name}``; the Lambda synth
             sweeps every peer's ``env_vars`` into its `Function.environment`.
+        outputs: Mapping of stack-output key → Pulumi `Output` (or plain
+            string) that the deploy program should export. This keeps
+            user-facing values like a public HTTP URL stable across
+            deploys without asking callers to parse raw Pulumi logs.
     """
 
     resource_id: str
     primary: Any
     extras: tuple[Any, ...] = ()
     env_vars: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
+    outputs: Mapping[str, Any] = field(default_factory=lambda: cast(Mapping[str, Any], {}))
 
 
 class WherePreference(BaseModel):

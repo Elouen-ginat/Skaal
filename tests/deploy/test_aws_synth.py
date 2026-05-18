@@ -58,6 +58,14 @@ class _Mocks(pulumi.runtime.Mocks):
 
 @pytest.fixture(autouse=True)
 def _mocks() -> None:
+    import asyncio
+
+    try:
+        asyncio.get_event_loop()
+    except DeprecationWarning:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
     pulumi.runtime.set_mocks(_Mocks(), preview=False)
 
 
@@ -188,6 +196,7 @@ def test_synth_stack_emits_apigw_for_asgi_mount(tmp_path: Path) -> None:
     extra_class_names = {r.__class__.__name__ for r in result.extras}
     assert "Api" in extra_class_names
     assert "Stage" in extra_class_names
+    assert "public_url" in result.outputs
 
 
 def test_synth_stack_channel_emits_sqs(tmp_path: Path) -> None:

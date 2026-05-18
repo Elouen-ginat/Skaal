@@ -13,8 +13,10 @@ new resources during this run.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -161,9 +163,29 @@ def _run_pulumi(
                 default=False,
             ):
                 raise typer.Abort()
-            stack.up(on_output=console.print)
+            result = stack.up(on_output=console.print)
+            _print_stack_outputs(result.outputs, console)
     except auto.CommandError as exc:  # pragma: no cover - network/integration path
         raise SkaalDeployError(f"Pulumi {('preview' if preview else 'up')} failed: {exc}") from exc
+
+
+def _print_stack_outputs(outputs: Mapping[str, Any] | None, console: Console) -> None:
+    """Render exported stack outputs in a stable, Skaal-owned format."""
+    if not outputs:
+        return
+    rendered: list[tuple[str, str]] = []
+    for key in sorted(outputs):
+        raw = outputs[key]
+        value = getattr(raw, "value", raw)
+        if value is None:
+            continue
+        rendered.append((key, str(value)))
+    if not rendered:
+        return
+
+    console.print("Stack outputs:")
+    for key, value in rendered:
+        console.print(f"  [cyan]{key}[/cyan] = {value}")
 
 
 def _write_lock_pins(bound: Plan, env: Environment, *, lock_path: Path) -> None:

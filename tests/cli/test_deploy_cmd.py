@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
+from skaal.cli.deploy_cmd import _print_stack_outputs
 from skaal.cli.main import app as cli_app
 
 runner = CliRunner()
@@ -86,3 +89,20 @@ def test_deploy_rejects_local_env(fixture_app: str) -> None:
     """`skaal deploy --env local` fails before reaching Pulumi."""
     result = runner.invoke(cli_app, ["deploy", fixture_app, "--env", "local", "--yes"])
     assert result.exit_code != 0
+
+
+def test_print_stack_outputs_renders_values() -> None:
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None)
+
+    _print_stack_outputs(
+        {
+            "public_url": type("OutputValue", (), {"value": "https://example.execute-api.aws"})(),
+            "empty": type("OutputValue", (), {"value": None})(),
+        },
+        console,
+    )
+
+    rendered = buffer.getvalue()
+    assert "Stack outputs:" in rendered
+    assert "public_url = https://example.execute-api.aws" in rendered

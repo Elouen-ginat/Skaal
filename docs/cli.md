@@ -10,6 +10,7 @@ The current CLI surface in `0.4.0a0` is small and direct:
 - `trace`
 - `build`
 - `deploy`
+- `destroy`
 - `stubs`
 - `doctor`
 
@@ -46,6 +47,11 @@ Each command has one job. The app argument is always a dotted `module:attribute`
         <span class="skaal-cli-card__title"><code>skaal deploy</code></span>
         <p class="skaal-cli-card__desc">Render again, apply with Pulumi, then update <code>skaal.lock</code>.</p>
     </a>
+    <a class="skaal-cli-card skaal-cli-card--ship" href="#skaal-destroy">
+        <span class="skaal-cli-card__eyebrow">Ship</span>
+        <span class="skaal-cli-card__title"><code>skaal destroy</code></span>
+        <p class="skaal-cli-card__desc">Render again, destroy the stack with Pulumi, then remove the stack record.</p>
+    </a>
     <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-where-and-skaal-trace">
         <span class="skaal-cli-card__eyebrow">Inspect</span>
         <span class="skaal-cli-card__title"><code>skaal where</code> / <code>skaal trace</code></span>
@@ -68,9 +74,10 @@ skaal plan examples.counter:app --env local
 skaal map examples.counter:app --env local
 skaal build examples.todo_api:app --env prod
 skaal deploy examples.todo_api:app --env prod
+skaal destroy examples.todo_api:app --env prod --yes
 ```
 
-`skaal run` starts the local runtime. `skaal plan` renders the diff against `skaal.lock`. `skaal map` shows the bound resources. `skaal build` renders deploy artifacts. `skaal deploy` renders and applies them.
+`skaal run` starts the local runtime. `skaal plan` renders the diff against `skaal.lock`. `skaal map` shows the bound resources. `skaal build` renders deploy artifacts. `skaal deploy` renders and applies them. `skaal destroy` tears the same stack back down.
 
 ## Global Flags
 
@@ -263,6 +270,8 @@ Common failures:
 
 `skaal deploy` renders the artifacts for one environment and then runs Pulumi through the Automation API.
 
+For AWS targets, run `skaal doctor` before the first deploy. Skaal expects the Pulumi CLI, Docker CLI, and an AWS credential source visible through the normal AWS SDK chain.
+
 ```bash
 skaal deploy examples.todo_api:app --env prod
 skaal deploy examples.todo_api:app --env prod --preview
@@ -283,6 +292,7 @@ What you see:
 
 - The render directory.
 - Pulumi stack name and Pulumi output.
+- Exported stack outputs after apply, such as `public_url` for a mounted HTTP app.
 - A success marker when preview or apply completes.
 
 What gets written:
@@ -293,8 +303,55 @@ What gets written:
 Common failures:
 
 - Pulumi CLI or SDKs are not installed.
+- Docker is not installed or not running.
 - `skaal[deploy,aws]` or the relevant target extras are missing.
+- AWS credentials resolve to the wrong account or no credentials are detected.
 - You chose the wrong environment or target-specific backend options are missing.
+
+### `skaal destroy`
+
+<div class="skaal-cli-banner skaal-cli-banner--ship">
+    <span class="skaal-cli-banner__label">Ship</span>
+    <code>skaal destroy</code>
+    <p>Destroy the deployed stack for one environment and remove the Pulumi stack record.</p>
+</div>
+
+`skaal destroy` renders the artifacts for one environment, selects the existing Pulumi stack, destroys it, and removes the stack itself.
+
+```bash
+skaal destroy examples.todo_api:app --env prod
+skaal destroy examples.todo_api:app --env prod --yes
+```
+
+Important options:
+
+| Flag | Meaning |
+| --- | --- |
+| `--env`, `-e` | Select an environment from `skaal.toml`. |
+| `--out`, `-o` | Override the render directory for this destroy run. |
+| `--yes`, `-y` | Destroy without interactive confirmation. |
+| `--lock` | Choose a non-default `skaal.lock` path for binding. |
+
+What you see:
+
+- The render directory.
+- Pulumi stack name and destroy output.
+- A success marker when the destroy completes.
+
+What gets written:
+
+- A render tree, as with `skaal build`.
+- The Pulumi stack is removed after the destroy succeeds.
+
+What stays behind:
+
+- `skaal.lock`, unless you delete it yourself.
+
+Common failures:
+
+- Pulumi CLI or SDKs are not installed.
+- The stack does not exist for the chosen app/environment.
+- Cloud resources are protected or cannot be deleted with the current credentials.
 
 ## Locate or trace a resource
 
@@ -325,7 +382,7 @@ Common failures:
 
 ### `skaal stubs` and `skaal doctor`
 
-`skaal stubs` emits a typed `.pyi` package for another Skaal app. `skaal doctor` checks that Python, Pulumi, and the Skaal package import cleanly.
+`skaal stubs` emits a typed `.pyi` package for another Skaal app. `skaal doctor` checks that Python, Pulumi, Docker, and the Skaal package import cleanly, and it reports the visible AWS auth source for deploy troubleshooting.
 
 ```bash
 skaal stubs --from examples.todo_api:app --to .stubs/todo_api
@@ -335,7 +392,7 @@ skaal doctor
 What you see:
 
 - `stubs`: the package name, destination, and resource count.
-- `doctor`: Python version, Pulumi availability, and Skaal version.
+- `doctor`: Python version, Pulumi availability, Docker availability, AWS auth source and region, and Skaal version.
 
 What gets written:
 

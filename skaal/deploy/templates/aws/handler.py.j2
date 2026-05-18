@@ -19,6 +19,8 @@ import asyncio
 import json
 from typing import Any
 
+from mangum import Mangum
+
 from bootstrap import load_app, warm_up
 
 _APP = load_app()
@@ -28,6 +30,7 @@ warm_up(_APP)
 _RESOURCE_ID = "{{ resource_id }}"
 _KIND = "{{ resource_kind }}"
 _BARE_NAME = "{{ resource_bare_name }}"
+_ASGI_HANDLER: Any | None = None
 
 
 def _resolve_callable() -> Any:
@@ -65,15 +68,35 @@ def _invoke_function(payload: dict[str, Any]) -> dict[str, Any]:
     return {"statusCode": 200, "body": json.dumps({"result": result}, default=str)}
 
 
-def _invoke_asgi(_event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    # Phase 4 ships single-Lambda-per-ASGI; the API Gateway integration
-    # wraps the ASGI app via mangum / aws-lambda-adapter (configured at
-    # deploy time in `skaal/deploy/aws/apigw_lambda.py`). The function
-    # body intentionally raises so a misconfigured deploy surfaces.
+def _mounted_path() -> str | None:
+    marker = "mount("
+    start = _RESOURCE_ID.rfind(marker)
+    if start == -1:
+        return None
+    start += len(marker)
+    end = _RESOURCE_ID.find(")", start)
+    if end == -1:
+        return None
+    return _RESOURCE_ID[start:end]
+
+
+def _resolve_asgi_app() -> Any:
+    mounts = getattr(_APP, "_asgi_path_mounts", {}) or {}
+    path = _mounted_path()
+    if path and path in mounts:
+        return mounts[path]
+    if len(mounts) == 1:
+        return next(iter(mounts.values()))
     raise RuntimeError(
-        "ASGI handler invoked directly; the API Gateway integration is "
-        "responsible for translating events. Check the deploy synth wiring."
+        f"resource_id={_RESOURCE_ID!r} did not resolve to a mounted ASGI app on app={_APP!r}"
     )
+
+
+def _invoke_asgi(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    global _ASGI_HANDLER
+    if _ASGI_HANDLER is None:
+        _ASGI_HANDLER = Mangum(_resolve_asgi_app(), lifespan="off")
+    return _ASGI_HANDLER(event, context)
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> Any:

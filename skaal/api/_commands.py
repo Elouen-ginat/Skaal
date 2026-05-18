@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from skaal.app import App
 from skaal.binding.model import Environment, LockFile
 from skaal.cli._load import AppSpec, load_app, load_bound_plan, load_plan
 from skaal.cli.deploy_cmd import _run_pulumi, _write_lock_pins
+from skaal.cli.destroy_cmd import _destroy_pulumi
 from skaal.deploy import BuildManifest, build_artefacts, pulumi_program_for
 from skaal.stubs import StubManifest, discover_app, emit_stubs
 
@@ -46,11 +48,22 @@ class DeployResult:
 
 
 @dataclass(frozen=True)
+class DestroyResult:
+    """Result of `skaal.api.destroy`."""
+
+    build: BuildResult
+    stack_name: str
+
+
+@dataclass(frozen=True)
 class DoctorReport:
     """Environment report returned by `skaal.api.doctor`."""
 
     python_version: str
     pulumi_path: str | None
+    docker_path: str | None
+    aws_auth_source: str
+    aws_region: str | None
     skaal_version: str
 
 
@@ -93,8 +106,27 @@ def doctor() -> DoctorReport:
     return DoctorReport(
         python_version=sys.version.split()[0],
         pulumi_path=shutil.which("pulumi"),
+        docker_path=shutil.which("docker"),
+        aws_auth_source=_aws_auth_source(),
+        aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
         skaal_version=skaal_version,
     )
+
+
+def _aws_auth_source() -> str:
+    """Describe which AWS credential source is currently visible."""
+    if os.getenv("AWS_ACCESS_KEY_ID"):
+        return "env"
+
+    profile = os.getenv("AWS_PROFILE")
+    if profile:
+        return f"profile:{profile}"
+
+    aws_dir = Path.home() / ".aws"
+    if (aws_dir / "credentials").exists() or (aws_dir / "config").exists():
+        return "shared-config"
+
+    return "not-detected"
 
 
 def build(
@@ -185,6 +217,48 @@ def deploy(
         preview=preview,
         lock_updated=updated_lock.entries != existing_lock.entries,
         lock=updated_lock,
+    )
+
+
+def destroy(
+    target: App | str,
+    *,
+    env_name: str = "prod",
+    toml_path: Path = Path("skaal.toml"),
+    lock_path: Path = Path("skaal.lock"),
+    out_dir: Path | None = None,
+    yes: bool = False,
+) -> DestroyResult:
+    """Render artefacts, destroy the Pulumi stack, and remove the stack record.
+
+    Args:
+        target: `module:attribute` reference or live `App` instance.
+        env_name: Environment name from `skaal.toml`.
+        toml_path: Settings file path.
+        lock_path: Lock file path used during binding.
+        out_dir: Optional destination directory for rendered artefacts.
+        yes: When true, skip the interactive confirmation prompt.
+
+    Returns:
+        The build result plus the destroyed stack name.
+    """
+    build_result = build(
+        target,
+        env_name=env_name,
+        toml_path=toml_path,
+        lock_path=lock_path,
+        out_dir=out_dir,
+    )
+    _destroy_pulumi(
+        bound=build_result.bound,
+        env=build_result.env,
+        program=pulumi_program_for(build_result.bound, build_result.env, build_result.build_dir),
+        yes=yes,
+        console=Console(),
+    )
+    return DestroyResult(
+        build=build_result,
+        stack_name=f"{build_result.bound.app}-{build_result.env.name}",
     )
 
 
