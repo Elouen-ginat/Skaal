@@ -1,5 +1,11 @@
 """Unified settings used by the Skaal CLI and Python API.
 
+Per-environment infrastructure config (target, region, backends, overrides)
+lives in `skaal.toml` and is loaded into a `skaal.binding.model.Environment`
+by `skaal.binding.environment.load_environment`. This module owns the
+*cross-environment* knobs instead — default paths, logging, and the default
+``--env`` name used when a CLI verb is invoked without ``-e``.
+
 Priority (highest to lowest):
   1. Keyword arguments passed at call time (or CLI flags)
   2. ``SKAAL_*`` environment variables
@@ -7,42 +13,31 @@ Priority (highest to lowest):
   4. ``[tool.skaal]`` section in the nearest ``pyproject.toml``
   5. Built-in defaults
 
-Per-stack overrides can be declared under ``[tool.skaal.stacks.<name>]``;
-call :meth:`SkaalSettings.for_stack` to resolve them against the base
-settings.
-
 Example ``pyproject.toml``::
 
     [tool.skaal]
-    app    = "mypackage.app:skaal_app"   # default MODULE:APP for build/plan/run
-    target = "gcp"                        # aws | gcp
-    region = "europe-west1"
-    out    = "artifacts"
-    stack  = "p-dev"
+    env  = "staging"      # default --env for verbs that don't set their own
+    toml = "skaal.toml"
+    lock = "skaal.lock"
+    out  = ".skaal/build"
 
-    [tool.skaal.stacks.p-dev]
-    gcp_project = "my-dev-proj"
-
-    [tool.skaal.stacks.p-ppr]
-    gcp_project = "my-ppr-proj"
-
-    [tool.skaal.stacks.p-prd]
-    gcp_project = "my-prd-proj"
-    region      = "europe-west4"
+    [tool.skaal.logging]
+    level   = "INFO"
+    format  = "text"      # text | json
+    loggers = { "skaal.deploy" = "DEBUG" }
 """
 
 from __future__ import annotations
 
 import tomllib
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
-
-def _empty_arg_lists() -> list[list[str]]:
-    return []
+LogFormat = Literal["text", "json"]
 
 
 # ── pyproject.toml discovery ──────────────────────────────────────────────────
@@ -88,80 +83,36 @@ class PyprojectTomlSource(PydanticBaseSettingsSource):
         return False
 
     def __call__(self) -> dict[str, Any]:
-        # Only return keys that are actually declared on the settings model.
         known = set(self.settings_cls.model_fields)
         return {k: v for k, v in self._data.items() if k in known}
 
 
-# ── Per-stack profile ─────────────────────────────────────────────────────────
+# ── Logging sub-model ─────────────────────────────────────────────────────────
 
 
-class StackProfile(BaseModel):
-    """Per-stack overrides layered on top of the base `SkaalSettings`.
+class LoggingSettings(BaseModel):
+    """``[tool.skaal.logging]`` sub-section.
 
-    Only the fields that may legitimately differ between stacks are exposed
-    here.  Everything left as ``None`` falls through to the base value.
-
-    ``overrides`` is a free-form dict of Pulumi config keys applied after
-    the core project/region on every deploy — e.g.
-    ``{"cloudRunMemory": "1Gi", "cloudRunMinInstances": 2}``.  Values are
-    stringified before being passed to ``pulumi config set``.
-
-    ``deletion_protection`` is a shortcut that expands at deploy time into
-    ``sqlDeletionProtection<ClassName>`` overrides for every
-    ``cloud-sql-postgres`` storage in the plan.  Set ``True`` on production
-    stacks to make Cloud SQL instances undeletable.
+    `SkaalSettings` exposes the same fields flattened with the ``log_*`` prefix
+    for ergonomics on the env-var surface (``SKAAL_LOG_LEVEL`` etc.); this
+    nested model exists so `[tool.skaal.logging]` in pyproject.toml stays
+    tidy.
     """
 
-    model_config = {"extra": "forbid"}
-
-    target: str | None = None
-    region: str | None = None
-    gcp_project: str | None = None
-    overrides: dict[str, str | int | bool] = Field(default_factory=dict)
-    deletion_protection: bool | None = None
-    env: dict[str, str] = Field(
-        default_factory=dict,
-        description="Literal environment variables baked into the compute container.",
-    )
-    invokers: list[str] = Field(
-        default_factory=list,
-        description=(
-            "IAM members allowed to invoke the service. "
-            "Defaults to ``['allUsers']`` (public) when the list is empty."
-        ),
-    )
-    labels: dict[str, str] = Field(
-        default_factory=dict,
-        description="Labels applied to supporting resources (Cloud Run, SQL, Redis).",
-    )
-    pre_deploy: list[list[str]] = Field(
-        default_factory=_empty_arg_lists,
-        description=(
-            "Commands to run before ``pulumi up``. Each entry is an argv list, "
-            'e.g. [["skaal", "migrate", "advance", "cache"]].'
-        ),
-    )
-    post_deploy: list[list[str]] = Field(
-        default_factory=_empty_arg_lists,
-        description=(
-            "Commands to run after a successful deploy. Each entry is an argv "
-            "list; Pulumi outputs are exported as SKAAL_OUTPUT_<KEY> env vars."
-        ),
-    )
+    level: str | None = None
+    format: LogFormat = "text"
+    loggers: dict[str, str] = Field(default_factory=dict)
 
 
-# ── Unified settings model ────────────────────────────────────────────────────
+# ── Central settings ──────────────────────────────────────────────────────────
 
 
 class SkaalSettings(BaseSettings):
-    """
-    Merged settings used by every ``skaal`` sub-command and Python API call.
+    """Cross-environment Skaal configuration.
 
-    Values are resolved in priority order: explicit argument > env var >
-    ``.skaal.env`` > ``pyproject.toml`` > default.  Both the CLI commands and
-    the :mod:`skaal.api` functions read this once and apply it only where the
-    caller did not pass an explicit value.
+    All fields are optional; a default applies when nothing else resolves.
+    CLI flags always win over what this class produces; this is the source of
+    truth only when the caller did not pass an explicit value.
     """
 
     model_config = SettingsConfigDict(
@@ -171,81 +122,43 @@ class SkaalSettings(BaseSettings):
         extra="ignore",
     )
 
-    # ── Shared ────────────────────────────────────────────────────────────────
-    app: str | None = Field(
+    # ── Paths / defaults consumed by CLI verbs ────────────────────────────────
+    env: str | None = Field(
         default=None,
-        description="Default MODULE:APP used when no positional argument is given.",
+        description=(
+            "Default environment name used by CLI verbs that accept ``--env``. "
+            "When unset, each verb falls back to its own built-in default."
+        ),
     )
-    target: str = Field(
-        default="aws",
-        description="Deploy target: aws or gcp.",
+    toml: Path = Field(
+        default=Path("skaal.toml"),
+        description="Path to the `skaal.toml` carrying ``[env.<name>]`` blocks.",
     )
-    region: str = Field(
-        default="us-east-1",
-        description="Cloud region.",
+    lock: Path = Field(
+        default=Path("skaal.lock"),
+        description="Path to the pin-on-first-deploy lock file.",
     )
-
-    # ── Build ─────────────────────────────────────────────────────────────────
     out: Path = Field(
-        default=Path("artifacts"),
-        description="Output directory for generated artifacts.",
-    )
-    # ── Deploy ────────────────────────────────────────────────────────────────
-    stack: str = Field(
-        default="dev",
-        description="Pulumi stack name.",
-    )
-    gcp_project: str | None = Field(
-        default=None,
-        description="GCP project ID (required for GCP target).",
-    )
-    overrides: dict[str, str | int | bool] = Field(
-        default_factory=dict,
-        description=(
-            "Raw Pulumi config overrides applied on every deploy. "
-            "Usually populated from a stack profile rather than the top level."
-        ),
-    )
-    deletion_protection: bool | None = Field(
-        default=None,
-        description=(
-            "Shortcut that expands into sqlDeletionProtection<Class> overrides "
-            "for every cloud-sql-postgres storage in the plan at deploy time."
-        ),
-    )
-    env: dict[str, str] = Field(default_factory=dict)
-    invokers: list[str] = Field(default_factory=list)
-    labels: dict[str, str] = Field(default_factory=dict)
-    pre_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
-    post_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
-
-    # ── Stack profiles ────────────────────────────────────────────────────────
-    stacks: dict[str, StackProfile] = Field(
-        default_factory=dict,
-        description=(
-            "Per-stack overrides keyed by stack name. Populated from "
-            "``[tool.skaal.stacks.<name>]`` in pyproject.toml. "
-            "Call :meth:`for_stack` to resolve them against the base settings."
-        ),
+        default=Path(".skaal/build"),
+        description="Output directory for rendered build artefacts.",
     )
 
-    # ── Stack resolution ──────────────────────────────────────────────────────
-    def for_stack(self, name: str | None = None) -> SkaalSettings:
-        """Return a new `SkaalSettings` with the *name* profile applied.
+    # ── Logging (flattened for env-var ergonomics) ────────────────────────────
+    log_level: str | None = None
+    log_format: LogFormat | None = None
+    log_loggers: dict[str, str] = Field(default_factory=dict)
 
-        Passing ``None`` or a stack name that has no profile returns a copy of
-        ``self`` unchanged (so callers can call this unconditionally).  When a
-        profile exists, any non-``None`` field on the profile wins over the
-        base setting, and the resolved ``stack`` field is set to *name*.
-        """
-        resolved_name = name if name is not None else self.stack
-        profile = self.stacks.get(resolved_name)
+    # ── Nested form pulled from [tool.skaal.logging] ──────────────────────────
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
-        updates: dict[str, Any] = {"stack": resolved_name}
-        if profile is not None:
-            updates |= profile.model_dump(exclude_none=True)
-
-        return self.model_copy(update=updates)
+    @property
+    def resolved_logging(self) -> LoggingSettings:
+        """Logging config with flat ``log_*`` overrides applied on top."""
+        return LoggingSettings(
+            level=self.log_level or self.logging.level,
+            format=self.log_format if self.log_format is not None else self.logging.format,
+            loggers={**self.logging.loggers, **self.log_loggers},
+        )
 
     @classmethod
     def settings_customise_sources(
@@ -256,10 +169,36 @@ class SkaalSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Insert pyproject.toml between dotenv and the built-in field defaults.
         return (
             init_settings,
             env_settings,
             dotenv_settings,
             PyprojectTomlSource(settings_cls),
         )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> SkaalSettings:
+    """Return the process-wide `SkaalSettings`, evaluating env/pyproject once.
+
+    The result is cached so repeated reads are cheap. Tests that mutate env
+    vars must call :func:`reset_settings_cache` to force a re-read.
+    """
+    return SkaalSettings()
+
+
+def reset_settings_cache() -> None:
+    """Drop the cached `SkaalSettings` instance (use in tests after env edits)."""
+    get_settings.cache_clear()
+
+
+__all__ = [
+    "LogFormat",
+    "LoggingSettings",
+    "PyprojectTomlSource",
+    "SkaalSettings",
+    "find_pyproject",
+    "get_settings",
+    "load_skaal_section",
+    "reset_settings_cache",
+]

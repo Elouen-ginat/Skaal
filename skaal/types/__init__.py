@@ -52,7 +52,6 @@ from skaal.types.deploy import (
     RouteSpec,
     ScheduleTriggerConfig,
     StackOutputs,
-    StackProfile,
     TargetName,
 )
 from skaal.types.duration import TTL, Duration, Retention
@@ -183,7 +182,6 @@ __all__ = [
     "SecretResolver",
     "SecretSpec",
     "StackOutputs",
-    "StackProfile",
     "StreamFn",
     "SupportsAsyncAppend",
     "SupportsAsyncSend",

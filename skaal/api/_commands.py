@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -13,6 +12,13 @@ from typing import TYPE_CHECKING, Never, TypeAlias
 from rich.console import Console
 
 from skaal.app import App
+from skaal.binding._probe import (
+    detect_aws_auth,
+    detect_gcp_auth,
+    resolve_aws_region,
+    resolve_gcp_project,
+)
+from skaal.binding.environment import load_environment
 from skaal.binding.model import Environment, LockFile
 from skaal.cli._load import AppSpec, load_app, load_bound_plan, load_plan
 from skaal.cli.deploy_cmd import _run_pulumi, _write_lock_pins
@@ -64,7 +70,12 @@ class DoctorReport:
     docker_path: str | None
     aws_auth_source: str
     aws_region: str | None
+    gcp_auth_source: str
+    gcp_project: str | None
     skaal_version: str
+    env_name: str | None = None
+    target: str | None = None
+    region: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,44 +100,49 @@ def init() -> Never:
     )
 
 
-def doctor() -> DoctorReport:
+def doctor(
+    *,
+    env_name: str | None = None,
+    toml_path: Path | None = None,
+) -> DoctorReport:
     """Return the local Skaal toolchain status.
 
+    Args:
+        env_name: Optional environment from `skaal.toml`. When provided, the
+            report's `target`, `region`, and `gcp_project` reflect that env.
+        toml_path: Override the `skaal.toml` lookup path. Defaults to walking
+            upward from the current directory.
+
     Returns:
-        The Python version, Pulumi location, and installed Skaal version.
+        The Python version, Pulumi location, and installed Skaal version,
+        plus the resolved environment fields when `env_name` is given.
 
     Raises:
         RuntimeError: If the Skaal package cannot be imported.
+        SkaalConfigError: If `env_name` is provided but missing from `skaal.toml`.
     """
     try:
         skaal_version = version("skaal")
     except PackageNotFoundError as exc:  # pragma: no cover
         raise RuntimeError("Skaal package metadata is not available.") from exc
 
+    env: Environment | None = None
+    if env_name is not None:
+        env = load_environment(env_name, path=toml_path)
+
     return DoctorReport(
         python_version=sys.version.split()[0],
         pulumi_path=shutil.which("pulumi"),
         docker_path=shutil.which("docker"),
-        aws_auth_source=_aws_auth_source(),
-        aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
+        aws_auth_source=detect_aws_auth(),
+        aws_region=resolve_aws_region(env),
+        gcp_auth_source=detect_gcp_auth(),
+        gcp_project=resolve_gcp_project(env),
         skaal_version=skaal_version,
+        env_name=env.name if env is not None else None,
+        target=env.target.value if env is not None else None,
+        region=env.region if env is not None else None,
     )
-
-
-def _aws_auth_source() -> str:
-    """Describe which AWS credential source is currently visible."""
-    if os.getenv("AWS_ACCESS_KEY_ID"):
-        return "env"
-
-    profile = os.getenv("AWS_PROFILE")
-    if profile:
-        return f"profile:{profile}"
-
-    aws_dir = Path.home() / ".aws"
-    if (aws_dir / "credentials").exists() or (aws_dir / "config").exists():
-        return "shared-config"
-
-    return "not-detected"
 
 
 def build(
