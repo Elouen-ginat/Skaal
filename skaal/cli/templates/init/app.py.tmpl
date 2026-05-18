@@ -20,7 +20,7 @@ class Counts(Store[int]):
     """Named integer counters."""
 
 
-@app.function()
+@app.expose()
 async def increment(name: str, by: int = 1) -> dict[str, int | str]:
     current = await Counts.get(name) or 0
     new_value = current + by
@@ -28,7 +28,7 @@ async def increment(name: str, by: int = 1) -> dict[str, int | str]:
     return {{"name": name, "value": new_value}}
 
 
-@app.function()
+@app.expose()
 async def get_count(name: str) -> dict[str, int | str]:
     value = await Counts.get(name) or 0
     return {{"name": name, "value": value}}

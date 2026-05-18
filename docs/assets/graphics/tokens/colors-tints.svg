@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="190" viewBox="0 0 700 190" fill="none">
+  <foreignObject width="700" height="190">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div>
+      <div style="height:60px;border-radius:14px;background:#0E1726;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;">Aa</div>
+      <div style="margin-top:8px;font-family:var(--font-heading);font-size:13px;font-weight:600;">fg-1</div>
+      <div class="value">100% ink</div>
+    </div>
+    <div>
+      <div style="height:60px;border-radius:14px;background:rgba(14,23,38,0.80);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;">Aa</div>
+      <div style="margin-top:8px;font-family:var(--font-heading);font-size:13px;font-weight:600;">fg-2</div>
+      <div class="value">80% — body</div>
+    </div>
+    <div>
+      <div style="height:60px;border-radius:14px;background:rgba(14,23,38,0.62);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;">Aa</div>
+      <div style="margin-top:8px;font-family:var(--font-heading);font-size:13px;font-weight:600;">fg-3</div>
+      <div class="value">62% — muted</div>
+    </div>
+    <div>
+      <div style="height:60px;border-radius:14px;background:rgba(14,23,38,0.42);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;">Aa</div>
+      <div style="margin-top:8px;font-family:var(--font-heading);font-size:13px;font-weight:600;">fg-4</div>
+      <div class="value">42% — tertiary</div>
+    </div>
+  </div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

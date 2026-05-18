@@ -3,151 +3,143 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from skaal.module import Module, ModuleExport
+
+if TYPE_CHECKING:
+    from skaal.binding import Environment, LockFile, Plan
+    from skaal.inference import Blueprint
 
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 class App(Module):
-    """
-    Central registry for a Skaal application.
+    """Central registry for a Skaal application.
 
-    `App` extends `Module` with HTTP mounting via `mount()`. All storage,
-    agent, function, channel, pattern, and attach methods are inherited from
-    `Module`.
-
-    Deployment target and region are environment concerns. They are passed to
-    `skaal deploy` via CLI flags or environment variables (`SKAAL_TARGET`,
-    `SKAAL_REGION`), not declared in application code. Scaling policy
-    (min/max instances, concurrency) lives in the catalog's
-    `[compute.X.deploy]` section so it can be overridden per environment
-    without touching source code.
+    `App` extends `Module` with HTTP mounting via `mount()`. Storage,
+    expose, topic, schedule, job, and attach methods are inherited
+    from `Module`. Deployment target and region are environment concerns
+    bound through `skaal.toml` and the binding layer (ADR 028 §6.3); they
+    are not declared in application code.
 
     Examples:
 
         app = App("my-service")
 
-        @app.storage(read_latency="< 5ms", durability="persistent")
+        @app.storage()
         class Profiles(Store[Profile]):
             pass
 
-        @app.function()
+        @app.expose()
         async def predict(customer_id: str) -> float:
             ...
     """
 
-    # ── WSGI app mounting ──────────────────────────────────────────────────
+    # ── Mounting (modules and ASGI apps) ───────────────────────────────────
 
-    def mount_wsgi(self, wsgi_app: Any | None = None, *, attribute: str) -> None:
+    @overload
+    def mount(self, target: Module, *, prefix: str) -> ModuleExport: ...
+
+    @overload
+    def mount(self, target: str, asgi_app: Any) -> None: ...
+
+    def mount(
+        self,
+        target: Module | str,
+        asgi_app: Any | None = None,
+        *,
+        prefix: str | None = None,
+    ) -> ModuleExport | None:
+        """Mount either a `Module` under a URL prefix or an ASGI app at a path.
+
+        Two forms are supported (dispatched on the first arg's type):
+
+        - ``app.mount(module, prefix="/api")`` — embed a `Module` and map
+          its HTTP-serving functions under a URL prefix. Returns a
+          `ModuleExport`.
+        - ``app.mount("/api", asgi_app)`` — mount an ASGI application at
+          a URL path (ADR 028 §6.4.1, ADR 032 §4.6). The inference layer
+          emits one ``ASGI_SERVICE`` resource per path.
+
+        WSGI users wrap their app with `starlette.middleware.wsgi.WSGIMiddleware`
+        (or `asgiref.WSGIMiddleware`) at the call site:
+
+            app.mount("/", WSGIMiddleware(dash_app.server))
         """
-        Register an external WSGI application to be served by this Skaal app.
+        if isinstance(target, str):
+            if asgi_app is None:
+                raise ValueError(
+                    "app.mount(path, asgi_app) requires a non-None asgi_app; "
+                    "pass the ASGI callable positionally as the second arg."
+                )
+            if not target.startswith("/"):
+                raise ValueError(f"mount path must start with '/': {target!r}")
+            if target == "/_skaal" or target.startswith("/_skaal/"):
+                raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
+            if not hasattr(self, "_asgi_path_mounts"):
+                self._asgi_path_mounts: dict[str, Any] = {}
+            if target in self._asgi_path_mounts:
+                raise ValueError(f"path already mounted: {target!r}")
+            self._asgi_path_mounts[target] = asgi_app
+            return None
 
-        Args:
-            wsgi_app:  The WSGI callable itself (e.g. ``dash_app.server``).
-                       Pass `None` if only generating deploy artifacts without
-                       a running Dash/Flask instance (e.g. Dash not installed).
-            attribute: Dotted attribute path in the source module used by the
-                       deploy generators to reference the WSGI app in generated
-                       entry-point files, e.g. `"dash_app.server"`.
-
-        `skaal run` uses *wsgi_app* directly and serves it via uvicorn plus
-        starlette `WSGIMiddleware`, so the full Dash/Flask UI is available at
-        `http://localhost:<port>`.
-
-        `skaal deploy` uses *attribute* to generate the correct entry point:
-
-        - Cloud Run: `main.py` with gunicorn serving `application`
-        - Lambda: `handler.py` with `Mangum` wrapping the WSGI app
-
-        Examples:
-
-            import dash
-            from skaal import App, Store
-
-            app = App("dashboard")
-
-            @app.storage(read_latency="< 5ms", durability="ephemeral", retention="30m")
-            class Sessions(Store[dict]):
-                pass
-
-            dash_app = dash.Dash(__name__)
-            app.mount_wsgi(dash_app.server, attribute="dash_app.server")
-
-            # In Dash callbacks:
-            @dash_app.callback(...)
-            def update(session_id):
-                state = Sessions.sync_get(session_id)
-                Sessions.sync_set(session_id, state)
-                return result
-        """
-        self._wsgi_app: Any | None = wsgi_app
-        self._wsgi_attribute: str = attribute
-
-    def mount_asgi(self, asgi_app: Any | None = None, *, attribute: str) -> None:
-        """
-        Register a native ASGI application (FastAPI, Starlette) to be served by
-        this Skaal app.
-
-        Prefer this over `mount_wsgi()` for ASGI-native frameworks. No
-        `WSGIMiddleware` adapter is needed, so you get full HTTP/2 and
-        WebSocket support.
-
-        Args:
-            asgi_app:  The ASGI callable (e.g. `fastapi_app`).
-                       Pass `None` when generating deploy artifacts without a
-                       live instance.
-            attribute: Dotted attribute path used by deploy generators in the
-                       generated entry-point files, e.g. `"fastapi_app"`.
-
-        Examples:
-
-            from fastapi import FastAPI
-            from skaal import App, Store
-
-            skaal_app = App("api")
-
-            @skaal_app.storage(read_latency="< 10ms", durability="persistent")
-            class Items(Store[Item]):
-                pass
-
-            fastapi_app = FastAPI()
-
-            @fastapi_app.get("/items/{item_id}")
-            async def get_item(item_id: str):
-                return await Items.get(item_id)
-
-            skaal_app.mount_asgi(fastapi_app, attribute="fastapi_app")
-        """
-        self._asgi_app: Any | None = asgi_app
-        self._asgi_attribute: str = attribute
-
-    # ── Module mounting ────────────────────────────────────────────────────
-
-    def mount(self, module: Module, *, prefix: str) -> ModuleExport:
-        """
-        Embed a Module AND map its HTTP-serving functions under a URL prefix.
-
-        Equivalent to `app.use(module)` but additionally registers route
-        prefix mappings so the deploy engine wires the proxy / API gateway
-        correctly.
-
-        Examples:
-
-            app.mount(auth, prefix="/auth")
-            # auth's functions are now accessible at /auth/*
-        """
+        if prefix is None:
+            raise TypeError("app.mount(module, prefix=...) requires the prefix keyword arg.")
         normalized = prefix if prefix.startswith("/") else f"/{prefix}"
         if normalized == "/_skaal" or normalized.startswith("/_skaal/"):
             raise ValueError("The /_skaal prefix is reserved for Skaal runtime endpoints")
-        exports = self.use(module)
-        # Record the prefix mapping for the deploy engine
-        ns = exports.namespace or module.name
+        exports = self.use(target)
+        ns = exports.namespace or target.name
         if not hasattr(self, "_mounts"):
             self._mounts: dict[str, str] = {}
         self._mounts[ns] = normalized
         return exports
+
+    # ── Inference ──────────────────────────────────────────────────────────
+
+    def blueprint(self) -> Blueprint:
+        """Walk this app and return its `Blueprint`.
+
+        The inference layer is the input to the binding layer (Phase 3, see
+        ADR 028 §6.2); each call walks the live module graph, so adding a
+        resource at runtime is reflected in the next `blueprint()` result.
+        """
+        from skaal.inference import blueprint as _blueprint
+
+        return _blueprint(self)
+
+    def plan(
+        self,
+        env: str | Environment = "local",
+        *,
+        toml_path: Path = Path("skaal.toml"),
+        lock_path: Path = Path("skaal.lock"),
+        lock: LockFile | None = None,
+    ) -> Plan:
+        """Return the deployment `Plan` for this app.
+
+        Args:
+            env: Environment name from `skaal.toml`, or a pre-loaded `Environment`.
+            toml_path: Optional path to `skaal.toml` when ``env`` is a name.
+            lock_path: Path to `skaal.lock` when ``lock`` is not supplied.
+            lock: Optional pre-loaded `LockFile`.
+
+        Returns:
+            The bound deployment `Plan` for this app.
+        """
+        from skaal.binding import Environment as LoadedEnvironment
+        from skaal.binding import LockFile as LoadedLockFile
+        from skaal.binding import plan as build_plan
+
+        environment = (
+            env
+            if isinstance(env, LoadedEnvironment)
+            else LoadedEnvironment.load(env, path=toml_path)
+        )
+        resolved_lock = lock if lock is not None else LoadedLockFile.load(lock_path)
+        return build_plan(self.blueprint(), environment, resolved_lock)
 
     # ── Introspection ──────────────────────────────────────────────────────
 
@@ -158,8 +150,5 @@ class App(Module):
 
     def __repr__(self) -> str:
         return (
-            f"App({self.name!r}, "
-            f"storage={list(self._storage)}, "
-            f"agents={list(self._agents)}, "
-            f"functions={list(self._functions)})"
+            f"App({self.name!r}, storage={list(self._storage)}, functions={list(self._functions)})"
         )

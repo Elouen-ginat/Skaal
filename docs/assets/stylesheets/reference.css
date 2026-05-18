@@ -91,7 +91,7 @@
 .md-typeset .doc.doc-object.doc-function > .doc-signature,
 .md-typeset .doc.doc-object.doc-attribute > .doc-signature,
 .md-typeset .doc.doc-object.doc-function > .doc-overloads{
-  margin: 1.7rem 1.5rem 0.5rem;
+  margin: 1.7rem 1.5rem 0.5rem !important;
 }
 
 .md-typeset .doc.doc-object.doc-class > .doc-contents,
@@ -343,7 +343,7 @@
  * ========================================================================== */
 .md-typeset .doc-signature {
   position: relative;
-  margin: 1.7rem 0 1.4rem;
+  margin: 1.7rem 0 1.4rem !important;
   border: 1px solid rgba(14, 23, 38, 0.08);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--bg-code-2) 0%, var(--bg-code) 100%);
@@ -360,6 +360,16 @@
   font: 700 0.7rem/1 var(--font-mono);
   letter-spacing: 0.16em;
   color: var(--skaal-color-signal-teal);
+}
+
+.md-typeset .doc-overloads .doc-signature::before {
+  content: "OVERLOAD";
+  position: absolute;
+  top: -1.25rem;
+  left: 0;
+  font: 700 0.7rem/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  color: var(--skaal-color-rust-copper);
 }
 
 /* "PYTHON" tag at the top of the dark window. */
@@ -402,6 +412,7 @@
 
 .highlight {
   position: relative;
+  margin-top;
 }
 
 /* "PYTHON" tag at the top of the dark window. */
@@ -517,7 +528,7 @@
   color: var(--sk-pyg-function);
 }
 
-/* Decorators (@storage, @app.function). */
+/* Decorators (@app.storage, @app.expose). */
 .md-typeset .doc-signature .nd,
 .md-typeset .doc-contents .highlight .nd {
   color: var(--sk-pyg-decorator);
@@ -1028,9 +1039,9 @@
 }
 
 body .md-content article {
-  padding: 0;
+  /* padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 0; */
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
@@ -1067,6 +1078,16 @@ body .md-content {
   letter-spacing: 0.10em;
   text-transform: uppercase;
   color: var(--fg-3);
+}
+
+.md-nav--primary .md-nav__title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font: 700 0.62rem / 1 var(--font-body);
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--fg-3);
 }
 
 .md-sidebar--primary .md-nav__title::after {

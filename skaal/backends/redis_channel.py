@@ -24,7 +24,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
+
+from skaal.backends._tokens import RedisChannel  # public re-export (ADR 032 §4.5)
+
+__all__ = ["RedisChannel", "RedisStreamChannel"]
 
 
 class RedisStreamChannel:
@@ -56,7 +60,9 @@ class RedisStreamChannel:
         """Create the async Redis client."""
         import redis.asyncio as aioredis
 
-        self._client = aioredis.from_url(self.url, decode_responses=True)
+        self._client = aioredis.from_url(  # type: ignore[no-untyped-call]
+            self.url, decode_responses=True
+        )
 
     async def _ensure_connected(self) -> None:
         if self._client is None:
@@ -164,13 +170,16 @@ class RedisStreamChannel:
     async def pending(self, topic: str, group: str) -> int:
         """Return the number of pending (unacknowledged) messages for *group*."""
         await self._ensure_connected()
-        info = await self._client.xpending(self._stream_key(topic), group)
+        info: Any = await self._client.xpending(self._stream_key(topic), group)
         # xpending returns a dict or list depending on redis-py version;
         # the first element / "pending" key is the pending count.
         if isinstance(info, dict):
-            return int(info.get("pending", 0))
-        if isinstance(info, (list, tuple)) and info:
-            return int(info[0])
+            mapping = cast(dict[str, Any], info)
+            return int(mapping.get("pending", 0))
+        if isinstance(info, (list, tuple)):
+            seq = cast(list[Any], list(cast(Any, info)))
+            if seq:
+                return int(seq[0])
         return 0
 
     async def stream_length(self, topic: str) -> int:

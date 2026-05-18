@@ -20,14 +20,20 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
+from typing_extensions import TypeVar
+
+from skaal.backends._base import Backend
 from skaal.storage import _decode_cursor, _encode_cursor, _normalize_limit
 from skaal.sync import run as _sync_run
-from skaal.types import BlobObject, Page
+from skaal.types import BlobItem, Page
 
 if TYPE_CHECKING:
     from skaal.backends.base import BlobBackend
+
+
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 
 
 def is_blob_model(obj: Any) -> bool:
@@ -40,14 +46,15 @@ def is_blob_model(obj: Any) -> bool:
         `True` when `obj` is a class registered through
         `@app.storage(kind="blob")`.
     """
-    return (
-        isinstance(obj, type)
-        and hasattr(obj, "__skaal_storage__")
-        and getattr(obj, "__skaal_storage__", {}).get("kind") == "blob"
-    )
+    from skaal.inference.model import BlueprintResource, ResourceKind
+
+    if not isinstance(obj, type):
+        return False
+    inferred = getattr(obj, "__skaal_inferred__", None)
+    return isinstance(inferred, BlueprintResource) and inferred.kind == ResourceKind.BLOB
 
 
-def validate_blob_model(store_cls: type) -> None:
+def validate_blob_model(store_cls: object) -> None:
     """Validate that `store_cls` is a concrete `BlobStore` subclass.
 
     Args:
@@ -60,12 +67,18 @@ def validate_blob_model(store_cls: type) -> None:
         raise TypeError('@app.storage(kind="blob") requires a skaal.BlobStore subclass.')
 
 
-class BlobStore:
+class BlobStore(Generic[B]):
     """Typed object storage with async and sync convenience methods.
 
     Subclass `BlobStore` to model binary assets that should be stored in a blob
     backend. The async methods map directly to the configured backend, while the
     `sync_*` helpers run the same operations through `skaal.sync.run`.
+
+    The optional generic parameter ``B`` is a `Backend` type-pin (ADR 028
+    §6.6, ADR 032 §4.4). ``class Reports(BlobStore[S3])`` pins the
+    resource to S3 regardless of environment defaults; the un-pinned
+    ``class Assets(BlobStore)`` leaves the binding open for the defaults
+    table.
 
     Examples:
         class Assets(BlobStore):
@@ -85,6 +98,14 @@ class BlobStore:
 
     _backend: ClassVar[BlobBackend | None] = None
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls is BlobStore:
+            return
+        from skaal.decorators import _attach_storage_inferred
+
+        _attach_storage_inferred(cls, kind="blob")
+
     @classmethod
     def wire(cls, backend: BlobBackend) -> None:
         """Bind a blob backend to this storage class.
@@ -102,6 +123,22 @@ class BlobStore:
             )
 
     @classmethod
+    async def native(cls) -> Any:
+        """Return the native SDK client for the wired backend (ADR 028 §6.13).
+
+        For type-pinned subclasses (``class Reports(BlobStore[S3])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b. In Phase 5a the runtime
+        unwraps `backend.native()` when defined, else returns the backend
+        instance itself.
+        """
+        from skaal._native import resolve_native
+
+        cls._ensure_wired()
+        assert cls._backend is not None
+        return await resolve_native(cls._backend)
+
+    @classmethod
     async def put_bytes(
         cls,
         key: str,
@@ -109,7 +146,7 @@ class BlobStore:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Store raw bytes under `key`.
 
         Args:
@@ -141,7 +178,7 @@ class BlobStore:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Upload a file from disk into the blob store.
 
         Args:
@@ -204,7 +241,7 @@ class BlobStore:
         return await cls._backend.download_file(key, destination)
 
     @classmethod
-    async def stat(cls, key: str) -> BlobObject | None:
+    async def stat(cls, key: str) -> BlobItem | None:
         """Return metadata for `key` without downloading the payload.
 
         Args:
@@ -249,7 +286,7 @@ class BlobStore:
         *,
         limit: int = 100,
         cursor: str | None = None,
-    ) -> Page[BlobObject]:
+    ) -> Page[BlobItem]:
         """List a single page of object metadata.
 
         Args:
@@ -268,7 +305,7 @@ class BlobStore:
         return await cls._backend.list_page(prefix=prefix, limit=limit, cursor=cursor)
 
     @classmethod
-    async def list(cls, prefix: str = "") -> builtins.list[BlobObject]:
+    async def list(cls, prefix: str = "") -> builtins.list[BlobItem]:
         """Return all object metadata matching `prefix`.
 
         Args:
@@ -281,7 +318,7 @@ class BlobStore:
             This helper drains every page into memory. Use `list_page` when you
             need cursor-based pagination.
         """
-        items: builtins.list[BlobObject] = []
+        items: builtins.list[BlobItem] = []
         cursor: str | None = None
         while True:
             page = await cls.list_page(prefix=prefix, limit=1000, cursor=cursor)
@@ -298,7 +335,7 @@ class BlobStore:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Synchronously store raw bytes under `key`.
 
         Args:
@@ -323,7 +360,7 @@ class BlobStore:
         *,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> BlobObject:
+    ) -> BlobItem:
         """Synchronously upload a file from disk.
 
         Args:
@@ -372,7 +409,7 @@ class BlobStore:
         return _sync_run(cls.download_file(key, destination))
 
     @classmethod
-    def sync_stat(cls, key: str) -> BlobObject | None:
+    def sync_stat(cls, key: str) -> BlobItem | None:
         """Synchronously return metadata for `key`.
 
         Args:
@@ -420,7 +457,7 @@ class BlobStore:
         *,
         limit: int = 100,
         cursor: str | None = None,
-    ) -> Page[BlobObject]:
+    ) -> Page[BlobItem]:
         """Synchronously list a single page of object metadata.
 
         Args:
@@ -437,7 +474,7 @@ class BlobStore:
         return _sync_run(cls.list_page(prefix=prefix, limit=limit, cursor=cursor))
 
     @classmethod
-    def sync_list(cls, prefix: str = "") -> builtins.list[BlobObject]:
+    def sync_list(cls, prefix: str = "") -> builtins.list[BlobItem]:
         """Synchronously return all object metadata matching `prefix`.
 
         Args:
@@ -483,7 +520,7 @@ def decode_blob_cursor(cursor: str | None, *, prefix: str) -> str | None:
     decoded = _decode_cursor(cursor)
     if decoded.get("mode") != "blob" or decoded.get("prefix") != prefix:
         raise ValueError("Cursor does not match this blob listing")
-    last_key = decoded.get("last_key")
+    last_key: Any = decoded.get("last_key")
     if last_key is None:
         return None
     if not isinstance(last_key, str):

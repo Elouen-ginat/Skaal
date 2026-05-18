@@ -1,5 +1,5 @@
 site_name: Skaal
-site_description: Infrastructure as Constraints for Python.
+site_description: Code-first infrastructure for Python.
 site_url: https://elouen-ginat.github.io/Skaal/
 repo_url: https://github.com/Elouen-ginat/Skaal
 repo_name: Elouen-ginat/Skaal
@@ -8,8 +8,8 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   custom_dir: docs/overrides
-  logo: design_system/app-icon.svg
-  favicon: design_system/favicon.svg
+  logo: assets/brand/app-icon.svg
+  favicon: assets/brand/favicon.svg
   features:
     - navigation.instant
     - navigation.sections
@@ -71,77 +71,75 @@ markdown_extensions:
       alternate_style: true
 
 extra_css:
-  - design_system/tokens/skaal-tokens.css
-  - design_system/styles/landing.css
+  - assets/stylesheets/skaal-tokens.css
+  - assets/stylesheets/landing.css
   - assets/stylesheets/extra.css
   - assets/stylesheets/reference.css
 
 nav:
   - Home: index.md
-  - Get Started: getting-started.md
+  - Get started: getting-started.md
+  - Concepts: concepts.md
   - Tutorials:
       - Overview: tutorials/index.md
-      - 1. Build a Counter App: tutorials/first-app.md
-      - 2. Add a FastAPI Surface: tutorials/http-api.md
-      - 3. Plan, Build, and Deploy: tutorials/planning-and-deployment.md
-      - 4. Relational Data and Migrations: tutorials/relational-and-migrations.md
+      - 1. Your first app: tutorials/first-app.md
+      - 2. Adding HTTP routes: tutorials/http-api.md
+      - 3. Planning and deploying: tutorials/planning-and-deployment.md
+      - 4. Relational data: tutorials/relational-and-migrations.md
       - 5. Files and Streaming: tutorials/files-and-streaming.md
   - Guides:
-      - How It Works: how-it-works.md
-      - Platform Features: platform-features.md
-      - Comparison: comparison.md
+      - How it works: how-it-works.md
+      - When to use Skaal: when-to-use.md
+      - What you can build: platform-features.md
+      - HTTP integration: http.md
       - FAQ: faq.md
-      - Examples: examples.md
-      - Custom Backends: custom-backends.md
-      - CLI: cli.md
-      - CLI Configuration: cli-configuration.md
-      - Catalogs: catalogs.md
-      - HTTP Integration: http.md
   - Reference:
+      - CLI:
+          - Commands: cli.md
+          - Configuration: cli-configuration.md
       - Python API:
           - Overview: reference/python-api.md
           - Core and Decorators: reference/python-api-core.md
           - Data Surfaces: reference/python-api-data.md
-          - Patterns and Agents: reference/python-api-patterns.md
           - Components and Scheduling: reference/python-api-components.md
           - CLI-Parity API: reference/python-api-cli-parity.md
           - Types and Policies: reference/python-api-types.md
-      - Design System: design_system/index.md
-      - Design Assets: design_system/ASSETS.md
-  - Architecture:
-      - Constraint Model: design/001-infrastructure-as-constraints.md
+  - Comparison: comparison.md
+  - What's new: whats-new.md
+  - Examples: examples.md
 
 extra:
   homepage: https://elouen-ginat.github.io/Skaal/
   header_links:
-    - label: Get Started
+    - label: Get started
       link: getting-started/
+    - label: Concepts
+      link: concepts/
     - label: Tutorials
       link: tutorials/
-    - label: How It Works
-      link: how-it-works/
+    - label: Comparison
+      link: comparison/
     - label: CLI
       link: cli/
     - label: API
       link: reference/python-api/
-    - label: Examples
-      link: examples/
   footer_tagline: >-
-    Infrastructure as constraints for Python. A Z3-backed planner that turns
-    latency, durability, and throughput requirements into a deployable stack.
+    Code-first infrastructure for Python. Declare typed primitives and
+    decorated functions; Skaal infers the architecture, binds it to your
+    target, and deploys it.
   footer_groups:
     - title: Docs
       links:
-        - label: Get Started
+        - label: Get started
           link: getting-started/
+        - label: Concepts
+          link: concepts/
         - label: Tutorials
           link: tutorials/
-        - label: How It Works
+        - label: How it works
           link: how-it-works/
-        - label: Catalogs
-          link: catalogs/
-        - label: Examples
-          link: examples/
+        - label: When to use Skaal
+          link: when-to-use/
     - title: Reference
       links:
         - label: Python API
@@ -150,10 +148,8 @@ extra:
           link: cli/
         - label: CLI Configuration
           link: cli-configuration/
-        - label: Constraint Model
-          link: design/001-infrastructure-as-constraints/
-        - label: Design System
-          link: design_system/
+        - label: Comparison
+          link: comparison/
     - title: Project
       links:
         - label: GitHub
@@ -173,14 +169,11 @@ extra:
           external: true
     - title: Resources
       links:
-        - label: Pulumi
-          link: https://www.pulumi.com/docs/
-          external: true
-        - label: Z3
-          link: https://z3prover.github.io/api/html/
-          external: true
         - label: FastAPI
           link: https://fastapi.tiangolo.com/
+          external: true
+        - label: Pulumi
+          link: https://www.pulumi.com/docs/
           external: true
         - label: AWS
           link: https://docs.aws.amazon.com/
@@ -188,8 +181,8 @@ extra:
         - label: GCP
           link: https://cloud.google.com/docs
           external: true
-        - label: Docker
-          link: https://docs.docker.com/
+        - label: Examples
+          link: examples/
           external: true
 
 copyright: Copyright &copy; 2026 Skaal contributors

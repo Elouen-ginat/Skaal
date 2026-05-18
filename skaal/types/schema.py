@@ -16,46 +16,49 @@ Usage::
         full_name: str = ""   # new in v2 (renamed from 'name')
 
     @migrate_from(UserV1, to=UserV2)
-    def migrate_user_v1_to_v2(old: dict) -> dict:
+    def migrate_user_v1_to_v2(old: dict[str, Any]) -> dict[str, Any]:
         return {**old, "full_name": old.get("name", "")}
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
+
+_MigrationFn = Callable[[dict[str, Any]], dict[str, Any]]
 
 # Registry: (source_model_name, source_version) -> migration_fn
-_MIGRATIONS: dict[tuple[str, int], Callable[[dict], dict]] = {}
+_MIGRATIONS: dict[tuple[str, int], _MigrationFn] = {}
 
 
 def migrate_from(
     source: type,
     *,
     to: type,
-) -> Callable[[Callable[[dict], dict]], Callable[[dict], dict]]:
+) -> Callable[[_MigrationFn], _MigrationFn]:
     """
     Register a migration function from ``source`` model version to ``to`` version.
 
-    The decorated function receives the raw ``dict`` from storage and must
-    return a ``dict`` compatible with the ``to`` model.
+    The decorated function receives the raw ``dict[str, Any]`` from storage and must
+    return a ``dict[str, Any]`` compatible with the ``to`` model.
 
     Example::
 
         @migrate_from(UserV1, to=UserV2)
-        def _(old: dict) -> dict:
+        def _(old: dict[str, Any]) -> dict[str, Any]:
             return {**old, "full_name": old.pop("name", "")}
     """
     source_version = getattr(source, "__skaal_version__", 1)
     source_name = source.__name__
 
-    def decorator(fn: Callable[[dict], dict]) -> Callable[[dict], dict]:
+    def decorator(fn: _MigrationFn) -> _MigrationFn:
         _MIGRATIONS[(source_name, source_version)] = fn
         return fn
 
     return decorator
 
 
-def apply_migrations(data: dict, model: type) -> dict:
+def apply_migrations(data: dict[str, Any], model: type) -> dict[str, Any]:
     """
     Upgrade *data* to the current version of *model* by running registered
     migration functions in sequence.
@@ -69,7 +72,7 @@ def apply_migrations(data: dict, model: type) -> dict:
     if stored_version >= target_version:
         return data
 
-    current = dict(data)
+    current: dict[str, Any] = dict(data)
     model_name = model.__name__
 
     for v in range(stored_version, target_version):

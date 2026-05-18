@@ -13,7 +13,7 @@ class AuthClaims(Protocol):
     def get(self, key: str, default: Any | None = None) -> Any: ...
 
 
-class InvokeContext(Protocol):
+class InvocationContext(Protocol):
     """Read-only metadata for a single invocation attempt."""
 
     function_name: str
@@ -27,7 +27,7 @@ class InvokeContext(Protocol):
     span_id: str | None
 
 
-BeforeInvoke: TypeAlias = Callable[[InvokeContext], Awaitable[None]]
+BeforeInvocation: TypeAlias = Callable[[InvocationContext], Awaitable[None]]
 
 
 class StreamFn(Protocol[T_co]):

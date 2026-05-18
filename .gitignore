@@ -48,3 +48,8 @@ Thumbs.db
 
 # uv
 uv.lock
+
+# Local Pulumi state and lambda test artifacts
+.pulumi-passphrase
+.lambda-invoke.json
+.lambda-payload.json

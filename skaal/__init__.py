@@ -1,135 +1,141 @@
-"""
-Skaal — Infrastructure as Constraints.
+"""Skaal — a Python framework where the application code is the infrastructure declaration.
 
-Write it once. Scale it with a word.
+This is the `0.4.0a0` line. The `0.3.x` constraint-solver surface (Z3, TOML
+catalogs, `Latency` / `Durability` / `AccessPattern`, `@app.handler`,
+`@app.scale`, `@app.shared`) has been removed per ADR 028. The inference
+(`skaal.inference`), binding (`skaal.binding`), typed `Backend` tokens, and
+`FunctionRef` typing contract land in Phases 2-5; until then the public
+surface is a strict subset of the eventual `__all__` in ADR 028 §8.
 """
 
 from skaal import api, types
 from skaal._logging import ensure_null_handler as _ensure_null_handler
-from skaal.agent import Agent, agent
+from skaal.api import PlanChange, PlanDiff, SourceMatch
 from skaal.app import App
-from skaal.blob import BlobStore
-from skaal.channel import Channel
-from skaal.components import (
-    APIGateway,
-    AppRef,
-    AuthConfig,
-    ExternalObservability,
-    ExternalQueue,
-    ExternalStorage,
-    Proxy,
-    Route,
-    ScheduleTrigger,
+from skaal.backends._base import Backend
+from skaal.binding import (
+    BackendCapabilities,
+    BackendConfig,
+    BackendSpec,
+    Environment,
+    EnvOverride,
+    LockEntry,
+    LockFile,
+    Plan,
+    PlannedResource,
+    Target,
+    plan,
 )
+from skaal.blob import BlobStore
+from skaal.components import ExternalQueue, ExternalStorage
 from skaal.decorators import (
-    compute,
-    handler,
-    scale,
-    shared,
+    FunctionRef,
+    connect,
+    expose,
     storage,
 )
+from skaal.inference import (
+    Blueprint,
+    BlueprintResource,
+    Edge,
+    Overrides,
+    ResourceKind,
+    SchemaRef,
+    SourceLocation,
+    blueprint,
+)
 from skaal.module import Module, ModuleExport
-from skaal.patterns import EventLog, Outbox, Projection, Saga, SagaStep
-from skaal.relational import ensure_schema as ensure_relational_schema
-from skaal.relational import open_session as open_relational_session
+from skaal.plugins import Plugin, PluginRegistry, load_plugins
 from skaal.schedule import Cron, Every, Schedule, ScheduleContext
 from skaal.secrets import Secret, SecretRegistry
 from skaal.storage import Store
-from skaal.sync import run as sync_run
+from skaal.table import Table
+from skaal.topic import Topic
 from skaal.types import (
     TTL,
-    BeforeInvoke,
-    BlobObject,
+    BeforeInvocation,
+    BlobItem,
     Bulkhead,
     CircuitBreaker,
     Duration,
-    EngineTelemetrySnapshot,
-    InvokeContext,
+    InvocationContext,
     JobHandle,
     JobResult,
     JobSpec,
     JobStatus,
     Page,
-    RateLimitPolicy,
-    ReadinessState,
-    RelationalMigrationOp,
-    RelationalMigrationPlan,
-    RelationalMigrationStatus,
-    RelationalMigrationStep,
-    RelationalRevision,
+    RateLimit,
     Retention,
-    RetryPolicy,
+    Retry,
     SecondaryIndex,
-    TelemetryConfig,
 )
-from skaal.vector import VectorStore
 
 _ensure_null_handler()
 
 __all__ = [
     "TTL",
-    "APIGateway",
-    "Agent",
     "App",
-    "AppRef",
-    "AuthConfig",
-    "BeforeInvoke",
-    "BlobObject",
+    "Backend",
+    "BackendCapabilities",
+    "BackendConfig",
+    "BackendSpec",
+    "BeforeInvocation",
+    "BlobItem",
     "BlobStore",
+    "Blueprint",
+    "BlueprintResource",
     "Bulkhead",
-    "Channel",
     "CircuitBreaker",
     "Cron",
     "Duration",
-    "EngineTelemetrySnapshot",
-    "EventLog",
+    "Edge",
+    "EnvOverride",
+    "Environment",
     "Every",
-    "ExternalObservability",
     "ExternalQueue",
     "ExternalStorage",
-    "InvokeContext",
+    "FunctionRef",
+    "InvocationContext",
     "JobHandle",
     "JobResult",
     "JobSpec",
     "JobStatus",
+    "LockEntry",
+    "LockFile",
     "Module",
     "ModuleExport",
-    "Outbox",
+    "Overrides",
     "Page",
-    "Projection",
-    "Proxy",
-    "RateLimitPolicy",
-    "ReadinessState",
-    "RelationalMigrationOp",
-    "RelationalMigrationPlan",
-    "RelationalMigrationStatus",
-    "RelationalMigrationStep",
-    "RelationalRevision",
+    "Plan",
+    "PlanChange",
+    "PlanDiff",
+    "PlannedResource",
+    "Plugin",
+    "PluginRegistry",
+    "RateLimit",
+    "ResourceKind",
     "Retention",
-    "RetryPolicy",
-    "Route",
-    "Saga",
-    "SagaStep",
+    "Retry",
     "Schedule",
     "ScheduleContext",
-    "ScheduleTrigger",
+    "SchemaRef",
     "SecondaryIndex",
     "Secret",
     "SecretRegistry",
+    "SourceLocation",
+    "SourceMatch",
     "Store",
-    "TelemetryConfig",
-    "VectorStore",
-    "agent",
+    "Table",
+    "Target",
+    "Topic",
     "api",
-    "compute",
-    "ensure_relational_schema",
-    "handler",
-    "open_relational_session",
-    "scale",
-    "shared",
+    "blueprint",
+    "connect",
+    "expose",
+    "load_plugins",
+    "plan",
     "storage",
-    "sync_run",
     "types",
 ]
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"

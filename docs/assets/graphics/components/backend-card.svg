@@ -1,0 +1,20 @@
+<svg width="860" height="280" viewBox="0 0 860 280" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal binding card</title>
+  <rect width="860" height="280" rx="24" fill="#FFFFFF" stroke="#D9E3EA"/>
+  <circle cx="44" cy="44" r="20" fill="#F0FBE9"/>
+  <path d="M36 44L42 50L54 36" stroke="#0E1726" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="46" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="30" font-weight="700">Sessions -> redis</text>
+  <rect x="700" y="22" width="134" height="34" rx="17" fill="#EFFBEA" stroke="#9AE66E"/><text x="726" y="45" fill="#3A7C28" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15" font-weight="700">Pinned in lock</text>
+  <path d="M36 82H824" stroke="#E3EBF0"/>
+  <text x="38" y="124" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Primitive</text><text x="190" y="124" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="600">Store[Session, Redis]</text>
+  <text x="38" y="154" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Environment</text><text x="190" y="154" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="600">prod</text>
+  <text x="38" y="184" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Target</text><text x="190" y="184" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="600">aws</text>
+  <text x="38" y="214" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Region</text><text x="190" y="214" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="600">us-east-1</text>
+  <text x="38" y="244" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Runtime URL</text><text x="190" y="244" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">redis://cache.internal:6379</text>
+  <path d="M324 110H550M324 150H550M324 190H550M324 230H550" stroke="#E3EBF0"/>
+  <text x="356" y="124" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Declared in</text><text x="356" y="154" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="600">examples/session_cache.py</text>
+  <text x="356" y="184" fill="#718094" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="15">Why this bind</text><text x="356" y="214" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16">type pin plus environment config</text>
+  <circle cx="640" cy="144" r="18" fill="#F5F8FF" stroke="#D9E3EA"/><text x="626" y="151" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="18" font-weight="700">aws</text>
+  <circle cx="700" cy="144" r="18" fill="#FFF6EF" stroke="#E8D8CC"/><path d="M693 144C693 138 697 134 702 134C708 134 711 139 711 144C711 150 707 154 700 154C695 154 693 150 693 144Z" fill="#5FA8FF"/><path d="M689 145C689 149 692 152 696 152H699V145H689Z" fill="#9AE66E"/><path d="M705 145V152H708C712 152 715 149 715 145H705Z" fill="#C96A3D"/>
+  <text x="36" y="266" fill="#13B5A8" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14" font-weight="700">Binding result</text><text x="138" y="266" fill="#0E1726" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">One primitive, one environment, one concrete backend.</text>
+</svg>

@@ -1,79 +1,93 @@
-# Platform Features
+# What you can build
 
-Skaal is not only a solver wrapper. It gives you one application model across typed data surfaces, compute, local runtime behavior, and generated deployment artifacts.
+Skaal is for application shapes you already recognize: APIs, jobs, uploads, workers, and data-backed services. The difference is that the app code also declares the infrastructure shape.
 
-<div class="skaal-feature-grid">
-  <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/stack-cubes.svg" alt="Illustration of stacked infrastructure layers." />
-    <div>
-      <h3>Typed data surfaces</h3>
-      <ul>
-        <li><code>Map[K, V]</code> and <code>Collection[T]</code> for application storage</li>
-        <li><code>BlobStore</code> for files and object workflows</li>
-        <li>relational and vector tiers for SQL and embedding use cases</li>
-        <li>backend selection driven by catalogs for local, AWS, and GCP</li>
-      </ul>
-    </div>
-  </section>
-  <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/analytics-screen.svg" alt="Dashboard illustration for runtime and observability capabilities." />
-    <div>
-      <h3>Runtime and execution model</h3>
-      <ul>
-        <li>async-first runtime design</li>
-        <li>resilience policies on compute functions</li>
-        <li>schedules, channels, and background work support</li>
-        <li>local serving, hot reload, and mounted ASGI or WSGI apps</li>
-      </ul>
-    </div>
-  </section>
-  <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/cloud-route.svg" alt="Cloud route illustration showing movement from local to cloud targets." />
-    <div>
-      <h3>Deployment without handwritten glue</h3>
-      <ul>
-        <li>generated Dockerfiles and runtime entry points</li>
-        <li>Pulumi programs and stack metadata</li>
-        <li>local target for Docker-backed development deployment</li>
-        <li>AWS and GCP packaging flows from the same app definition</li>
-      </ul>
-    </div>
-  </section>
-  <section class="skaal-feature-card">
-    <img src="../design_system/illustrations/code-console.svg" alt="Code console illustration for framework integration and developer workflow." />
-    <div>
-      <h3>Framework and product integration</h3>
-      <ul>
-        <li>FastAPI, Starlette, and Dash fit the mounted-app model well</li>
-        <li>plugin discovery for backends, channels, and catalogs</li>
-        <li>example apps for APIs, streaming, uploads, dashboards, and mesh flows</li>
-        <li>Python API equivalents of the CLI for orchestration and testing</li>
-      </ul>
-    </div>
-  </section>
-</div>
+## A mounted HTTP API
 
-## Capability areas
+![Cloud route illustration](assets/graphics/illustrations/cloud-route.svg)
 
-### Planning and selection
+Use `Store`, `Table`, and `@app.expose()` behind a mounted FastAPI or Starlette app.
 
-Skaal plans against TOML catalogs using a Z3-backed solver. That lets the app express required behavior while the catalog controls what is allowed in a given environment.
+Reach for this when you want:
 
-### Data and storage
+- normal request validation and auth in your web framework
+- Skaal-managed data surfaces behind those routes
+- one deploy path for local and cloud environments
 
-The framework can reason about more than one storage shape. You can keep a simple typed key-value surface, move to blob workflows, or use relational and vector tiers when the workload needs them, without discarding the broader planning model.
+Start from [Tutorial 2](tutorials/http-api.md) or `examples/todo_api`.
 
-### Runtime composition
+## A scheduled job
 
-`Module` and `App` let you build composable Skaal systems. HTTP is intentionally handled through mounted frameworks instead of forcing everything through a framework-specific abstraction. That keeps the runtime close to normal Python service architecture.
+Use `@app.schedule(...)` when the app needs periodic work such as compaction, sync, reporting, or cleanup.
 
-### Deployment outputs
+Good fit:
 
-The deployment pipeline produces real artifacts instead of asking you to hand-maintain the glue around them. That is the practical value of planning: once the route is selected, Skaal has enough information to generate the target-specific output.
+- read from a table, write to a store, publish to a topic
+- keep the schedule declaration next to the business logic
 
-## Where to drill deeper
+What it does not do:
 
-- [How Skaal Works](how-it-works.md) for the lifecycle from constraints to artifacts
-- [Catalogs](catalogs.md) for the environment model and overrides
-- [CLI](cli.md) for operational commands
-- [Python API](reference/python-api.md) for in-process planning and deployment
+- It does not replace a workflow engine. Multi-step orchestration still belongs in application code.
+
+## A worker or fan-out service
+
+Use `Topic[T]` plus exposed functions to publish events and process them in application-owned code.
+
+Good fit:
+
+- signup events
+- notifications
+- ingest pipelines
+- background fan-out work
+
+## A file API
+
+![Analytics screen illustration](assets/graphics/illustrations/analytics-screen.svg)
+
+Use `BlobStore` when the app uploads, lists, downloads, and deletes files.
+
+Good fit:
+
+- user uploads
+- export bundles
+- media or document storage
+
+Start from `examples/file_upload_api` and [Tutorial 5](tutorials/files-and-streaming.md).
+
+## A relational app
+
+Use `Table` when the data model needs SQL queries, transactions, or explicit schema management.
+
+Good fit:
+
+- comment systems
+- line-of-business CRUD apps
+- data with joins, indexes, and migrations
+
+What it does not do:
+
+- It does not remove schema design. You still need to own your model and migration discipline.
+
+## A streaming endpoint
+
+Use `app.invoke_stream(...)` when the response is an async iterator and your public HTTP layer should stream it as SSE or chunked output.
+
+Good fit:
+
+- token streaming
+- progress updates
+- long-running request output
+
+See `examples/fastapi_streaming` for the exact pattern.
+
+## A mounted service from another framework
+
+![Stack illustration](assets/graphics/illustrations/stack-cubes.svg)
+
+Skaal does not try to replace your web framework. Mount the ASGI app you already want to use and keep Skaal responsible for the app graph, data surfaces, and deploy artifacts.
+
+## Next
+
+- Read [HTTP integration](http.md) for the route boundary.
+- Read [Examples](examples.md) for complete repo apps.
+- Read [When to use Skaal](when-to-use.md) if you are still deciding whether this is the right tool.

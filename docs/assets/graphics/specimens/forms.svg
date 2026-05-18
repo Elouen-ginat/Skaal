@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="180" viewBox="0 0 700 180" fill="none">
+  <foreignObject width="700" height="180">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+<style>
+  .fld { display:flex; flex-direction:column; gap:6px; }
+  .fld label { font: 600 11px/1 'IBM Plex Sans'; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(14,23,38,0.6); }
+  .fld input, .fld select { padding: 10px 12px; border: 1px solid rgba(167,180,194,0.5); border-radius: 12px; background: #fff; font: 500 14px 'IBM Plex Sans'; color: #0E1726; outline: none; transition: border-color 140ms; }
+  .fld input:focus, .fld select:focus { border-color: #13B5A8; box-shadow: 0 0 0 3px rgba(19,181,168,0.18); }
+</style>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+  <div class="fld"><label>App name</label><input value="acme" /></div>
+  <div class="fld"><label>Environment</label><select><option>local</option><option>dev</option><option>staging</option><option>prod</option></select></div>
+  <div class="fld"><label>Module path</label><input value="acme.app:app" style="font-family:'IBM Plex Mono';font-size:13px;" /></div>
+  <div class="fld"><label>Region</label><input placeholder="eu-west-1" /></div>
+</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

@@ -21,12 +21,11 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, TypeAlias, cast
+from typing import Annotated, Any, Literal, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, field_validator
-from typing_extensions import TypedDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from skaal.types import AsyncPublishTarget
 
@@ -93,6 +92,9 @@ class Every(BaseModel):
         `Cron`: Use cron syntax for calendar-based schedules.
     """
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["every"] = "every"
     interval: str
 
     @field_validator("interval")
@@ -176,6 +178,9 @@ class Cron(BaseModel):
         `Every`: Use interval syntax for fixed-rate schedules.
     """
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["cron"] = "cron"
     expression: str
 
     @field_validator("expression")
@@ -212,14 +217,9 @@ class ScheduleContext(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-# Union alias for type annotations
-Schedule: TypeAlias = Every | Cron
-
-
-class ScheduleFunctionMetadata(TypedDict):
-    trigger: Schedule
-    emit_to: object | None
-    timezone: str
+# Discriminated union used by `ResourceOverrides.trigger` so pydantic
+# can re-validate either shape from the canonical JSON form.
+Schedule: TypeAlias = Annotated[Every | Cron, Field(discriminator="kind")]
 
 
 def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
@@ -236,8 +236,8 @@ def build_apscheduler_trigger(trigger: Schedule, *, timezone: str) -> Any:
     from apscheduler.triggers.interval import IntervalTrigger
 
     if isinstance(trigger, Every):
-        return IntervalTrigger(seconds=trigger.seconds, timezone=timezone)
-    return CronTrigger.from_crontab(trigger.expression, timezone=timezone)
+        return IntervalTrigger(seconds=int(trigger.seconds), timezone=timezone)
+    return cast(Any, CronTrigger).from_crontab(trigger.expression, timezone=timezone)
 
 
 def build_scheduled_job(
@@ -288,49 +288,6 @@ def build_scheduled_job(
     return _job
 
 
-def create_async_scheduler(
-    scheduled: Mapping[str, Any],
-    *,
-    event_loop: Any | None = None,
-    logger: Any | None = None,
-    log_lifecycle: bool = False,
-) -> Any:
-    """Create an `AsyncIOScheduler` for the registered scheduled callables.
-
-    Args:
-        scheduled: Mapping of job names to decorated scheduled functions.
-        event_loop: Optional event loop to bind into the scheduler.
-        logger: Logger used for scheduled job lifecycle messages.
-        log_lifecycle: Whether to emit start and completion log messages.
-
-    Returns:
-        Configured APScheduler `AsyncIOScheduler` instance.
-
-    See Also:
-        `build_scheduled_job`: Wrap each callable with Skaal runtime behavior.
-    """
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-    scheduler = (
-        AsyncIOScheduler(event_loop=event_loop) if event_loop is not None else AsyncIOScheduler()
-    )
-
-    for name, fn in scheduled.items():
-        meta = cast(ScheduleFunctionMetadata, fn.__skaal_schedule__)
-        scheduler.add_job(
-            build_scheduled_job(
-                fn,
-                name=name,
-                emit_to=cast(AsyncPublishTarget[object] | None, meta.get("emit_to")),
-                logger=logger,
-                log_lifecycle=log_lifecycle,
-            ),
-            build_apscheduler_trigger(meta["trigger"], timezone=meta.get("timezone", "UTC")),
-        )
-
-    return scheduler
-
-
 async def _publish_schedule_result(target: AsyncPublishTarget[object], payload: object) -> None:
     send = cast(Callable[[object], Awaitable[None]] | None, getattr(target, "send", None))
     if callable(send):
@@ -352,5 +309,4 @@ __all__ = [
     "ScheduleContext",
     "build_apscheduler_trigger",
     "build_scheduled_job",
-    "create_async_scheduler",
 ]

@@ -1,0 +1,30 @@
+<svg width="760" height="360" viewBox="0 0 760 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">Skaal pipeline diagram</title>
+  <rect width="760" height="360" rx="28" fill="#0F1828"/>
+  <text x="36" y="44" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="28" font-weight="700">Declare -> Infer -> Bind -> Generate -> Deploy</text>
+  <rect x="34" y="118" width="126" height="96" rx="18" fill="#141F31" stroke="#33455F"/>
+  <rect x="178" y="118" width="126" height="96" rx="18" fill="#162234" stroke="#4D5E73"/>
+  <rect x="322" y="118" width="126" height="96" rx="18" fill="#1A2638" stroke="#4D5E73"/>
+  <rect x="466" y="118" width="126" height="96" rx="18" fill="#1E2A3B" stroke="#4D5E73"/>
+  <rect x="610" y="118" width="116" height="96" rx="18" fill="#203324" stroke="#9AE66E" stroke-width="3"/>
+  <path d="M160 166H178" stroke="#CDD7E0" stroke-width="3" stroke-linecap="round"/>
+  <path d="M304 166H322" stroke="#CDD7E0" stroke-width="3" stroke-linecap="round"/>
+  <path d="M448 166H466" stroke="#CDD7E0" stroke-width="3" stroke-linecap="round"/>
+  <path d="M592 166H610" stroke="#9AE66E" stroke-width="4" stroke-linecap="round"/>
+  <text x="58" y="148" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">Declare</text>
+  <text x="58" y="176" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Store</text>
+  <text x="58" y="198" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Table</text>
+  <text x="202" y="148" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">Infer</text>
+  <text x="202" y="176" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Blueprint</text>
+  <text x="202" y="198" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">resource graph</text>
+  <text x="346" y="148" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">Bind</text>
+  <text x="346" y="176" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">skaal.toml</text>
+  <text x="346" y="198" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">skaal.lock</text>
+  <text x="490" y="148" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">Generate</text>
+  <text x="490" y="176" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Dockerfile</text>
+  <text x="490" y="198" fill="#E1E9F0" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Pulumi program</text>
+  <text x="634" y="148" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="16" font-weight="700">Deploy</text>
+  <text x="634" y="176" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">Pulumi up</text>
+  <text x="634" y="198" fill="#FFFFFF" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">lock updated</text>
+  <text x="34" y="300" fill="#AEBBC8" font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" font-size="14">One app graph. One named environment. One render path.</text>
+</svg>

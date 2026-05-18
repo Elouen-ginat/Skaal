@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="210" viewBox="0 0 700 210" fill="none">
+  <foreignObject width="700" height="210">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+<style>
+  .pchip { display:inline-flex; align-items:center; gap:8px; margin: 0 8px 8px 0;
+    padding: 6px 12px 6px 8px; border-radius: 12px;
+    background:#fff; border: 1px solid rgba(167,180,194,0.45);
+    font: 500 13px 'IBM Plex Mono', monospace; color:#0E1726;
+    box-shadow: 0 1px 2px rgba(14,23,38,0.04); }
+  .pchip .glyph { width:22px; height:22px; border-radius:6px; background:#F2F4F7;
+    display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .pchip .kw { color:#5FA8FF; }
+  .pchip .cls { color:#0E1726; font-weight:600; }
+  .pchip .gen { color:rgba(14,23,38,0.55); }
+  .pchip .pin { display:inline-flex; align-items:center; gap:4px;
+    margin-left: 6px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(19,181,168,0.12); color: #0F8E84;
+    font: 600 10.5px 'IBM Plex Sans'; letter-spacing: 0.03em; }
+  .pchip .pin::before { content:""; width:5px; height:5px; border-radius:50%;
+    background:#13B5A8; box-shadow: 0 0 0 2px rgba(19,181,168,0.25); }
+</style>
+<div style="display:flex;flex-wrap:wrap;">
+  <span class="pchip">
+    <span class="glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#0E1726" stroke-width="1.6"/><path d="M3 11h18M9 5v14" stroke="#0E1726" stroke-width="1.6"/></svg></span>
+    <span class="kw">class </span><span class="cls">Users</span><span class="gen">(Store[User])</span>
+  </span>
+  <span class="pchip">
+    <span class="glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 9l8-5 8 5v8l-8 5-8-5z" stroke="#0E1726" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+    <span class="kw">class </span><span class="cls">Avatars</span><span class="gen">(BlobStore)</span>
+  </span>
+  <span class="pchip">
+    <span class="glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8h14a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3H6l-3 3V8z" stroke="#0E1726" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+    <span class="kw">class </span><span class="cls">SignupEvents</span><span class="gen">(Topic[User])</span>
+  </span>
+  <span class="pchip">
+    <span class="glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="2.5" stroke="#0E1726" stroke-width="1.6"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6" stroke="#0E1726" stroke-width="1.6"/></svg></span>
+    <span class="kw">class </span><span class="cls">Sales</span><span class="gen">(Table[BigQuery])</span>
+    <span class="pin">pinned</span>
+  </span>
+  <span class="pchip">
+    <span class="glyph" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#0E1726" stroke-width="1.6"/><path d="M9 14c0-3 3-5 5-3" stroke="#13B5A8" stroke-width="1.6" stroke-linecap="round"/><path d="M9 10h6" stroke="#13B5A8" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+    <span style="color:#13B5A8;">@</span><span class="cls">app.expose</span>
+    <span class="gen">async def signup(...)</span>
+  </span>
+</div>
+<div class="label" style="margin-top:14px;">The class is the table · the function is the unit · the second generic is the backend pin.</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

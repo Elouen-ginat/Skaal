@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="220" viewBox="0 0 700 220" fill="none">
+  <foreignObject width="700" height="220">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div>
+      <div style="height:96px;border-radius:14px;background:#13B5A8;"></div>
+      <div style="margin-top:10px;font-family:var(--font-heading);font-size:14px;font-weight:600;">Signal Teal</div>
+      <div class="value">#13B5A8 · source→resource line</div>
+    </div>
+    <div>
+      <div style="height:96px;border-radius:14px;background:#9AE66E;"></div>
+      <div style="margin-top:10px;font-family:var(--font-heading);font-size:14px;font-weight:600;">Solver Green</div>
+      <div class="value">#9AE66E · bound / added</div>
+    </div>
+    <div>
+      <div style="height:96px;border-radius:14px;background:#5FA8FF;"></div>
+      <div style="margin-top:10px;font-family:var(--font-heading);font-size:14px;font-weight:600;">Cloud Blue</div>
+      <div class="value">#5FA8FF · environment / info</div>
+    </div>
+    <div>
+      <div style="height:96px;border-radius:14px;background:#C96A3D;"></div>
+      <div style="margin-top:10px;font-family:var(--font-heading);font-size:14px;font-weight:600;">Rust Copper</div>
+      <div class="value">#C96A3D · removed / drift</div>
+    </div>
+  </div>
+</div>
+    </div>
+  </foreignObject>
+</svg>

@@ -1,6 +1,6 @@
 # Tutorial 5: Files and Streaming
 
-The first four tutorials cover the core planner loop. This last tutorial adds two advanced-but-practical I/O patterns that already exist in the repository examples: blob storage and streaming responses.
+The earlier tutorials cover the core app and environment flow. This last tutorial adds two practical I/O patterns that already exist in the repository examples: blob storage and streaming responses.
 
 ## What You Will Learn
 
@@ -27,7 +27,7 @@ app = App("file-api")
 api = FastAPI(title="Tutorial File API")
 
 
-@app.storage(kind="blob", read_latency="< 500ms", durability="durable")
+@app.storage(kind="blob")
 class Uploads(BlobStore):
     pass
 
@@ -53,13 +53,13 @@ async def list_files() -> dict:
     }
 
 
-app.mount_asgi(api, attribute="api")
+app.mount("/", api)
 ```
 
 Run it:
 
 ```bash
-skaal run file_api:app
+skaal run file_api:app --env local
 ```
 
 Upload a file:
@@ -75,7 +75,7 @@ List the upload prefix:
 curl -s http://127.0.0.1:8000/files
 ```
 
-The full repository example at `examples/07_file_upload_api/app.py` expands this into downloads, metadata, and cursor validation.
+The full repository example at `examples/file_upload_api/app.py` expands this into downloads, metadata, and cursor validation.
 
 ## Stream a Response
 
@@ -87,10 +87,10 @@ import asyncio
 
 from fastapi.responses import StreamingResponse
 
-from skaal import RetryPolicy
+from skaal import Retry
 
 
-@app.function(retry=RetryPolicy(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
+@app.expose(retry=Retry(max_attempts=2, base_delay_ms=10, max_delay_ms=25))
 async def stream_tokens(prompt: str):
     for token in prompt.split():
         await asyncio.sleep(0.02)
@@ -112,12 +112,18 @@ Call it with a client that keeps the connection open:
 curl -N "http://127.0.0.1:8000/chat?prompt=hello%20streaming%20world"
 ```
 
-This is the pattern used in `examples/06_fastapi_streaming/app.py`.
+This is the pattern used in `examples/fastapi_streaming/app.py`.
+
+## What this does not cover
+
+- backend-specific blob options in `skaal.toml`
+- auth or validation around uploads
+- cloud deploy configuration for the mounted app
 
 ## Where To Go Next
 
 - Read [Python API: Data Surfaces](../reference/python-api-data.md) for `BlobStore` and the typed data APIs.
-- Read [Python API: Types and Policies](../reference/python-api-types.md) for `RetryPolicy` and related resilience objects.
+- Read [Python API: Types and Policies](../reference/python-api-types.md) for `Retry` and related resilience objects.
 - Revisit [Examples](../examples.md) to inspect the full repository apps.
 - Read [HTTP Integration](../http.md) for the mounted ASGI model.
 - Read [CLI](../cli.md) for the operational command loop behind the tutorials.

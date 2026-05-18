@@ -7,13 +7,11 @@ import time
 from typing import Any
 
 # Re-export for backward compatibility — canonical location is now skaal.storage.
-from skaal.storage import (  # noqa: F401
-    _deserialize,
-    _list_page_from_entries,
-    _query_index_from_entries,
-    _scan_page_from_entries,
-    _serialize,
-)
+from skaal.storage import _deserialize as _deserialize
+from skaal.storage import _list_page_from_entries as _list_page_from_entries
+from skaal.storage import _query_index_from_entries as _query_index_from_entries
+from skaal.storage import _scan_page_from_entries as _scan_page_from_entries
+from skaal.storage import _serialize as _serialize
 from skaal.sync import run as _sync_bridge_run
 
 # ── Sync/async bridge ─────────────────────────────────────────────────────────

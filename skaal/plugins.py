@@ -1,156 +1,357 @@
-"""Plugin discovery for backends, channels, and named catalogs.
+"""Skaal plugin protocol — entry-point-driven extension of deploy, runtime, and binding.
 
-Skaal keeps a small built-in backend map for first-party implementations and
-uses standard Python entry points for third-party extensions:
+External libraries contribute to Skaal by declaring one or more
+`SkaalPlugin` subclasses and exposing them via a ``skaal.plugins``
+Python entry point. A plugin's `register(plugin_registry)` method can:
 
-* ``skaal.backends``  — async key-value storage backends
-* ``skaal.channels``  — channel wiring functions
-* ``skaal.catalogs``  — named catalog TOML files resolvable by short name
+- Add a new `DeployTarget` (so a plugin can introduce an entirely new
+  cloud like Azure or DigitalOcean).
+- Add one or more synth modules to an existing target (so a plugin can
+  introduce e.g. an Aurora RDS backend on AWS).
+- Add `BackendEntry` rows to the binding registry so the binder
+  recognises the new backend at `bind()` time.
+
+Discovery is **lazy**: the first call to `get_target(...)` (deploy) or
+`lookup(...)` / `tokens_for(...)` (binding) walks
+``importlib.metadata.entry_points(group="skaal.plugins")`` exactly once
+per interpreter, instantiates each plugin class, and runs
+`plugin.register(plugin_registry)`. The flag is reset only by
+`_reset_for_tests()`.
+
+Plugin authors:
+
+```toml
+# pyproject.toml of `skaal-aws-aurora`
+[project.entry-points."skaal.plugins"]
+aurora = "skaal_aws_aurora:AuroraPlugin"
+```
+
+```python
+# skaal_aws_aurora/__init__.py
+from typing import ClassVar
+from skaal import Backend, Target
+from skaal.binding.registry import BackendEntry
+from skaal.deploy import SynthContext, SynthModule, SynthResult, SynthSpec
+from skaal.plugins import PluginRegistry, SkaalPlugin
+
+class Aurora(Backend[object]):
+    name = "aurora"
+    kinds = frozenset({"relational"})
+
+class AuroraSynth(SynthModule[AwsConfig]):
+    SPEC: ClassVar[SynthSpec] = SynthSpec(
+        tokens=(Aurora,),
+    )
+    def synthesize(self, ctx: SynthContext) -> SynthResult: ...
+
+class AuroraPlugin(SkaalPlugin):
+    name = "aurora"
+    def register(self, registry: PluginRegistry) -> None:
+        registry.add_backend(
+            BackendEntry(token=Aurora, targets=frozenset({Target.AWS}))
+        )
+        registry.add_synth(Target.AWS, AuroraSynth)
+```
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from importlib import import_module
-from importlib.metadata import entry_points
-from pathlib import Path
-from typing import Any
+import logging
+from collections.abc import Callable, Iterable, Mapping
+from threading import Lock
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast, runtime_checkable
 
-from skaal.errors import SkaalPluginError
-
-# ── Cache of entry-point results (populated lazily, flushable for tests) ──────
-
-_ep_cache: dict[str, dict[str, Any]] = {}
-
-_BUILTIN_BACKENDS: dict[str, str] = {
-    "local": "skaal.backends.local_backend:LocalMap",
-    "local-blob": "skaal.backends.file_blob_backend:FileBlobBackend",
-    "sqlite": "skaal.backends.sqlite_backend:SqliteBackend",
-    "redis": "skaal.backends.redis_backend:RedisBackend",
-    "postgres": "skaal.backends.postgres_backend:PostgresBackend",
-    "chroma": "skaal.backends.chroma_backend:ChromaVectorBackend",
-    "pgvector": "skaal.backends.pgvector_backend:PgVectorBackend",
-    "dynamodb": "skaal.backends.dynamodb_backend:DynamoBackend",
-    "firestore": "skaal.backends.firestore_backend:FirestoreBackend",
-    "s3": "skaal.backends.s3_blob_backend:S3BlobBackend",
-    "gcs": "skaal.backends.gcs_blob_backend:GCSBlobBackend",
-}
+if TYPE_CHECKING:
+    from skaal.binding.model import Target
+    from skaal.binding.registry import BackendSpec
+    from skaal.deploy._protocol import DeployTarget
+    from skaal.inference.model import ResourceKind
+    from skaal.runtime._registry import (
+        RuntimeAdapterFn,
+        RuntimeBackendFactoryFn,
+        RuntimeBindingWiringFn,
+        RuntimeTargetRegistration,
+    )
 
 
-def _load_builtin(group: str) -> dict[str, Any]:
-    if group != "skaal.backends":
-        return {}
-    resolved: dict[str, Any] = {}
-    for name, target in _BUILTIN_BACKENDS.items():
-        module_name, _, attr_name = target.partition(":")
-        module = import_module(module_name)
-        resolved[name] = getattr(module, attr_name)
-    return resolved
+_LOG = logging.getLogger("skaal.plugins")
+_LOAD_LOCK = Lock()
+_PLUGINS_LOADED = False
 
 
-def _load_group(group: str) -> dict[str, Any]:
-    """Return a name→object mapping for every entry point in *group*.
+@runtime_checkable
+class Plugin(Protocol):
+    """A skaal plugin contributes infrastructure modules.
 
-    Cached; use :func:`clear_cache` to force re-discovery after installing
-    a new plugin in the same process.
+    Implementations declare a `name` class variable (used for logging
+    and de-duplication) and a `register(plugin_registry)` method that
+    invokes `add_target` / `add_synth` / `add_backend` to wire its
+    contributions into the live registries.
+
+    Plugins are instantiated once per interpreter via the
+    ``skaal.plugins`` entry-point group; their `register(...)` method
+    is called immediately after instantiation. Implementations must not
+    perform deploy-time work in `register(...)` — that runs at every
+    first lookup, including read-only ones like `skaal plan`.
     """
-    if group in _ep_cache:
-        return _ep_cache[group]
-    discovered: dict[str, Any] = {}
+
+    name: ClassVar[str]
+
+    def register(self, registry: PluginRegistry) -> None: ...
+
+
+class PluginRegistry:
+    """The contribution surface a plugin sees inside its `register(...)` call.
+
+    Wraps the deploy and binding registries so a plugin has a single
+    object to call methods on without reaching into private internals.
+    The wrapper validates each contribution before delegating: bad
+    contributions raise `SkaalDeployError` / `SkaalConfigError` with a
+    clear message naming the offending plugin.
+    """
+
+    def __init__(self, plugin_name: str) -> None:
+        self._plugin_name = plugin_name
+
+    @property
+    def plugin_name(self) -> str:
+        return self._plugin_name
+
+    def add_target(self, target: DeployTarget) -> None:
+        """Register a new `DeployTarget` (a whole new cloud).
+
+        Equivalent to `skaal.deploy.register_target(target)` but tagged
+        with the contributing plugin's name for diagnostics.
+        """
+        from skaal.deploy._registry import register_target
+
+        _LOG.debug("plugin %r adding deploy target %r", self._plugin_name, target.target.value)
+        register_target(target)
+
+    def add_synth(self, target: Target, synth: type | object) -> None:
+        """Add a `SynthModule` subclass (or instance) to a target.
+
+        Accepts either a `SynthModule` subclass — the registry will
+        instantiate it with no arguments — or an already-instantiated
+        synth. Either form must satisfy the `SynthModule` contract
+        (`SPEC` class variable + `synthesize` method).
+
+        Raises:
+            SkaalDeployError: If the target hasn't been registered yet,
+                or `synth` isn't a valid `SynthModule`.
+        """
+        from skaal.deploy._protocol import SynthModule
+        from skaal.deploy._registry import get_target
+        from skaal.errors import SkaalDeployError
+
+        deploy_target = get_target(target)
+        if not hasattr(deploy_target, "register_synth"):
+            raise SkaalDeployError(
+                f"Plugin {self._plugin_name!r} cannot add a synth to "
+                f"target {target.value!r}: the target does not support "
+                "late synth registration."
+            )
+
+        instance: SynthModule[Any]
+        if isinstance(synth, type) and issubclass(synth, SynthModule):
+            instance = cast("SynthModule[Any]", synth())
+        elif isinstance(synth, SynthModule):
+            instance = cast("SynthModule[Any]", synth)
+        else:
+            raise SkaalDeployError(
+                f"Plugin {self._plugin_name!r} passed {synth!r} to "
+                "add_synth(...); expected a `SynthModule` subclass or "
+                "instance."
+            )
+
+        _LOG.debug(
+            "plugin %r adding synth %r to target %r",
+            self._plugin_name,
+            type(instance).__name__,
+            target.value,
+        )
+        deploy_target.register_synth(instance)
+
+    def add_backend(self, entry: BackendSpec) -> None:
+        """Register a `BackendEntry` in the binding registry."""
+        from skaal.binding.registry import register_backend
+
+        _LOG.debug("plugin %r adding backend %r", self._plugin_name, entry.token_class.name)
+        register_backend(entry)
+
+    def add_runtime_target(self, target: RuntimeTargetRegistration) -> None:
+        """Register a runtime target bucket for local or cold-start wiring."""
+        from skaal.runtime._registry import register_runtime_target
+
+        _LOG.debug("plugin %r adding runtime target %r", self._plugin_name, target.name)
+        register_runtime_target(target)
+
+    def add_runtime_adapter(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        adapter: RuntimeAdapterFn,
+    ) -> None:
+        """Register a local-runtime adapter on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime adapter for %r on %r",
+            self._plugin_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_adapter(kind, adapter)
+
+    def add_runtime_binding_wirer(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        wirer: RuntimeBindingWiringFn,
+    ) -> None:
+        """Register a cold-start binding wirer on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime binding wirer for %r on %r",
+            self._plugin_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_binding_wirer(kind, wirer)
+
+    def add_runtime_backend_factory(
+        self,
+        target_name: str,
+        kind: ResourceKind,
+        backend_name: str,
+        factory: RuntimeBackendFactoryFn,
+    ) -> None:
+        """Register a runtime backend factory on an existing runtime target."""
+        from skaal.runtime._registry import get_runtime_target
+
+        runtime_target = get_runtime_target(target_name)
+        _LOG.debug(
+            "plugin %r adding runtime backend factory %r for %r on %r",
+            self._plugin_name,
+            backend_name,
+            kind.value,
+            target_name,
+        )
+        runtime_target.register_backend_factory(kind, backend_name, factory)
+
+    def add_where_console_url(
+        self,
+        target: Target,
+        provider_type: str,
+        resolver: Callable[[Mapping[str, Any], str | None], str],
+    ) -> None:
+        """Register a `skaal where` console URL resolver for one provider type."""
+        from skaal.api._where import register_console_url
+
+        _LOG.debug(
+            "plugin %r adding `where` resolver for %r on %r",
+            self._plugin_name,
+            provider_type,
+            target.value,
+        )
+        register_console_url(target, provider_type, resolver)
+
+    def add_where_resource_preference(
+        self,
+        target: Target,
+        kind: ResourceKind,
+        provider_type: str,
+    ) -> None:
+        """Register a preferred Pulumi resource type for `skaal where` lookups."""
+        from skaal.api._where import register_resource_type_preference
+
+        _LOG.debug(
+            "plugin %r preferring `where` provider type %r for %r on %r",
+            self._plugin_name,
+            provider_type,
+            kind.value,
+            target.value,
+        )
+        register_resource_type_preference(target, kind, provider_type)
+
+
+def load_plugins(*, force: bool = False) -> None:
+    """Walk ``skaal.plugins`` entry points and invoke each plugin's `register(...)`.
+
+    Called lazily on first `get_target(...)` / `lookup(...)` /
+    `tokens_for(...)`. Subsequent calls short-circuit; pass ``force=True``
+    to bypass the load-once guard (used by the test reset helper).
+
+    Each plugin's failure is contained: a broken plugin logs a warning
+    and is skipped, but does not prevent other plugins (or the rest of
+    Skaal) from loading.
+    """
+    global _PLUGINS_LOADED
+    if _PLUGINS_LOADED and not force:
+        return
+    with _LOAD_LOCK:
+        if _PLUGINS_LOADED and not force:
+            return
+        _PLUGINS_LOADED = True
+        for plugin_cls in _discover_plugin_classes():
+            _safe_register(plugin_cls)
+
+
+def _discover_plugin_classes() -> Iterable[type[Plugin]]:
+    """Iterate over plugin classes declared on the ``skaal.plugins`` group."""
     try:
-        eps = entry_points(group=group)
-    except TypeError:  # pragma: no cover — very old importlib.metadata
-        eps = entry_points().get(group, [])  # type: ignore[arg-type]
-    for ep in eps:
+        from importlib.metadata import entry_points
+    except ImportError:  # pragma: no cover - stdlib since 3.8
+        return ()
+
+    discovered: list[type[Plugin]] = []
+    try:
+        eps: Any = entry_points(group="skaal.plugins")
+    except TypeError:
+        # Older importlib.metadata returns a dict-like object.
+        eps = entry_points().get("skaal.plugins", ())
+
+    for entry in eps:
         try:
-            discovered[ep.name] = ep.load()
-        except Exception as exc:
-            raise SkaalPluginError(
-                f"Failed to load entry point {ep.name!r} in group {group!r}: {exc}"
-            ) from exc
-    _ep_cache[group] = discovered
+            obj = entry.load()
+        except Exception as exc:  # pragma: no cover - exercised in plugin tests
+            _LOG.warning("failed to load plugin entry point %r: %s", entry.name, exc)
+            continue
+        if isinstance(obj, type) and isinstance(getattr(obj, "name", None), str):
+            discovered.append(obj)
+        else:
+            _LOG.warning(
+                "entry point %r did not point at a SkaalPlugin subclass: %r",
+                entry.name,
+                obj,
+            )
     return discovered
 
 
-def clear_cache() -> None:
-    """Drop cached entry-point lookups — tests can re-read after installs."""
-    _ep_cache.clear()
+def _safe_register(plugin_cls: type[Plugin]) -> None:
+    """Instantiate `plugin_cls` and call `register(...)`, isolating failures."""
+    name = getattr(plugin_cls, "name", plugin_cls.__name__)
+    try:
+        instance = plugin_cls()
+        registry = PluginRegistry(name)
+        instance.register(registry)
+        _LOG.debug("plugin %r registered", name)
+    except Exception as exc:  # pragma: no cover - exercised in plugin tests
+        _LOG.warning("plugin %r failed to register: %s", name, exc)
 
 
-def get_backend(name: str) -> Any:
-    builtins = _load_builtin("skaal.backends")
-    if name in builtins:
-        return builtins[name]
-    discovered = _load_group("skaal.backends")
-    if name in discovered:
-        return discovered[name]
-    available = sorted(set(builtins) | set(discovered))
-    raise SkaalPluginError(
-        f"Unknown storage backend {name!r}. Registered: {available or '(none)'}."
-    )
-
-
-def iter_backends() -> dict[str, Any]:
-    """Return every built-in and entry-point backend name→factory."""
-    return {**_load_group("skaal.backends"), **_load_builtin("skaal.backends")}
-
-
-# ── Channels ──────────────────────────────────────────────────────────────────
-
-
-def get_channel(name: str) -> Callable[..., None]:
-    """Return the ``wire_<name>`` function for *name*."""
-    discovered = _load_group("skaal.channels")
-    if name in discovered:
-        return discovered[name]
-    available = sorted(discovered)
-    raise SkaalPluginError(
-        f"Unknown channel backend {name!r}. Registered: {available or '(none)'}."
-    )
-
-
-def iter_channels() -> dict[str, Callable[..., None]]:
-    return _load_group("skaal.channels")
-
-
-# ── Named catalogs ────────────────────────────────────────────────────────────
-
-
-def get_catalog_path(name: str) -> Path:
-    """Resolve a short catalog name (e.g. `"aws"`) to a file path.
-
-    Entry-point handlers may be either a `pathlib.Path`, a `str`,
-    or a zero-arg callable that returns one — the last form lets a package
-    compute the path dynamically (e.g. from `importlib.resources`).
-    """
-    discovered = _load_group("skaal.catalogs")
-    if name in discovered:
-        value = discovered[name]
-        if callable(value):
-            value = value()
-        return Path(value)
-    available = sorted(discovered)
-    raise SkaalPluginError(f"Unknown catalog name {name!r}. Registered: {available or '(none)'}.")
-
-
-def iter_catalogs() -> dict[str, Path]:
-    merged: dict[str, Path] = {}
-    for n, v in _load_group("skaal.catalogs").items():
-        if callable(v):
-            try:
-                v = v()
-            except Exception:
-                continue
-        merged[n] = Path(v)
-    return merged
+def _reset_for_tests() -> None:
+    """Clear the load-once flag so the next lookup re-walks entry points."""
+    global _PLUGINS_LOADED
+    with _LOAD_LOCK:
+        _PLUGINS_LOADED = False
 
 
 __all__ = [
-    "clear_cache",
-    "get_backend",
-    "get_catalog_path",
-    "get_channel",
-    "iter_backends",
-    "iter_catalogs",
-    "iter_channels",
+    "Plugin",
+    "PluginRegistry",
+    "load_plugins",
 ]

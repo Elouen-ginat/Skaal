@@ -1,71 +1,76 @@
 # Skaal CLI
 
-The CLI follows the same shape as the framework itself: declare the app once, resolve a plan, then generate and deploy from that plan. The command surface is organized around that lifecycle instead of around individual cloud providers.
+The current CLI surface in `0.4.0a0` is small and direct:
+
+- `init`
+- `run`
+- `plan`
+- `map`
+- `where`
+- `trace`
+- `build`
+- `deploy`
+- `stubs`
+- `doctor`
+
+Each command has one job. The app argument is always a dotted `module:attribute` reference such as `examples.todo_api:app`.
 
 <div class="skaal-cli-grid">
     <a class="skaal-cli-card skaal-cli-card--setup" href="#skaal-init">
         <span class="skaal-cli-card__eyebrow">Bootstrap</span>
         <span class="skaal-cli-card__title"><code>skaal init</code></span>
-        <p class="skaal-cli-card__desc">Scaffold a project and write the default app reference.</p>
+        <p class="skaal-cli-card__desc">Project scaffold placeholder in the current alpha.</p>
     </a>
     <a class="skaal-cli-card skaal-cli-card--run" href="#skaal-run">
         <span class="skaal-cli-card__eyebrow">Develop</span>
         <span class="skaal-cli-card__title"><code>skaal run</code></span>
-        <p class="skaal-cli-card__desc">Run locally with reload, SQLite persistence, or Redis.</p>
+        <p class="skaal-cli-card__desc">Run the app locally from the bound plan for one environment.</p>
     </a>
     <a class="skaal-cli-card skaal-cli-card--plan" href="#skaal-plan">
-        <span class="skaal-cli-card__eyebrow">Solve</span>
+        <span class="skaal-cli-card__eyebrow">Plan</span>
         <span class="skaal-cli-card__title"><code>skaal plan</code></span>
-        <p class="skaal-cli-card__desc">Resolve backend choices and write <code>plan.skaal.lock</code>.</p>
+        <p class="skaal-cli-card__desc">Render the diff between the current app and <code>skaal.lock</code>.</p>
     </a>
-    <a class="skaal-cli-card skaal-cli-card--plan" href="#skaal-diff">
-        <span class="skaal-cli-card__eyebrow">Compare</span>
-        <span class="skaal-cli-card__title"><code>skaal diff</code></span>
-        <p class="skaal-cli-card__desc">Inspect how a fresh solve differs from the current plan.</p>
+    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-map">
+        <span class="skaal-cli-card__eyebrow">Inspect</span>
+        <span class="skaal-cli-card__title"><code>skaal map</code></span>
+        <p class="skaal-cli-card__desc">Print the source-to-resource tree and emit JSON.</p>
     </a>
     <a class="skaal-cli-card skaal-cli-card--ship" href="#skaal-build">
         <span class="skaal-cli-card__eyebrow">Generate</span>
         <span class="skaal-cli-card__title"><code>skaal build</code></span>
-        <p class="skaal-cli-card__desc">Create the artifact bundle from the locked plan.</p>
+        <p class="skaal-cli-card__desc">Render deploy artifacts from the bound plan.</p>
     </a>
     <a class="skaal-cli-card skaal-cli-card--ship" href="#skaal-deploy">
         <span class="skaal-cli-card__eyebrow">Ship</span>
         <span class="skaal-cli-card__title"><code>skaal deploy</code></span>
-        <p class="skaal-cli-card__desc">Apply the generated Pulumi stack for the resolved target.</p>
+        <p class="skaal-cli-card__desc">Render again, apply with Pulumi, then update <code>skaal.lock</code>.</p>
     </a>
-    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-catalog">
+    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-where-and-skaal-trace">
         <span class="skaal-cli-card__eyebrow">Inspect</span>
-        <span class="skaal-cli-card__title"><code>skaal catalog</code></span>
-        <p class="skaal-cli-card__desc">Browse, validate, and trace catalog layers before a solve.</p>
+        <span class="skaal-cli-card__title"><code>skaal where</code> / <code>skaal trace</code></span>
+        <p class="skaal-cli-card__desc">Jump from a resource id to its cloud URL or source location.</p>
     </a>
-    <a class="skaal-cli-card skaal-cli-card--migrate" href="#skaal-migrate-relational">
-        <span class="skaal-cli-card__eyebrow">Migrate</span>
-        <span class="skaal-cli-card__title"><code>skaal migrate</code></span>
-        <p class="skaal-cli-card__desc">Manage relational revisions and staged backend migrations.</p>
-    </a>
-    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-apps">
-        <span class="skaal-cli-card__eyebrow">Multi-App</span>
-        <span class="skaal-cli-card__title"><code>skaal apps</code></span>
-        <p class="skaal-cli-card__desc">List, graph, and validate the project's <code>[tool.skaal.apps]</code> DAG.</p>
+    <a class="skaal-cli-card skaal-cli-card--inspect" href="#skaal-stubs-and-skaal-doctor">
+        <span class="skaal-cli-card__eyebrow">Support</span>
+        <span class="skaal-cli-card__title"><code>skaal stubs</code> / <code>skaal doctor</code></span>
+        <p class="skaal-cli-card__desc">Emit typed stub packages and verify the local toolchain.</p>
     </a>
 </div>
 
 ## The Core Loop
 
-For most projects, the day-to-day command path is:
+For most projects, the day-to-day loop is:
 
 ```bash
-skaal init demo
-cd demo
-pip install -e .
-
-skaal run
-skaal plan demo.app:app --target local --catalog catalogs/local.toml
-skaal build --out artifacts
-skaal deploy --artifacts-dir artifacts
+skaal run examples.counter:app --env local
+skaal plan examples.counter:app --env local
+skaal map examples.counter:app --env local
+skaal build examples.todo_api:app --env prod
+skaal deploy examples.todo_api:app --env prod
 ```
 
-`skaal run` exercises the live app model. `skaal plan` writes `plan.skaal.lock`. `skaal build` reads that lock file and emits deployable artifacts. `skaal deploy` applies them.
+`skaal run` starts the local runtime. `skaal plan` renders the diff against `skaal.lock`. `skaal map` shows the bound resources. `skaal build` renders deploy artifacts. `skaal deploy` renders and applies them.
 
 ## Global Flags
 
@@ -87,29 +92,23 @@ The root command supports logging controls that apply to every subcommand:
     <p>Scaffold a new Skaal project and set the default app reference in <code>pyproject.toml</code>.</p>
 </div>
 
-Use `skaal init` to scaffold a starter project and set `[tool.skaal] app` for you.
+`skaal init` exists as a command name, but the scaffolder is not implemented in the current alpha.
 
 ```bash
-skaal init demo
-skaal init demo --here
-skaal init demo --force
+skaal init
 ```
 
-The generated layout includes:
+What you see:
 
-```text
-demo/
-├── pyproject.toml          # [tool.skaal] app = "demo.app:app"
-├── README.md
-├── .gitignore
-├── catalogs/
-│   └── local.toml
-└── demo/
-    ├── __init__.py
-    └── app.py
-```
+- An error explaining that the new scaffolder has not landed yet.
 
-The project name must be a valid Python identifier.
+What gets written:
+
+- Nothing.
+
+Common failure:
+
+- The command exits non-zero by design in `0.4.0a0`.
 
 ## Run Locally
 
@@ -118,85 +117,101 @@ The project name must be a valid Python identifier.
 <div class="skaal-cli-banner skaal-cli-banner--run">
     <span class="skaal-cli-banner__label">Develop</span>
     <code>skaal run</code>
-    <p>Run the app locally with hot reload and switch between in-memory, SQLite, Redis, or the experimental mesh runtime path.</p>
+    <p>Run the app locally for one named environment.</p>
 </div>
 
-Run a Skaal app locally with either an explicit `MODULE:APP`, the name of an entry under `[tool.skaal.apps]`, or the value from `[tool.skaal] app`.
+Run a Skaal app locally:
 
 ```bash
-skaal run examples.01_quickstart.app:app
-skaal run examples.01_quickstart.app:app --persist
-skaal run examples.01_quickstart.app:app --host 0.0.0.0 --port 9000
-
-# Multi-app projects:
-skaal run --all                # start every [tool.skaal.apps] entry on its own port
-skaal run frontend             # one app from the project; reads cross-app URLs from
-                               # .skaal/local-endpoints.json so AppRefs resolve
+skaal run examples.counter:app
+skaal run examples.counter:app --env local
+skaal run examples.counter:app --host 0.0.0.0 --port 9000
 ```
 
 Key options:
 
 | Flag | Meaning |
 | --- | --- |
+| `--env`, `-e` | Select an environment from `skaal.toml`. Defaults to `local`. |
 | `--host`, `--port` | Bind the local server to a different address or port. |
-| `--all` | Start every app declared in `[tool.skaal.apps]`, one port each. Writes `.skaal/local-endpoints.json` so cross-app `AppRef`s resolve automatically. |
-| `--persist` | Use SQLite-backed local persistence instead of in-memory storage. |
-| `--db PATH` | Choose the SQLite file used with `--persist`. |
-| `--redis URL` | Route supported storage through Redis for local testing. |
-| `--reload`, `--no-reload` | Force hot reload on or off. |
-| `--reload-dir PATH` | Add extra watched directories. Repeat the flag to watch multiple roots. |
-| `--distributed --node-id NODE` | Experimental mesh runtime path. Requires `skaal[mesh]`. |
 
-Reload defaults to automatic mode: on for interactive development, off for non-interactive or production-shaped environments.
+What you see:
 
-## Solve and Inspect Plans
+- A local server for the chosen environment.
+- Log output from the runtime and mounted ASGI app.
+
+What gets written:
+
+- Nothing.
+
+Common failures:
+
+- Missing `module:attribute` target or an import error in the target module.
+- `--env` names an environment that does not exist in `skaal.toml`.
+
+## Inspect the bound plan
 
 ### `skaal plan`
 
 <div class="skaal-cli-banner skaal-cli-banner--plan">
-    <span class="skaal-cli-banner__label">Solve</span>
+    <span class="skaal-cli-banner__label">Plan</span>
     <code>skaal plan</code>
-    <p>Run the planner against a target and catalog, then lock the resolved infrastructure choices to disk.</p>
+    <p>Render the diff between the current app and <code>skaal.lock</code>.</p>
 </div>
 
-`skaal plan` runs the solver, resolves backend assignments, and writes `plan.skaal.lock`.
+`skaal plan` loads the app, binds it to one environment, loads `skaal.lock`, and prints the changes.
 
 ```bash
-skaal plan examples.01_quickstart.app:app --target local --catalog catalogs/local.toml
-skaal plan examples.04_fullstack_split.backend:app --target aws --catalog catalogs/aws.toml
-
-# Multi-app projects:
-skaal plan --all          # plan every [tool.skaal.apps] entry into its own
-                          # artifacts/<name>/plan.skaal.lock in topo order
-skaal plan backend        # plan one named app from [tool.skaal.apps]
+skaal plan examples.counter:app --env local
+skaal plan examples.todo_api:app --env prod --format github-markdown
 ```
 
 Useful options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--target`, `-t` | Select the deploy target such as `local`, `aws`, `gcp`, or `aws-lambda`. |
-| `--all` | Plan every app declared in `[tool.skaal.apps]` in topological order. |
-| `--catalog PATH` | Use a specific catalog file instead of discovery or project defaults. |
-| `--reoptimize` | Force re-solving all backend choices even when a lock file already exists. |
-| `--pin NAME=BACKEND` | Pin one variable to a backend while investigating solver output. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. |
+| `--format` | Output as a terminal table or GitHub-flavored Markdown. |
 
-### `skaal diff`
+What you see:
+
+- One row per planned change.
+- The app fingerprint, current bound fingerprint, and deployed fingerprint header.
+
+What gets written:
+
+- Nothing.
+
+Common failures:
+
+- `skaal.lock` is missing or unreadable.
+- `skaal.toml` exists but does not define the requested environment.
+
+### `skaal map`
 
 <div class="skaal-cli-banner skaal-cli-banner--inspect">
-    <span class="skaal-cli-banner__label">Compare</span>
-    <code>skaal diff</code>
-    <p>Compare the current plan with a freshly solved one before you rebuild or redeploy.</p>
+    <span class="skaal-cli-banner__label">Inspect</span>
+    <code>skaal map</code>
+    <p>Print the source-to-resource tree and emit a machine-readable map.</p>
 </div>
 
-Use `skaal diff` in two modes:
-
 ```bash
-skaal diff
-skaal diff examples.01_quickstart.app:app
+skaal map examples.todo_api:app --env local
+skaal map examples.todo_api:app --env prod --out .skaal/todo-map.json
 ```
 
-Without an app argument it prints the current plan summary. With `MODULE:APP` it re-solves and shows what would change between the existing plan and the fresh one.
+What you see:
+
+- A tree grouped by source file.
+- Resource kind, backend, and region for each leaf.
+
+What gets written:
+
+- `.skaal/map.json` by default, or the file passed with `--out`.
+
+Common failures:
+
+- Same app import and environment lookup failures as `skaal plan`.
 
 ## Generate and Ship Artifacts
 
@@ -208,28 +223,35 @@ Without an app argument it prints the current plan summary. With `MODULE:APP` it
     <p>Produce the artifact bundle that downstream deploy commands consume.</p>
 </div>
 
-`skaal build` reads the existing `plan.skaal.lock` and writes a self-contained `artifacts/` directory.
+`skaal build` binds the app for one environment and renders deploy artifacts.
 
 ```bash
-skaal build
-skaal build --out artifacts
-skaal build --out artifacts --stack prod --region eu-west-1
-skaal build --dev
-
-# Multi-app projects:
-skaal build --all         # build artifacts/<name>/ for every [tool.skaal.apps] entry
-skaal build frontend      # build one named app from [tool.skaal.apps]
+skaal build examples.todo_api:app --env prod
+skaal build examples.todo_api:app --env prod --out artifacts/prod
+skaal build examples.todo_api:app --env prod --python-version 3.12
 ```
 
 Key options:
 
 | Flag | Meaning |
 | --- | --- |
+| `--env`, `-e` | Select an environment from `skaal.toml`. |
 | `--out`, `-o` | Output directory for generated artifacts. |
-| `--all` | Build every app declared in `[tool.skaal.apps]`. Each app writes to `artifacts/<name>/` (or its `out` override) so multiple apps coexist on disk. |
-| `--region`, `-r` | Override the region at build time. |
-| `--stack`, `-s` | Resolve stack-specific settings from `[tool.skaal.stacks.<name>]`. |
-| `--dev` | Bundle the local Skaal source tree into the artifact instead of relying on the published package. |
+| `--python-version` | Python version for the rendered base image. |
+
+What you see:
+
+- A count of rendered resource artifacts.
+- The destination directory.
+
+What gets written:
+
+- `.skaal/build/<env>/` by default, or the path passed with `--out`.
+
+Common failures:
+
+- Invalid app target.
+- Missing deploy extras for the chosen target.
 
 ### `skaal deploy`
 
@@ -239,157 +261,96 @@ Key options:
     <p>Deploy a previously built artifact directory by running the target-specific Pulumi workflow.</p>
 </div>
 
-Deploy previously-built artifacts with Pulumi.
+`skaal deploy` renders the artifacts for one environment and then runs Pulumi through the Automation API.
 
 ```bash
-skaal deploy
-skaal deploy --artifacts-dir artifacts --stack local
-skaal deploy --artifacts-dir artifacts --stack prod --region eu-west-1
-
-# Multi-app projects:
-skaal deploy --all                 # plan + build + deploy every [tool.skaal.apps]
-                                   # entry in topo order, injecting each upstream
-                                   # URL into the next downstream's environment
-skaal deploy frontend --stack prod # iterate on one app; upstream URLs come from
-                                   # plan.skaal.project.lock
+skaal deploy examples.todo_api:app --env prod
+skaal deploy examples.todo_api:app --env prod --preview
+skaal deploy examples.todo_api:app --env prod --yes
 ```
 
 Important options:
 
 | Flag | Meaning |
 | --- | --- |
-| `--all` | Deploy every app declared in `[tool.skaal.apps]` in topological order. Captures each upstream's service URL into `<artifacts>/<app>/url.txt` and `plan.skaal.project.lock`, then injects `SKAAL_APPREF_<NAME>_URL` for downstream apps. Aborts on the first failure. |
-| `<app_name>` | Deploy a single app from `[tool.skaal.apps]`. Reads upstream URLs from `plan.skaal.project.lock` so the upstreams are not redeployed. |
-| `--artifacts-dir`, `-a` | Directory created by `skaal build` (single-app mode only). |
-| `--stack`, `-s` | Pulumi stack name. |
-| `--region`, `-r` | Cloud region override. |
-| `--gcp-project` | Required for GCP deploys when not already configured. |
-| `--yes/--no-yes` | Control whether Pulumi runs non-interactively. |
+| `--env`, `-e` | Select an environment from `skaal.toml`. |
+| `--out`, `-o` | Override the render directory for this deploy. |
+| `--preview` | Run `pulumi preview` instead of `pulumi up`. |
+| `--yes`, `-y` | Apply without interactive confirmation. |
+| `--lock` | Choose a non-default `skaal.lock` path. |
 
-### `skaal destroy`
+What you see:
 
-<div class="skaal-cli-banner skaal-cli-banner--ship">
-    <span class="skaal-cli-banner__label">Teardown</span>
-    <code>skaal destroy</code>
-    <p>Remove the Pulumi-managed resources for an artifact directory when you are done testing or shipping.</p>
-</div>
+- The render directory.
+- Pulumi stack name and Pulumi output.
+- A success marker when preview or apply completes.
 
-Destroy the Pulumi-managed resources from an artifact directory.
+What gets written:
+
+- A render tree, as with `skaal build`.
+- `skaal.lock` entries for new pins.
+
+Common failures:
+
+- Pulumi CLI or SDKs are not installed.
+- `skaal[deploy,aws]` or the relevant target extras are missing.
+- You chose the wrong environment or target-specific backend options are missing.
+
+## Locate or trace a resource
+
+### `skaal where` and `skaal trace`
+
+Use `where` to jump from a bound resource id to its cloud-console URL, and `trace` to jump from a resource id or log line back to the declaring source.
 
 ```bash
-skaal destroy --artifacts-dir artifacts --stack local
+skaal where examples.todo_api:Comments examples.todo_api:app --env prod
+skaal trace "examples.todo_api:Comments" examples.todo_api:app --env prod
 ```
 
-## Inspect Catalogs and Active Infra
+What you see:
 
-### `skaal catalog`
+- `where`: stack name, provider type, physical id, and console URL.
+- `trace`: matched text, source file and line, symbol, bound backend, and region.
 
-<div class="skaal-cli-banner skaal-cli-banner--inspect">
-    <span class="skaal-cli-banner__label">Inspect</span>
-    <code>skaal catalog</code>
-    <p>Browse the catalog, validate it, and inspect overlay source chains before you trust a solve.</p>
-</div>
+What gets written:
 
-The `catalog` command group helps you inspect the solver input before or after you plan.
+- Nothing.
+
+Common failures:
+
+- The resource id does not exist in the bound plan.
+- The environment does not match the deployed stack you are trying to inspect.
+
+## Support commands
+
+### `skaal stubs` and `skaal doctor`
+
+`skaal stubs` emits a typed `.pyi` package for another Skaal app. `skaal doctor` checks that Python, Pulumi, and the Skaal package import cleanly.
 
 ```bash
-skaal catalog
-skaal catalog browse --catalog catalogs/local.toml --section storage
-skaal catalog validate catalogs/aws.toml
-skaal catalog sources catalogs/aws.toml
+skaal stubs --from examples.todo_api:app --to .stubs/todo_api
+skaal doctor
 ```
 
-Subcommands:
+What you see:
 
-| Command | Purpose |
-| --- | --- |
-| `skaal catalog browse` | Print the resolved storage, compute, and network backends. |
-| `skaal catalog validate` | Run the typed validators and exit non-zero on invalid catalogs. |
-| `skaal catalog sources` | Show the `[skaal] extends` chain for overlay catalogs. |
+- `stubs`: the package name, destination, and resource count.
+- `doctor`: Python version, Pulumi availability, and Skaal version.
 
-### `skaal infra`
+What gets written:
 
-<div class="skaal-cli-banner skaal-cli-banner--inspect">
-    <span class="skaal-cli-banner__label">Inspect</span>
-    <code>skaal infra</code>
-    <p>Show the active infrastructure described by the current plan and clean up migration state when needed.</p>
-</div>
+- `stubs`: the destination stub package.
+- `doctor`: nothing.
 
-Inspect the resources described by the current plan and clean up migration state when needed.
+Common failures:
 
-```bash
-skaal infra status
-skaal infra cleanup --variable counter.Counts --yes
-```
+- `stubs`: the `--from` target cannot be resolved.
+- `doctor`: Skaal cannot import in the current environment.
 
-### `skaal stacks`
+## Related
 
-<div class="skaal-cli-banner skaal-cli-banner--inspect">
-    <span class="skaal-cli-banner__label">Profiles</span>
-    <code>skaal stacks</code>
-    <p>List configured stack profiles and the resolved target, region, and protection settings for each one.</p>
-</div>
-
-List the stack profiles defined under `[tool.skaal.stacks.<name>]` in `pyproject.toml`.
-
-```bash
-skaal stacks
-```
-
-This is the quickest way to confirm which stack is current, which target each profile resolves to, and whether deletion protection or deploy hooks are enabled.
-
-## Migrate Schemas and Backends
-
-### `skaal migrate relational`
-
-<div class="skaal-cli-banner skaal-cli-banner--migrate">
-    <span class="skaal-cli-banner__label">Migrate</span>
-    <code>skaal migrate relational</code>
-    <p>Manage Alembic-backed schema revisions for SQLModel entities in Skaal's relational tier.</p>
-</div>
-
-This group manages Alembic-backed SQLModel migrations for the relational tier.
-
-```bash
-skaal migrate relational autogenerate -m "create todo comments"
-skaal migrate relational upgrade
-skaal migrate relational current
-skaal migrate relational history
-skaal migrate relational check
-skaal migrate relational downgrade -1
-skaal migrate relational upgrade --dry-run
-```
-
-Available subcommands:
-
-| Command | Purpose |
-| --- | --- |
-| `autogenerate` | Compare registered models to the live database and create a revision. |
-| `upgrade` | Apply migrations up to `head` or another target revision. |
-| `downgrade` | Roll back to a target revision. |
-| `current` | Show the applied revision per backend. |
-| `history` | List every known revision and mark the current head. |
-| `check` | Exit non-zero when drift exists between the live schema and the models. |
-| `stamp` | Mark a revision without running SQL. |
-
-These commands resolve the app from project settings, so they work best inside a scaffolded Skaal project or another project that already sets `[tool.skaal] app`.
-
-### `skaal migrate data`
-
-<div class="skaal-cli-banner skaal-cli-banner--migrate">
-    <span class="skaal-cli-banner__label">Migrate</span>
-    <code>skaal migrate data</code>
-    <p>Advance or roll back staged backend migrations for storage variables while tracking discrepancies and progress.</p>
-</div>
-
-This group manages six-stage storage and channel backend migrations.
-
-```bash
-skaal migrate data start --variable counter.Counts --from redis --to dynamodb
-skaal migrate data status --variable counter.Counts
-skaal migrate data advance --variable counter.Counts
-skaal migrate data rollback --variable counter.Counts
-skaal migrate data list
+- Read [Configuring your environments](cli-configuration.md) for `skaal.toml`, `[tool.skaal]`, and `SKAAL_*` resolution.
+- Read [Python API: CLI-Parity API](reference/python-api-cli-parity.md) for the in-process equivalents.
 ```
 
 Use it when you need to move a storage variable between backends while tracking shadow writes, discrepancies, and stage progression.

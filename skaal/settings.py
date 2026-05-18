@@ -11,10 +11,6 @@ Per-stack overrides can be declared under ``[tool.skaal.stacks.<name>]``;
 call :meth:`SkaalSettings.for_stack` to resolve them against the base
 settings.
 
-Per-app overrides for multi-app projects live under
-``[tool.skaal.apps.<name>]``; call :meth:`SkaalSettings.for_app` to
-resolve a single app's settings (base + app overrides + stack overlay).
-
 Example ``pyproject.toml``::
 
     [tool.skaal]
@@ -43,6 +39,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+def _empty_arg_lists() -> list[list[str]]:
+    return []
+
 
 # ── pyproject.toml discovery ──────────────────────────────────────────────────
 
@@ -116,9 +117,7 @@ class StackProfile(BaseModel):
 
     target: str | None = None
     region: str | None = None
-    catalog: Path | None = None
     gcp_project: str | None = None
-    enable_mesh: bool | None = None
     overrides: dict[str, str | int | bool] = Field(default_factory=dict)
     deletion_protection: bool | None = None
     env: dict[str, str] = Field(
@@ -137,81 +136,19 @@ class StackProfile(BaseModel):
         description="Labels applied to supporting resources (Cloud Run, SQL, Redis).",
     )
     pre_deploy: list[list[str]] = Field(
-        default_factory=list,
+        default_factory=_empty_arg_lists,
         description=(
             "Commands to run before ``pulumi up``. Each entry is an argv list, "
             'e.g. [["skaal", "migrate", "advance", "cache"]].'
         ),
     )
     post_deploy: list[list[str]] = Field(
-        default_factory=list,
+        default_factory=_empty_arg_lists,
         description=(
             "Commands to run after a successful deploy. Each entry is an argv "
             "list; Pulumi outputs are exported as SKAAL_OUTPUT_<KEY> env vars."
         ),
     )
-
-
-# ── Per-app profile ───────────────────────────────────────────────────────────
-
-
-class AppSettings(BaseModel):
-    """Per-app overrides declared under ``[tool.skaal.apps.<name>]``.
-
-    ``module`` is the only required field; every other field falls back to
-    the corresponding ``[tool.skaal]`` value when ``None``.
-
-    ``depends_on`` names must reference other entries in the same
-    ``apps`` table; cycles are an error at graph-build time.
-
-    ``expose`` is the env var name consumers see for this app's URL when it
-    appears as an upstream in another app's ``AppRef``. It defaults to
-    ``SKAAL_APPREF_<NAME>_URL`` at graph-build time when left empty.
-    """
-
-    model_config = {"extra": "forbid"}
-
-    module: str = Field(
-        description="Required ``MODULE:APP`` reference for this app.",
-    )
-
-    # Inherited from base settings when None:
-    target: str | None = None
-    region: str | None = None
-    catalog: Path | None = None
-    stack: str | None = None
-    gcp_project: str | None = None
-    out: Path | None = None
-    enable_mesh: bool | None = None
-
-    # Multi-app specific:
-    depends_on: list[str] = Field(default_factory=list)
-    expose: str | None = Field(
-        default=None,
-        description=(
-            "Env var name exposed to consumers. Defaults to "
-            "``SKAAL_APPREF_<NAME>_URL`` (uppercased, dashes to underscores)."
-        ),
-    )
-    endpoint_secret: str | None = Field(
-        default=None,
-        description=(
-            "When set, expose the URL via a ``SecretRef`` named here instead "
-            "of plain env injection."
-        ),
-    )
-
-    # Per-app overrides for the same fields StackProfile carries.
-    overrides: dict[str, str | int | bool] = Field(default_factory=dict)
-    deletion_protection: bool | None = None
-    env: dict[str, str] = Field(default_factory=dict)
-    invokers: list[str] = Field(default_factory=list)
-    labels: dict[str, str] = Field(default_factory=dict)
-    pre_deploy: list[list[str]] = Field(default_factory=list)
-    post_deploy: list[list[str]] = Field(default_factory=list)
-
-    # Per-app stack profiles, layered on top after the app overlay.
-    stacks: dict[str, StackProfile] = Field(default_factory=dict)
 
 
 # ── Unified settings model ────────────────────────────────────────────────────
@@ -253,15 +190,6 @@ class SkaalSettings(BaseSettings):
         default=Path("artifacts"),
         description="Output directory for generated artifacts.",
     )
-    catalog: Path | None = Field(
-        default=None,
-        description="Path to catalog TOML.",
-    )
-    enable_mesh: bool = Field(
-        default=False,
-        description="Include the skaal-mesh runtime dependency in generated deploy artifacts.",
-    )
-
     # ── Deploy ────────────────────────────────────────────────────────────────
     stack: str = Field(
         default="dev",
@@ -288,8 +216,8 @@ class SkaalSettings(BaseSettings):
     env: dict[str, str] = Field(default_factory=dict)
     invokers: list[str] = Field(default_factory=list)
     labels: dict[str, str] = Field(default_factory=dict)
-    pre_deploy: list[list[str]] = Field(default_factory=list)
-    post_deploy: list[list[str]] = Field(default_factory=list)
+    pre_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
+    post_deploy: list[list[str]] = Field(default_factory=_empty_arg_lists)
 
     # ── Stack profiles ────────────────────────────────────────────────────────
     stacks: dict[str, StackProfile] = Field(
@@ -300,69 +228,6 @@ class SkaalSettings(BaseSettings):
             "Call :meth:`for_stack` to resolve them against the base settings."
         ),
     )
-
-    # ── Multi-app projects ────────────────────────────────────────────────────
-    apps: dict[str, AppSettings] = Field(
-        default_factory=dict,
-        description=(
-            "Per-app overrides keyed by app name. Populated from "
-            "``[tool.skaal.apps.<name>]`` in pyproject.toml. Use "
-            ":meth:`for_app` to resolve a single app's effective settings."
-        ),
-    )
-
-    # ── Per-app resolution ────────────────────────────────────────────────────
-    def for_app(self, name: str, *, stack: str | None = None) -> SkaalSettings:
-        """Return a `SkaalSettings` resolved against the *name* app entry.
-
-        Order of precedence (highest first): per-app stack overlay >
-        app-level overrides > base + global stack overlay > defaults.
-
-        Args:
-            name:  The app's name as keyed under ``[tool.skaal.apps]``.
-            stack: Optional stack name overlaying both the per-app
-                   ``[tool.skaal.apps.<name>.stacks.<stack>]`` profile (if
-                   present) and the global ``[tool.skaal.stacks.<stack>]``.
-                   When ``None``, falls back to the app's ``stack`` setting,
-                   then to the base ``stack``.
-
-        Raises:
-            KeyError: If *name* is not declared in ``apps``.
-        """
-        if name not in self.apps:
-            raise KeyError(f"App {name!r} is not declared in [tool.skaal.apps].")
-        app_entry = self.apps[name]
-
-        # Apply the global stack profile first (matches how single-app commands
-        # resolve today), then layer the per-app overrides over the result.
-        resolved_stack = stack if stack is not None else (app_entry.stack or self.stack)
-        base = self.for_stack(resolved_stack)
-
-        app_updates = app_entry.model_dump(
-            exclude_none=True,
-            exclude={"module", "depends_on", "expose", "endpoint_secret", "stacks"},
-        )
-        # Merge dict/list fields rather than replacing — env, overrides, labels
-        # from the global section should not be wiped by an app that does not
-        # set them.
-        for key in ("env", "overrides", "labels"):
-            value = app_updates.get(key)
-            if isinstance(value, dict) and not value:
-                app_updates.pop(key)
-        for key in ("invokers", "pre_deploy", "post_deploy"):
-            value = app_updates.get(key)
-            if isinstance(value, list) and not value:
-                app_updates.pop(key)
-
-        merged = base.model_copy(update=app_updates)
-
-        # Per-app stack overlay (highest precedence) — only when an explicit
-        # stack was requested and it appears under the app's own stacks table.
-        per_app_profile = app_entry.stacks.get(resolved_stack) if resolved_stack else None
-        if per_app_profile is not None:
-            merged = merged.model_copy(update=per_app_profile.model_dump(exclude_none=True))
-
-        return merged
 
     # ── Stack resolution ──────────────────────────────────────────────────────
     def for_stack(self, name: str | None = None) -> SkaalSettings:

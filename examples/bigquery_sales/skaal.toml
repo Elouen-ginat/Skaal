@@ -1,0 +1,22 @@
+[env.local]
+target = "local"
+
+[env.local.backends.bigquery]
+# Replace with your own GCP project + dataset before running.
+project = "skaal-bq-sandbox"
+dataset = "bigquery_sales_local"
+[env.local.backends.bigquery.options]
+location = "US"
+
+[env.prod]
+target = "gcp"
+region = "us-central1"
+
+[env.prod.backends.gcp]
+project = "skaal-bq-prod"
+
+[env.prod.backends.bigquery]
+project = "skaal-bq-prod"
+dataset = "bigquery_sales"
+[env.prod.backends.bigquery.options]
+location = "US"

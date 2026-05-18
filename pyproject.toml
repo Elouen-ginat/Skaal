@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skaal"
-version = "0.3.2"
-description = "Infrastructure as Constraints — write it once, scale it with a word."
+version = "0.4.0"
+description = "A Python framework where the application code is the infrastructure declaration."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-keywords = ["infrastructure", "constraints", "cloud", "deployment", "z3", "solver"]
+keywords = ["infrastructure", "python", "cloud", "deployment", "pulumi", "framework"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -22,7 +22,6 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "z3-solver>=4.12",
     "pydantic>=2.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.13",
@@ -35,8 +34,8 @@ dependencies = [
     "httpx>=0.27",
     "tenacity>=9.1.4",
     "pybreaker>=1.4.1",
-    "langgraph>=1.1.10",
     "fsspec>=2025.3.0",
+    "python-dotenv>=1.0",
 ]
 
 [project.urls]
@@ -61,6 +60,7 @@ runtime = [
 ]
 deploy = [
     "docker>=7.1",
+    "jinja2>=3.1",
     "pulumi>=3.0",
     "pulumi-docker>=4.9",
 ]
@@ -69,22 +69,19 @@ aws = [
     "s3fs>=2025.3.0",
     "pulumi-aws>=6.0",
     "asyncpg>=0.29",
+    "mangum>=0.17",
 ]
 gcp = [
     "google-auth>=2.32",
     "google-cloud-firestore>=2.16",
     "google-cloud-storage>=2.16",
+    "google-cloud-pubsub>=2.21",
+    "google-cloud-bigquery>=3.25",
+    "google-cloud-secret-manager>=2.20",
     "gcsfs>=2025.3.0",
     "asyncpg>=0.29",
     "cloud-sql-python-connector[asyncpg]>=1.9",
     "pulumi-gcp>=7.0",
-]
-vector = [
-    "langchain-core>=1.3",
-    "langchain-chroma>=1.1",
-    "langchain-postgres>=0.0.17",
-    "chromadb>=1.5",
-    "psycopg[binary]>=3.3",
 ]
 fastapi = [
     "fastapi",
@@ -99,9 +96,6 @@ examples = [
     "fastapi",
     "dash-bootstrap-components>=1.0",
     "python-multipart>=0.0.5",
-]
-mesh = [
-    "skaal-mesh==0.3.2",
 ]
 secrets-aws = [
     "aioboto3>=12.0",
@@ -125,8 +119,7 @@ test = [
     "fakeredis>=2.23",
     "fastapi",
     "python-multipart>=0.0.5",
-    "langchain-chroma>=1.1",
-    "chromadb>=1.5",
+    "jinja2>=3.1",
 ]
 lint = [
     "ruff>=0.8.6",
@@ -136,6 +129,7 @@ lint = [
 typecheck = [
     "mypy>=1.13",
     "types-redis>=4.6",
+    "pyright>=1.1.408",
 ]
 audit = [
     "pip-audit>=2.7",
@@ -144,56 +138,21 @@ build = [
     "hatchling",
     "build>=1.0",
 ]
-release = [
-    "maturin>=1.4",
-]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
     { include-group = "typecheck" },
     { include-group = "build" },
-    { include-group = "release" },
     { include-group = "audit" },
 ]
 
 [project.scripts]
 skaal = "skaal.cli.main:app"
 
-# ── Built-in plugin registrations ─────────────────────────────────────────────
-# Skaal resolves storage backends, channel backends, and named catalogs through
-# its own plugin registry (skaal.plugins).  Core built-ins are registered here
-# so the discovery path is exercised in-tree and third-party packages can
-# register additional implementations the same way.
-
-[project.entry-points."skaal.backends"]
-local = "skaal.backends.local_backend:LocalMap"
-sqlite = "skaal.backends.sqlite_backend:SqliteBackend"
-local-blob = "skaal.backends.file_blob_backend:FileBlobBackend"
-redis = "skaal.backends.redis_backend:RedisBackend"
-postgres = "skaal.backends.postgres_backend:PostgresBackend"
-chroma = "skaal.backends.chroma_backend:ChromaVectorBackend"
-pgvector = "skaal.backends.pgvector_backend:PgVectorBackend"
-dynamodb = "skaal.backends.dynamodb_backend:DynamoBackend"
-firestore = "skaal.backends.firestore_backend:FirestoreBackend"
-s3 = "skaal.backends.s3_blob_backend:S3BlobBackend"
-gcs = "skaal.backends.gcs_blob_backend:GCSBlobBackend"
-
-[project.entry-points."skaal.channels"]
-local = "skaal.channel:wire_local"
-redis = "skaal.channel:wire_redis"
-
-[tool.uv.sources]
-# Local checkouts can still resolve the unpublished mesh package when the
-# mesh extra is requested explicitly. CI uses `--no-sources --find-links` to
-# validate the wheel path instead of this source fallback.
-skaal-mesh = { path = "mesh" }
-
 [tool.hatch.build.targets.wheel]
 packages = ["skaal"]
-# Include non-Python template files (Dockerfile, Pulumi.yaml, etc.)
 artifacts = [
     "skaal/deploy/templates/**",
-    "skaal/catalog/data/**",
     "skaal/cli/templates/**",
 ]
 
@@ -203,21 +162,16 @@ target-version = "py311"
 extend-exclude = ["skaal/deploy/templates", "artifacts", "site"]
 
 [tool.ruff.lint]
-# E/F = pycodestyle/pyflakes, I = isort, B = bugbear, UP = pyupgrade,
-# SIM = simplify, C4 = comprehensions, RUF = ruff-specific, ASYNC = async
-# pitfalls (especially relevant for Skaal's async-first runtime), PTH =
-# pathlib over os.path, PIE = misc useful, PERF = perf anti-patterns,
-# TID = tidy imports.
 select = [
     "E", "F", "I", "B", "UP", "SIM", "C4", "RUF",
     "ASYNC", "PTH", "PIE", "PERF", "TID",
 ]
 ignore = [
-    "E501",    # line length handled by formatter
-    "B008",    # function call in argument default — typer/FastAPI use this idiomatically
-    "SIM108",  # ternary not always clearer
-    "PERF203", # try/except in loop is fine for our control flow
-    "RUF012",  # mutable class attrs without ClassVar — pydantic models trip this
+    "E501",
+    "B008",
+    "SIM108",
+    "PERF203",
+    "RUF012",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -226,24 +180,27 @@ ignore = [
 "skaal/cli/templates/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["skaal", "mesh"]
+known-first-party = ["skaal"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
-warn_unused_ignores = true
+# Pyright (configured in `pyrightconfig.json`) is the strict-typing gate
+# per ADR 033. Mypy stays in default mode for the looser regression check;
+# it intentionally does not flag redundant casts or unused ignores, since
+# many narrowings that pyright requires look redundant to mypy.
+warn_unused_ignores = false
 warn_return_any = false
-warn_redundant_casts = true
+warn_redundant_casts = false
 warn_unused_configs = true
 no_implicit_optional = true
 check_untyped_defs = true
 plugins = ["pydantic.mypy"]
 exclude = "(^tests/|^examples/|^skaal/deploy/templates/|^artifacts/|^site/)"
 
-# Stricter type checking for the constraint/solver core where types are load-bearing.
 [[tool.mypy.overrides]]
-module = ["skaal.types.*", "skaal.solver.*"]
+module = ["skaal.types.*"]
 disallow_untyped_defs = true
 warn_return_any = true
 
@@ -265,9 +222,9 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    # Third-party deprecations we don't control — re-evaluate on dep bumps.
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::DeprecationWarning:google.*",
+    "ignore::DeprecationWarning:pulumi_gcp.*",
     "ignore::PendingDeprecationWarning",
     "ignore::ResourceWarning",
 ]
@@ -285,6 +242,9 @@ omit = [
 precision = 1
 show_missing = true
 skip_covered = false
+# ADR 029 Phase 1 temporarily relaxed the floor to 40 during the constraint-
+# product deletion; ADR 033 Phase 5b restores it to 60 once the typing
+# contract + stubs surface lands new tests.
 fail_under = 60
 exclude_also = [
     "raise NotImplementedError",
@@ -300,43 +260,4 @@ directory = "htmlcov"
 
 [tool.bandit]
 exclude_dirs = ["tests", "skaal/deploy/templates", "examples"]
-skips = ["B101"]  # assert_used — fine in non-test code with our usage patterns
-
-# ── Skaal project defaults ────────────────────────────────────────────────────
-# All fields are optional. CLI flags and SKAAL_* env vars take precedence.
-#
-# [tool.skaal]
-# app         = "mypackage.app:skaal_app"  # default MODULE:APP for run/plan/build
-# target      = "aws"                       # aws | gcp
-# region      = "us-east-1"
-# out         = "artifacts"                 # artifact output directory
-# catalog     = "catalogs/aws.toml"         # path to catalog TOML
-# stack       = "dev"                       # Pulumi stack name
-# gcp_project = "my-gcp-project"            # GCP only
-
-[tool.skaal.build.modules."examples.02_storage_tour.app"]
-dependencies = ["python-multipart>=0.0.5"]
-
-[tool.skaal.build.modules."examples.04_fullstack_split.backend"]
-dependencies = ["python-multipart>=0.0.5"]
-
-[tool.skaal.build.modules."examples.04_fullstack_split.frontend"]
-dependencies = ["dash>=2.16", "dash-bootstrap-components>=1.5", "httpx>=0.27"]
-
-[tool.skaal.build.targets.local]
-dependencies = ["skaal[serve,runtime]", "gunicorn>=22.0"]
-
-[tool.skaal.build.targets.gcp]
-dependencies = ["skaal[serve,runtime,gcp]"]
-
-[tool.skaal.build.targets.gcp.variants.wsgi]
-dependencies = ["gunicorn>=22.0"]
-
-[tool.skaal.build.targets.aws]
-dependencies = ["skaal[runtime,aws]"]
-
-[tool.skaal.build.targets.aws.variants.wsgi]
-dependencies = ["mangum>=0.17"]
-
-[tool.skaal.build.features.mesh]
-dependencies = ["skaal-mesh"]
+skips = ["B101"]

@@ -1,12 +1,12 @@
-# Tutorial 4: Relational Data and Migrations
+# Tutorial 4: Relational data
 
-The mounted todo example in this repository uses more than one storage shape. This tutorial focuses on the relational tier: SQLModel entities, database sessions, and the migration commands that keep schema changes explicit.
+The mounted todo example uses more than one storage shape. This tutorial focuses on the relational tier: SQLModel entities, sessions, and how that model fits into the same app graph as `Store` and `BlobStore`.
 
 ## What You Will Learn
 
 - how to declare a relational storage surface with SQLModel
 - how to open a Skaal-managed relational session
-- how to generate, inspect, and apply schema migrations
+- how the relational layer fits into the current alpha surface
 
 ## Add a Relational Model
 
@@ -15,15 +15,15 @@ Start from a mounted app and add a SQLModel-backed comments table:
 ```python
 from datetime import datetime, timezone
 
-from sqlmodel import Field, SQLModel, select
+from sqlmodel import Field, select
 
-from skaal import App, open_relational_session
+from skaal import App, Table
 
 app = App("todo-comments")
 
 
-@app.storage(kind="relational", read_latency="< 20ms", durability="persistent")
-class Comment(SQLModel, table=True):
+@app.storage(kind="relational")
+class Comment(Table, table=True):
     __tablename__ = "todo_comments"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -32,9 +32,9 @@ class Comment(SQLModel, table=True):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-@app.function()
+@app.expose()
 async def add_comment(todo_id: str, body: str) -> dict:
-    async with open_relational_session(Comment) as session:
+    async with Comment.session() as session:
         comment = Comment(todo_id=todo_id, body=body)
         session.add(comment)
         await session.commit()
@@ -42,93 +42,68 @@ async def add_comment(todo_id: str, body: str) -> dict:
     return comment.model_dump()
 
 
-@app.function()
+@app.expose()
 async def list_comments(todo_id: str) -> dict:
-    async with open_relational_session(Comment) as session:
+    async with Comment.session() as session:
         result = await session.exec(
             select(Comment).where(Comment.todo_id == todo_id).order_by(Comment.id)
         )
         return {"comments": [row.model_dump() for row in result.all()]}
 ```
 
-This mirrors the relational slice of `examples/02_todo_api/app.py` without the rest of the application around it.
+This mirrors the relational slice of `examples/todo_api/app.py` without the rest of the application around it.
 
-## Configure the Project App Reference
+## Run the app shape through Skaal
 
-The relational migration commands resolve the app from project settings. Make sure `pyproject.toml` contains:
+Add a minimal `skaal.toml` if you do not have one yet:
 
 ```toml
-[tool.skaal]
-app = "todo_api:app"
+[env.local]
+target = "local"
 ```
 
-If you created the project with `skaal init`, that setting already exists.
-
-Then Plan the app to generate the initial `plan.skaal.lock`:
+Then inspect the bound shape:
 
 ```bash
-skaal plan
+skaal plan todo_api:app --env local
+skaal map todo_api:app --env local
 ```
 
-## Run Migrations
+## Migration status
 
-Generate a revision from the current model set:
+!!! note "Current alpha"
 
-```bash
-skaal migrate relational autogenerate -m "create todo comments"
-```
+    The relational model and migration engine exist in the codebase, but the public `skaal migrate` command group is not exposed in the current alpha CLI yet. This tutorial covers the declaration and session pattern that command group will operate on.
 
-Apply it:
+## Why this matters
 
-```bash
-skaal migrate relational upgrade
-```
+`Table` keeps relational data in the same app model as the rest of your Skaal primitives. The app still declares one coherent graph even when one part of it needs SQL sessions and schema discipline.
 
-Inspect the state:
+What this gives you now:
 
-```bash
-skaal migrate relational current
-skaal migrate relational history
-```
+- typed SQLModel entities
+- a Skaal-managed async session boundary
+- one app graph that can still be bound and rendered by environment
 
-Check for drift after another round of model edits:
+## Compare with the full example
 
-```bash
-skaal migrate relational check
-```
-
-Print the SQL without applying it:
-
-```bash
-skaal migrate relational upgrade --dry-run
-```
-
-Roll back one revision if you need to:
-
-```bash
-skaal migrate relational downgrade base
-```
-
-## Why This Matters
-
-The migration flow keeps schema change explicit. That gives you a real history of the relational tier instead of silently mutating local SQLite state and hoping production will match later.
-
-This is also the place where Skaal's planner model helps: the relational surface stays attached to your app model, but the backing relational backend can still change by target and catalog.
-
-## Compare With the Full Example
-
-The repository todo example combines three storage shapes in one application:
+The repository todo example combines two concrete storage shapes in one app:
 
 - `Todos` in key-value storage
 - `Comments` in the relational tier
-- `TodoSearchIndex` in the vector tier
 
-That makes `examples/02_todo_api/app.py` the best next reference once you are comfortable with the migration commands.
+That makes `examples/todo_api/app.py` the best next reference once you are comfortable with `Table.session()`.
+
+## What this does not cover
+
+- the public migration CLI
+- advanced relational backend tuning
+- deploy-time SQL operations
 
 ## Reference Links
 
-- Read [Python API: Data Surfaces](../reference/python-api-data.md) for `open_relational_session`, relational helpers, and the storage modules around them.
-- Read [CLI Configuration](../cli-configuration.md) for the `pyproject.toml` settings that let migration commands resolve your app implicitly.
+- Read [Python API: Data Surfaces](../reference/python-api-data.md) for `Table.session()`, migration helpers, and the storage modules around them.
+- Read [Configuring your environments](../cli-configuration.md) for the current environment model.
 
 ## Continue
 

@@ -2,17 +2,21 @@
 
 This document provides context to understand the Skaal Python project and assist with development.
 
+> **Redesign in progress.** Skaal is moving from "Infrastructure as Constraints" (the `0.3.x` line) to "code-first infrastructure" per [ADR 028](notes/design/028-code-first-infra-redesign.md). The execution plan is [ADR 029](notes/design/029-redesign-foundation-implementation-plan.md); live progress is in [`notes/redesign-status.md`](notes/redesign-status.md). The constraint vocabulary (`Latency`, `Durability`, `AccessPattern`, `@app.handler`, `@app.scale`, `@app.shared`, TOML catalogs, the Z3 solver) is being removed root and branch — no backwards-compatibility shims. This file's "Architecture and key patterns" section will be rewritten in full once the redesign reaches Phase 7; until then, treat the architecture descriptions below as historical until each phase exits.
+
 ## Project architecture and context
 
 ### Project overview
 
-**Skaal** is an "Infrastructure as Constraints" Python framework. Developers declare resource constraints (latency, durability, throughput, access patterns) via decorators, and a Z3 SMT solver selects the cheapest backend that satisfies all constraints from a TOML catalog. The framework then generates deployment artifacts for local, AWS, GCP, or Kubernetes targets.
+**Skaal** is a Python framework where the application code is the infrastructure declaration. Developers write classes (`Store[T]`, `BlobStore`, `Channel[T]`, `Relational[T, B]`) and functions (`@app.function`, `@app.schedule`, `@app.job`); Skaal infers the architecture, generates Pulumi programs, and provides typed clients for every primitive. Targets: local, AWS, and GCP.
 
 - **License:** GPL-3.0-or-later
 - **Python:** >=3.11 (tested on 3.11, 3.12, 3.13)
-- **Status:** Alpha (0.3.1)
+- **Status:** Alpha (`0.4.0a0`); redesign per ADR 028 in flight on the `claude/plan-redesign-strategy-A5ixu` working branch (the de-facto `v0.4.0-alpha`)
 
 ### Repository structure
+
+Entries marked **(deletion pending — Phase 1)** are scheduled for removal per ADR 029 and still exist on disk only because Phase 1 has not yet landed.
 
 ```txt
 skaal/
@@ -20,40 +24,50 @@ skaal/
 │   ├── __init__.py         # Public API exports
 │   ├── app.py              # `App` class (extends `Module`)
 │   ├── module.py           # Core `Module` (composable units)
-│   ├── agent.py            # Virtual actor base class
+│   ├── agent.py            # (deletion pending — Phase 1) virtual actor base class
 │   ├── api.py              # Python API (equivalents to CLI verbs)
-│   ├── storage.py          # `Map[K, V]`, `Collection[T]` typed containers
-│   ├── decorators.py       # `@storage`, `@compute`, `@scale`, `@handler`, `@shared`
-│   ├── components.py       # `APIGateway`, `ExternalStorage`, `Proxy`, etc.
-│   ├── patterns.py         # `EventLog`, `Outbox`, `Projection`, `Saga`
+│   ├── storage.py          # `Store[T, B]` typed container
+│   ├── decorators.py       # `@app.storage`, `@app.function`, `@app.schedule`, `@app.job`, `@app.external`
+│   ├── components.py       # (mostly deletion pending — Phase 1; `ExternalStorage`/`ExternalQueue` reshape into `@app.external` in Phase 2)
+│   ├── patterns.py         # (deletion pending — Phase 1) `EventLog`, `Outbox`, `Projection`, `Saga`
 │   ├── channel.py          # Cross-process messaging
 │   ├── schedule.py         # `Cron`, `Every` scheduling primitives
-│   ├── settings.py         # Unified config (env vars + pyproject.toml)
-│   ├── plan.py             # `PlanFile` output structure
-│   ├── types/              # Constraint types (`Latency`, `Durability`, `AccessPattern`, …)
-│   ├── backends/           # Storage backend implementations (sqlite, redis, postgres, firestore, dynamodb, …)
-│   ├── solver/             # Z3 constraint solver (storage, compute, components, graph, targets)
+│   ├── settings.py         # Unified config (env vars + pyproject.toml + `skaal.toml`)
+│   ├── plan.py             # (deletion pending — Phase 1) `PlanFile` output structure; replaced by `InferredPlan`/`BoundPlan` in Phases 2–3
+│   ├── types/              # Value types (`Duration`, `TTL`, `Page`, `SecondaryIndex`, …); constraint primitives are deletion pending — Phase 1
+│   ├── backends/           # Backend implementations and typed `Backend` tokens (sqlite, redis, postgres, firestore, dynamodb, …)
+│   ├── solver/             # (deletion pending — Phase 1) Z3 constraint solver
+│   ├── inference/          # (Phase 2) walk `App` → `InferredPlan`
+│   ├── binding/            # (Phase 3) bind `InferredPlan` + `Environment` + `LockFile` → `BoundPlan`
 │   ├── runtime/            # Local execution engine (uvicorn + asyncio)
 │   ├── deploy/             # Code generation for cloud targets (AWS, GCP, local)
 │   │   └── templates/      # Jinja2 templates (Dockerfile, handler entrypoints, Pulumi programs)
 │   ├── cli/                # CLI commands (typer)
-│   ├── catalog/            # TOML catalog loading & models
+│   ├── catalog/            # (deletion pending — Phase 1) TOML catalog loading
 │   └── migrate/            # Schema migration engine (6-stage)
-├── mesh/                   # Rust PyO3 module (Phase 4+ stubs for agent routing, state sync)
+├── mesh/                   # (deletion pending — Phase 1) Rust PyO3 module
 ├── tests/                  # Pytest test suite (mirrors `skaal/` layout)
-├── catalogs/               # Infrastructure catalogs (`local.toml`, `aws.toml`, `gcp.toml`)
+├── catalogs/               # (deletion pending — Phase 1) infrastructure catalogs
 ├── examples/               # Reference apps (counter, hello_world, todo_api, dash_app, …)
 ├── docs/                   # MkDocs site sources
-│   └── design/             # Architecture Decision Records (ADR 001-007)
+│   └── design/             # Finalised Architecture Decision Records
+├── notes/
+│   ├── design/             # In-flight ADRs (028 redesign, 029 foundation, 030+ planned)
+│   └── redesign-status.md  # Live progress tracker for the ADR 028 redesign
 ├── .github/                # CI/CD workflows and templates
 └── README.md               # Project entry point
 ```
 
-- **Constraint layer** (`skaal.types`, `skaal.decorators`): user-facing primitives for declaring infrastructure requirements.
-- **Solver layer** (`skaal.solver`): Z3 SMT pipeline that maps constraints to concrete backends from a catalog.
-- **Backend layer** (`skaal.backends`): concrete implementations of storage and channel abstractions.
-- **Deploy layer** (`skaal.deploy`): Jinja2-driven code generation for Pulumi programs, Dockerfiles, and handler entrypoints.
+During the redesign, the layer map is:
+
+- **Primitives layer** (`skaal.app`, `skaal.module`, `skaal.storage`, `skaal.blob`, `skaal.topic`, `skaal.table`, `skaal.decorators`): typed, structural primitives the user writes.
+- **Inference layer** (`skaal.inference`, *Phase 2*): walks the `App` graph and produces an `InferredPlan` (pydantic, environment-independent).
+- **Binding layer** (`skaal.binding`, *Phase 3*): binds an `InferredPlan` against an `Environment` and the `skaal.lock` file using a fixed defaults table — no search, no SMT.
+- **Backend layer** (`skaal.backends`): concrete implementations registered via the in-tree backend registry; each is also a typed class token (`Postgres`, `BigQuery`, `Redis`, `DynamoDB`, …) usable as the second generic parameter on `Store[T, B]` / `Relational[T, B]` / etc.
+- **Deploy layer** (`skaal.deploy`): Jinja2-driven code generation for Pulumi programs, Dockerfiles, and handler entrypoints — driven from the `BoundPlan`.
 - **Runtime layer** (`skaal.runtime`): local execution engine built on Starlette + Uvicorn.
+
+The constraint-era `skaal.solver` and `skaal.catalog` packages, the constraint primitives in `skaal.types`, and the `@app.handler` / `@app.scale` / `@app.shared` decorators were removed in Phase 1 (see ADR 029).
 
 ### Development tools & commands
 
@@ -90,17 +104,12 @@ make typecheck                   # mypy skaal
 # Testing
 make test                        # pytest tests/ -q
 make test-cov                    # pytest with coverage
-make test-solver                 # solver tests only
 make test-storage                # storage tests only
 make test-runtime                # runtime tests only
 make test-schema                 # schema migration tests only
 
 # Single test file
 uv run --group test pytest tests/path/to/test_file.py
-
-# Rust extension
-make build                       # maturin build --release
-make build-dev                   # maturin develop
 ```
 
 #### Key config files
@@ -109,15 +118,16 @@ make build-dev                   # maturin develop
 - `uv.lock`: locked dependencies for reproducible builds.
 - `Makefile`: development task entry points.
 - `.pre-commit-config.yaml`: hooks executed on every commit.
-- `catalogs/*.toml`: infrastructure catalogs consumed by the solver.
+- `notes/redesign-status.md`: live progress tracker for the ADR 028 redesign.
+- `catalogs/*.toml`: legacy infrastructure catalogs consumed by the `0.3.x` solver. Scheduled for deletion in Phase 1 of the redesign (ADR 029).
 
 #### PR and commit titles
 
 Follow Conventional Commits. Keep titles short and descriptive — save detail for the body.
 
-- Start the text after `type(scope):` with a lowercase letter, unless the first word is a proper noun (e.g. `AWS`, `GCP`, `Z3`) or a named entity (class, function, method, parameter, or variable name).
+- Start the text after `type(scope):` with a lowercase letter, unless the first word is a proper noun (e.g. `AWS`, `GCP`, `Pulumi`) or a named entity (class, function, method, parameter, or variable name).
 - Wrap named entities in backticks so they render as code. Proper nouns are left unadorned.
-- Suggested scopes mirror the top-level subsystems: `solver`, `runtime`, `deploy`, `backends`, `cli`, `catalog`, `migrate`, `types`, `docs`, `ci`, `mesh`.
+- Suggested scopes mirror the top-level subsystems: `inference`, `binding`, `runtime`, `deploy`, `backends`, `cli`, `migrate`, `types`, `docs`, `ci`. (`solver`, `catalog`, and `mesh` are scheduled for deletion in Phase 1 of the redesign and should not appear in new commit scopes.)
 
 Examples:
 
@@ -158,22 +168,19 @@ The description *is* the summary — do not add a `# Summary` header.
 
 ### Maintain stable public interfaces
 
-CRITICAL: Always attempt to preserve function signatures, argument positions, and names for exported/public methods. Do not make breaking changes silently.
-You should warn the developer for any function signature changes, regardless of whether they look breaking or not.
-
-**Before making ANY changes to public APIs:**
+The redesign is intentionally breaking — ADR 028 commits to no backwards-compatibility shims for the `0.3.x` constraint vocabulary. *Within the redesign*, however, signature changes still need to be visible:
 
 - Check whether the symbol is exported in `skaal/__init__.py` (the `__all__` list is authoritative).
-- Look for existing usage patterns in `tests/`, `examples/`, and `docs/`.
+- Look for existing usage patterns in `tests/`, `examples/`, and the surviving `docs/` pages.
 - Use keyword-only arguments for new parameters: `*, new_param: str = "default"`.
 - Mark experimental features clearly with docstring warnings (using MkDocs Material admonitions, like `!!! warning`).
-- Constraint types in `skaal.types` and decorators in `skaal.decorators` are the most user-facing API surface — treat them as load-bearing.
+- The new user-facing surface is `App`, `Module`, the typed primitives (`Store[T, B]`, `Relational[T, B]`, `BlobStore[B]`, `Channel[T, B]`), `@app.function`, `@app.schedule`, `@app.job`, and the `Backend` token tree under `skaal.backends`. Treat these as load-bearing once Phase 2 lands.
 
-Ask: "Would this change break someone's code or break an existing `PlanFile` if they used it last week?"
+Ask: "Does this change need an entry in `notes/redesign-status.md`, or am I editing a surface a future phase will replace anyway?"
 
 ### Code quality standards
 
-All Python code MUST include type hints and return types. The `skaal.types.*` and `skaal.solver.*` modules are subject to stricter `mypy` checks (`disallow_untyped_defs`, `warn_return_any`) per `pyproject.toml`.
+All Python code MUST include type hints and return types. The `skaal.types.*` module is subject to stricter `mypy` checks (`disallow_untyped_defs`, `warn_return_any`) per `pyproject.toml`. Phase 5 of the redesign extends `pyright --strict` to the whole `skaal/` tree.
 
 ```python title="Example"
 def filter_unknown_backends(backends: list[str], known: set[str]) -> list[str]:
@@ -204,7 +211,7 @@ Every new feature or bugfix MUST be covered by tests.
 - The framework is `pytest` with `pytest-asyncio` in `asyncio_mode = "auto"` — async tests do not need an explicit marker.
 - HTTP calls are mocked via `pytest-httpx`.
 - An autouse fixture in `tests/conftest.py` resets the migration registry between tests.
-- Coverage gate is `fail_under = 60` (see `[tool.coverage.report]`).
+- Coverage gate is `fail_under = 60` (see `[tool.coverage.report]`). Phase 1 of the redesign temporarily relaxes this to `40` while large surfaces are deleted; Phase 5 restores the floor.
 
 **Checklist:**
 
@@ -213,14 +220,14 @@ Every new feature or bugfix MUST be covered by tests.
 - [ ] Edge cases and error conditions are tested
 - [ ] Use fixtures/mocks for external dependencies (Redis, Postgres, S3, GCS)
 - [ ] Tests are deterministic (no flaky tests)
-- [ ] Solver changes include a test asserting on the resulting `PlanFile`
+- [ ] Inference- or binding-shape changes include a test asserting on the resulting `InferredPlan` or `BoundPlan`
 - [ ] Backend changes are exercised through the contract suite in `tests/storage/`
 
 ### Security and risk assessment
 
 Bandit runs in pre-commit at medium severity (`tests/`, `examples/`, and `skaal/deploy/templates/` are excluded).
 
-- No `eval()`, `exec()`, or `pickle` on user-controlled input — catalogs and plan files are loaded with TOML/JSON, never `pickle`.
+- No `eval()`, `exec()`, or `pickle` on user-controlled input — `skaal.toml`, `skaal.lock`, and inference/binding artifacts are loaded via TOML/JSON, never `pickle`.
 - Proper exception handling (no bare `except:`); use a `msg` variable when raising and let the CLI's Rich formatter render it.
 - Remove unreachable/commented code before committing.
 - Watch for race conditions or resource leaks in async code (file handles, sockets, connection pools, scheduler tasks).
@@ -232,21 +239,23 @@ Bandit runs in pre-commit at medium severity (`tests/`, `examples/`, and `skaal/
 Use Google-style docstrings with an `Args` section for all public functions.
 
 ```python title="Example"
-def select_backend(constraints: Constraints, *, target: str = "local") -> Backend:
-    """Select the cheapest backend that satisfies all constraints.
+def bind_resource(res: InferredResource, env: Environment, lock: LockFile) -> BoundResource:
+    """Pick the concrete backend for a single inferred resource.
 
-    Any additional context about the function can go here.
+    The defaults table is only consulted for un-pinned resources; type-pinned
+    classes (e.g. `Relational[Sale, BigQuery]`) bypass it entirely.
 
     Args:
-        constraints: The constraint bundle attached to a storage or compute resource.
-        target: Deployment target name (`local`, `aws`, `gcp`).
+        res: The inferred resource produced by the inference layer.
+        env: The active environment loaded from `skaal.toml`.
+        lock: The pin-on-first-deploy state loaded from `skaal.lock`.
 
     Returns:
-        A `Backend` instance from the active catalog.
+        A `BoundResource` naming exactly one backend.
 
     Raises:
-        UnsatisfiableConstraintsError: If no catalog entry can satisfy the constraints.
-        CatalogNotLoadedError: If the catalog has not been loaded yet.
+        TypePinViolation: If a type-pinned class is overridden to a different backend.
+        BackendKindMismatch: If the chosen backend does not support the resource's required kinds.
     """
 ```
 
@@ -257,32 +266,31 @@ def select_backend(constraints: Constraints, *, target: str = "local") -> Backen
 - Keep descriptions concise but clear.
 - Ensure American English spelling (e.g., "behavior", not "behaviour").
 - Do NOT use Sphinx-style double backtick formatting (` ``code`` `). Use single backticks (`` `code` ``) for inline code references in docstrings and comments.
-- ADRs go under `docs/design/` as numbered Markdown files. Reference them from PR descriptions when changing solver semantics or generated artifact structure.
+- ADRs in flight live under `notes/design/` as numbered Markdown files; once finalised they migrate to `docs/design/`. Reference them from PR descriptions when changing inference, binding, or generated artifact structure.
 
 ## Architecture and key patterns
 
-### Constraint declaration
+The redesign's architecture is laid out in [ADR 028 §6](notes/design/028-code-first-infra-redesign.md). Until each phase lands, the canonical reference is the ADR itself rather than restating it here. Stable patterns:
 
-Decorators (`@app.storage`, `@app.compute`, `@app.scale`, `@app.handler`, `@app.shared`) attach metadata to classes and callables. Metadata is stored in `__skaal_storage__`, `__skaal_compute__`, etc. dunder attributes — never read these directly from user code.
+### Resource declaration
 
-### Solver pipeline
+Users declare typed primitives — `Store[T, B]`, `BlobStore[B]`, `Channel[T, B]`, `Relational[T, B]` — and functions decorated with `@app.function`, `@app.schedule`, or `@app.job`. The class **is** the resource; the second generic parameter (when supplied) is a typed `Backend` token that pins the binding. Decorator metadata is stored on the resource class as `__skaal_inferred__` (Phase 2) — never read these dunders directly from user code.
 
-1. The user's `App` declares constraints via decorators.
-2. `skaal plan` loads a TOML catalog and feeds constraints to the Z3 solver.
-3. The solver outputs a `PlanFile` (JSON) mapping each resource to a concrete backend.
-4. `skaal build` generates deployment artifacts from the plan using Jinja2 templates.
-5. `skaal deploy` provisions infrastructure via Pulumi.
+### Inference and binding pipeline
+
+1. The user's `App` declares typed primitives and `@app.function` callables.
+2. `skaal plan` walks the `App` graph and produces an `InferredPlan` (environment-independent, pydantic).
+3. The binding layer combines the `InferredPlan` with the active `Environment` (from `skaal.toml`) and `skaal.lock` to produce a `BoundPlan` — pure table lookup, no search, no SMT.
+4. `skaal build` generates Pulumi programs, Dockerfiles, and handler entrypoints from the `BoundPlan` via Jinja2 templates.
+5. `skaal deploy` provisions infrastructure via Pulumi and pins the resulting bindings into `skaal.lock`.
 
 ### Storage abstractions
 
-- `Map[K, V]` — key-value store
-- `Collection[T]` — document collection
-- Backends are registered via the `skaal.backends` entry-point group in `pyproject.toml`. Built-ins: `local`, `sqlite`, `local-blob`, `redis`, `postgres`, `chroma`, `pgvector`, `dynamodb`, `firestore`, `s3`, `gcs`.
-
-### Channels
-
-- Cross-process messaging via `skaal.channel`.
-- Channel backends are registered via the `skaal.channels` entry-point group. Built-ins: `local`, `redis`.
+- `Store[T, B]` — typed key-value store (replaces `0.3.x` `Map[K, V]` and `Collection[T]`).
+- `Relational[T, B]` — typed relational table (SQLModel + Alembic underneath).
+- `BlobStore[B]` — object storage.
+- `Channel[T, B]` — typed pub/sub.
+- Backends are registered in the in-tree `skaal/binding/registry.py` (Phase 3). Each backend is also a typed class token (`from skaal.backends.bigquery import BigQuery`) usable as the second generic parameter on the primitives.
 
 ### Modules
 
@@ -292,13 +300,13 @@ Decorators (`@app.storage`, `@app.compute`, `@app.scale`, `@app.handler`, `@app.
 ## Code conventions
 
 - **Naming:** PascalCase for classes, snake_case for functions/variables.
-- **Type hints:** used throughout; leverages `TypeVar` and generics. Stricter rules apply in `skaal.types.*` and `skaal.solver.*`.
+- **Type hints:** used throughout; leverages `TypeVar`, `ParamSpec`, and generics. Stricter rules apply in `skaal.types.*`; Phase 5 extends `pyright --strict` to the whole tree.
 - **Async-first:** prefer async functions for all I/O operations.
-- **Imports:** organized by isort (enforced by Ruff `I` rule). First-party packages: `skaal`, `mesh`.
+- **Imports:** organized by isort (enforced by Ruff `I` rule). First-party package: `skaal`.
 - **Public API:** all public symbols are exported from `skaal/__init__.py` with explicit `__all__`.
 - **Error handling:** standard Python exceptions; CLI wraps errors with Rich formatting.
-- **TOML catalogs:** infrastructure backends are declared in `catalogs/*.toml`, not in code.
-- **Settings:** `[tool.skaal]` in `pyproject.toml` or `SKAAL_*` environment variables; CLI flags take precedence.
+- **Backend registry:** every backend is declared in `skaal/binding/registry.py` as a typed `Backend` subclass plus a `BackendEntry` record (Phase 3). No entry-point discovery; no TOML catalog overlay.
+- **Settings:** `[tool.skaal]` in `pyproject.toml`, `skaal.toml` for environments, or `SKAAL_*` environment variables; CLI flags take precedence.
 
 ### Linting and formatting
 
@@ -314,7 +322,7 @@ Decorators (`@app.storage`, `@app.compute`, `@app.scale`, `@app.handler`, `@app.
 - `strict = false`, `ignore_missing_imports = true`, `check_untyped_defs = true`.
 - Uses the `pydantic.mypy` plugin.
 - Excludes `tests/`, `examples/`, and `skaal/deploy/templates/`.
-- Stricter overrides for `skaal.types.*` and `skaal.solver.*`.
+- Stricter overrides for `skaal.types.*`. Phase 5 of the redesign adds `pyright --strict` over the entire `skaal/` tree as a separate CI job.
 
 **Pre-commit hooks** run automatically on `git commit`:
 
@@ -340,20 +348,20 @@ Actions should be pinned to a full-length commit SHA where possible. Verify tags
 
 ### Adding a new backend
 
-When introducing a new storage or channel backend:
+When introducing a new storage or channel backend (Phase 3 onward):
 
-- Add the implementation under `skaal/backends/` (or the appropriate subpackage).
-- Register the entry point in `pyproject.toml` under `[project.entry-points."skaal.backends"]` or `"skaal.channels"`.
-- Add a catalog entry to the relevant `catalogs/*.toml` so the solver can select it.
+- Add the implementation under `skaal/backends/<name>/`.
+- Define the typed `Backend` token (subclass of `Backend[NativeClientT]`) so user code can pin to it via `Store[T, MyBackend]`.
+- Add the backend's `BackendEntry` (token, `kinds`, `targets`, `capabilities`, `options_schema`) to the `REGISTRY` tuple in `skaal/binding/registry.py`.
+- If the backend is the new default for a `(ResourceKind, Target)` slot, update `skaal/binding/defaults.py` *and* file an ADR justifying the change.
 - Add a contract test under `tests/storage/` or `tests/backends/`.
-- Document the backend's constraint coverage in `docs/catalogs.md`.
+- Document the backend's typed surface (kinds it supports, native client returned by `.native()`, env-config schema) in `docs/backends/<name>.md`.
 
 ## Key dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `z3-solver` | Constraint solving (SMT solver) |
-| `pydantic` / `pydantic-settings` | Validation and settings |
+| `pydantic` / `pydantic-settings` | Validation and settings; the entire inference and binding surface is pydantic. |
 | `sqlmodel` / `alembic` | ORM and schema migrations |
 | `typer` | CLI framework |
 | `rich` | Terminal output formatting |
@@ -363,20 +371,21 @@ When introducing a new storage or channel backend:
 | `httpx` | HTTP client |
 | `apscheduler` | Scheduling |
 | `tenacity` / `pybreaker` | Retries and circuit breakers |
-| `langgraph` | Agent orchestration |
 | `fsspec` | Filesystem abstractions |
-| `maturin` | Rust/PyO3 extension build |
+| `pulumi` | Deployment automation (Automation API; users do not invoke `pulumi` directly) |
 
-Optional extras: `aws` (`boto3`, `pulumi-aws`, `asyncpg`, `s3fs`); `gcp` (`google-cloud-*`, `pulumi-gcp`, `gcsfs`); `vector` (`langchain-*`, `chromadb`, `psycopg`); `fastapi`, `dash`, `mesh`, `secrets-aws`, `secrets-gcp`.
+Optional extras: `aws` (`boto3`, `pulumi-aws`, `asyncpg`, `s3fs`); `gcp` (`google-cloud-*`, `pulumi-gcp`, `gcsfs`); `vector` (`langchain-*`, `chromadb`, `psycopg` — quarantined during the redesign); `fastapi`, `dash`, `secrets-aws`, `secrets-gcp`.
+
+Removed during the redesign (Phase 1 of ADR 029): `z3-solver` (SMT solver), `langgraph` (agent orchestration), the `mesh` Rust crate / `maturin` build, and the catalog entry-point discovery layer.
 
 ## Working with this repo
 
 - Always run `make lint` and `make test` before committing.
 - Pre-commit hooks auto-fix formatting; if a commit is rejected, check the staged changes and retry.
 - The `skaal/deploy/templates/` directory contains Jinja2 templates (not valid Python) — exclude from linting.
-- Design decisions are documented in `docs/design/` as numbered ADRs.
-- The Rust `mesh/` crate is Phase 4 stub code — it compiles but contains placeholder implementations.
-- Settings can be configured via `[tool.skaal]` in `pyproject.toml` or `SKAAL_*` environment variables.
+- Design decisions are documented as numbered ADRs in `notes/design/` (in flight) or `docs/design/` (finalised).
+- During the redesign, every code change should also tick a checkbox in `notes/redesign-status.md` if it satisfies a phase exit criterion.
+- Settings can be configured via `[tool.skaal]` in `pyproject.toml`, `skaal.toml`, or `SKAAL_*` environment variables.
 
 ## Additional resources
 

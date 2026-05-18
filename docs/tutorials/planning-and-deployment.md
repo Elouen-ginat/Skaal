@@ -1,137 +1,128 @@
-# Tutorial 3: Plan, Build, and Deploy
+# Tutorial 3: Planning and deploying
 
-At this point you have an app model. Now you can use Skaal for the thing it is built around: solving the cheapest valid infrastructure path for that model and generating artifacts from the result.
+At this point you have an app model and a local runtime. This tutorial adds named environments, deploy rendering, and the lock file.
 
 ## What You Will Learn
 
-- how catalogs shape the solver's search space
-- what `plan.skaal.lock` is for
-- how `skaal build` and `skaal deploy` consume the plan instead of re-reading your code from scratch
+- how `skaal.toml` names environments
+- what `skaal.lock` is for
+- how `skaal plan`, `skaal map`, `skaal build`, and `skaal deploy` fit together
 
-## Start With a Catalog
+## Add `skaal.toml`
 
-Before you solve anything, inspect the available backends:
-
-```bash
-skaal catalog validate catalogs/local.toml
-skaal catalog browse --catalog catalogs/local.toml --section storage
-skaal catalog sources catalogs/local.toml
-```
-
-That gives you three useful checks:
-
-- the catalog parses and validates
-- you can see which storage backends are actually available
-- you can confirm the source chain for overlay catalogs
-
-## Run `plan`
-
-Solve your app against the local target:
-
-```bash
-skaal plan --target local --catalog catalogs/local.toml todo_api:app
-```
-
-This writes `plan.skaal.lock`. Treat that file as the resolved infrastructure contract for the current app, target, and catalog combination.
-
-Look at it after the command runs. The important fields are:
-
-- the deploy target
-- the selected backend for each storage surface
-- the selected compute shape, if any
-- the source module that `skaal build` will use later
-
-## Diff Before You Rebuild
-
-Once a plan exists, use `skaal diff` to understand whether a change in code or catalog actually changes the resolved shape:
-
-```bash
-skaal diff
-skaal diff todo_api:app
-```
-
-The first form prints the current plan summary. The second form re-solves and compares the fresh result against the plan already on disk.
-
-## Build Artifacts From the Plan
-
-Generate deployable output:
-
-```bash
-skaal build --out artifacts
-```
-
-For a local target, Skaal writes a Dockerfile, runtime entry point, Pulumi program, and stack metadata into `artifacts/`.
-
-If you are developing Skaal itself and want the generated artifact to bundle your working tree instead of the published package, use:
-
-```bash
-skaal build --out artifacts --dev
-```
-
-## Deploy the Local Stack
-
-
-To deploy you need the Pulumi CLI installed and configured. Then run:
-```bash
-pip install "skaal[deploy]"
-```
-
-Go to **[Pulumi Installation](https://www.pulumi.com/docs/get-started/download-install/)** for the full instructions.
-
-Also make sure to have Docker installed and running for the local target. See **[Docker Installation](https://docs.docker.com/get-docker/)**.
-
-Then deploy the generated stack:
-
-```bash
-skaal deploy --artifacts-dir artifacts
-skaal infra status
-```
-
-The local deployment path is Pulumi-based, so `skaal deploy` brings up the generated stack and `skaal infra status` shows the active resources described by the current plan.
-
-When you are done testing, tear it down again:
-
-```bash
-skaal destroy --artifacts-dir artifacts --stack local
-```
-
-## Retarget Without Rewriting the App
-
-The main Skaal promise shows up here: the application model stays the same while the target changes.
-
-```bash
-skaal plan --target aws --catalog catalogs/aws.toml todo_api:app
-skaal build --out artifacts
-skaal deploy --artifacts-dir artifacts --stack prod
-```
-
-The code path is the same. The catalog and target are what change.
-
-## A Good Project Setup
-
-Inside a real project, put the default app reference in `pyproject.toml`:
+Create `skaal.toml` at the repo root:
 
 ```toml
-[tool.skaal]
-app = "todo_api:app"
+[env.local]
 target = "local"
-catalog = "catalogs/local.toml"
+
+[env.prod]
+target = "aws"
+region = "us-east-1"
+
+[env.prod.backends.aws]
+table_prefix = "prod-"
 ```
 
-That shortens the command loop considerably:
+This gives Skaal two named environments:
+
+- `local` for local runtime binding
+- `prod` for AWS binding and deploy output
+
+## Preview the plan
+
+Use the existing example app for the rest of this tutorial:
 
 ```bash
-skaal run
-skaal plan
-skaal build
-skaal deploy
+skaal plan examples.todo_api:app --env local
 ```
 
-## Reference Links
+What you see:
 
-- Read [Python API: CLI-Parity API](../reference/python-api-cli-parity.md) for the `skaal.api` functions that mirror `run`, `plan`, `build`, `deploy`, and `diff`.
-- Read [CLI Configuration](../cli-configuration.md) for full `tool.skaal` defaults, stack profiles, and supported `SKAAL_*` variables.
+- one row per planned change between the current app and `skaal.lock`
+- the bound environment and app fingerprints
+
+What gets written:
+
+- nothing. `skaal plan` is a diff command.
+
+## Inspect the bound resources
+
+```bash
+skaal map examples.todo_api:app --env local
+```
+
+This prints the source-to-resource tree and writes `.skaal/map.json`.
+
+## Render artifacts
+
+Build the AWS-shaped artifact tree without touching cloud resources:
+
+```bash
+skaal build examples.todo_api:app --env prod
+```
+
+What you see:
+
+- the number of rendered resource artifacts
+- the output directory, which defaults to `.skaal/build/prod/`
+
+What gets written:
+
+- Dockerfiles
+- runtime entrypoints
+- Pulumi program files
+- stack metadata for that environment
+
+## Deploy
+
+Install the deploy extras and make sure the Pulumi CLI is available:
+
+```bash
+pip install "skaal[deploy,aws]"
+skaal doctor
+```
+
+Then deploy:
+
+```bash
+skaal deploy examples.todo_api:app --env prod --preview
+skaal deploy examples.todo_api:app --env prod --yes
+```
+
+What you see:
+
+- the render directory
+- the Pulumi stack name
+- preview or apply output
+
+What gets written:
+
+- a render tree, as with `skaal build`
+- new entries in `skaal.lock` for resources that were pinned during deploy
+
+## Why this matters
+
+The app declaration did not change. You only added environment data and then ran different commands against different environment names.
+
+That is the core Skaal trade:
+
+- one app graph
+- named environments in `skaal.toml`
+- explicit lock pins in `skaal.lock`
+
+## What this does not cover
+
+- project scaffolding through `skaal init`
+- advanced target-specific backend options
+- teardown helpers beyond Pulumi itself
+
+## Reference links
+
+- Read [CLI commands](../cli.md) for the exact command shapes.
+- Read [Configuring your environments](../cli-configuration.md) for the `skaal.toml` format.
+- Read [Python API: CLI-Parity API](../reference/python-api-cli-parity.md) for the in-process equivalents.
 
 ## Continue
 
-Next: [Tutorial 4: Relational Data and Migrations](relational-and-migrations.md).
+Next: [Tutorial 4: Relational data](relational-and-migrations.md).

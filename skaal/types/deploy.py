@@ -118,7 +118,6 @@ class ExternalObservabilityConfig(ExternalComponentConfig):
 
 class AppRefConfig(ExternalComponentConfig):
     timeout_ms: int
-    fallback_url: str | None = None
 
 
 ComponentConfig: TypeAlias = (
@@ -149,7 +148,6 @@ class CloudRunEnvVar(TypedDict, total=False):
 class AppLike(Protocol):
     name: str
     _mounts: dict[str, str]
-    _wsgi_attribute: str
 
 
 class BackendWiring(NamedTuple):

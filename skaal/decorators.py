@@ -1,327 +1,371 @@
-"""Core user-facing decorators: @storage, @compute, @scale, @handler, @shared."""
+"""Core user-facing decorators: `@storage`, `@function`, and `@external`.
+
+The `@compute`, `@scale`, `@handler`, and `@shared` decorators were part of
+the constraint vocabulary and have been removed per ADR 028. The constraint
+keyword arguments on `@storage` (`read_latency`, `write_latency`,
+`durability`, `access_pattern`, `write_throughput`, `retention`,
+`decommission_policy`, …) are also gone — Phase 2's inference layer derives
+infrastructure shape from class shape, not constraints.
+
+Phase 4 (ADR 032) adds the second-generic `Backend` type-pin: when a user
+class subclasses `Store[T, Redis]` / `BlobStore[S3]` / `Channel[T, Sqs]`,
+the decorator reads the parameterised base and populates
+`ResourceOverrides.backend` so the binder pins to that backend. The
+`@external` decorator wraps the same machinery with an environment-side
+connection lookup. The legacy per-decorator dunders (`storage`, `function`,
+`schedule`, `channel`, `job`, `secrets`) are gone: every consumer reads
+``__skaal_inferred__``.
+
+Phase 5 (ADR 033) tightens the `@function` decorator's signature so the
+wrapped callable's `ParamSpec` and return `TypeVar` flow into
+``FunctionRef[P, R]``. Call sites preserve type information through the
+decoration, satisfying the ADR 028 §6.13.3 "decorator preserves
+signatures" row.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from enum import Enum
-from typing import Any, Literal, TypeVar, cast, overload
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import Any, Generic, Literal, TypeVar, cast, get_args, get_origin
 
+from typing_extensions import ParamSpec
+
+from skaal.backends._base import Backend
 from skaal.blob import validate_blob_model
-from skaal.types import (
-    AccessPattern,
-    Compute,
-    ComputeType,
-    Consistency,
-    DecommissionPolicy,
-    Durability,
-    Latency,
-    Retention,
-    Scale,
-    ScaleStrategy,
-    SecondaryIndex,
-    Throughput,
+from skaal.inference.model import (
+    BlueprintResource,
+    Overrides,
+    ResourceKind,
+    SchemaRef,
+    SourceLocation,
 )
-from skaal.types.compute import Bulkhead, CircuitBreaker, RateLimitPolicy, RetryPolicy
+from skaal.types import SecondaryIndex
+from skaal.types.compute import (
+    Bulkhead,
+    CircuitBreaker,
+    RateLimit,
+    ResiliencePolicies,
+    Retry,
+)
 
-F = TypeVar("F", bound=Callable[..., Any])
 C = TypeVar("C", bound=type)
-E = TypeVar("E", bound=Enum)
-StorageKind = Literal["kv", "blob", "relational", "vector"]
+P = ParamSpec("P")
+R = TypeVar("R")
+StorageKind = Literal["kv", "blob", "relational"]
 
 
-def _coerce_enum(value: E | str | None, enum_type: type[E]) -> E | None:
-    if value is None or isinstance(value, enum_type):
-        return value
-    return enum_type(value)
+class FunctionRef(Generic[P, R]):
+    """Typed handle to a ``@app.function``-decorated callable.
+
+    The decorator returns a `FunctionRef` so cross-module call-sites see
+    the typed signature without `getattr` indirection (ADR 028 §6.4.2,
+    ADR 032 §4.7). Resilience policies, the source location, and the
+    canonical resource id all live on ``self.overrides`` /
+    ``self.__skaal_inferred__``.
+
+    Attribute access falls through to ``__wrapped__`` so callers that
+    read ``__name__`` / ``__module__`` / ``__doc__`` keep working without
+    the runtime having to special-case `FunctionRef`.
+
+    Phase 5 (ADR 033) lets ``P`` and ``R`` flow through the decorator
+    factory so ``__call__`` preserves the wrapped callable's parameter
+    list and return type. For an ``async def signup(user: User) -> User``,
+    ``R`` resolves to ``Coroutine[Any, Any, User]`` and
+    ``await signup(user)`` reveals ``User``.
+    """
+
+    __slots__ = ("__skaal_inferred__", "__wrapped__", "id", "overrides")
+
+    def __init__(
+        self,
+        fn: Callable[P, Awaitable[R]] | Callable[P, R],
+        *,
+        id: str,
+        overrides: Overrides,
+        inferred: BlueprintResource,
+    ) -> None:
+        self.__wrapped__ = fn
+        self.id = id
+        self.overrides = overrides
+        self.__skaal_inferred__ = inferred
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
+        return cast(R, self.__wrapped__(*args, **kwargs))
+
+    def __getattr__(self, name: str) -> Any:
+        # Slots block direct setattr but __getattr__ is only invoked when
+        # the normal lookup fails — forward everything else to the wrapped
+        # callable so consumers reading ``__name__`` / ``__module__`` /
+        # ``__doc__`` keep working.
+        wrapped = object.__getattribute__(self, "__wrapped__")
+        return getattr(wrapped, name)
+
+    @property
+    def __signature__(self) -> inspect.Signature:
+        return inspect.signature(self.__wrapped__)
 
 
-def _coerce_retention(value: Retention | str | None) -> Retention | None:
-    if value is None or isinstance(value, Retention):
-        return value
-    return Retention.parse(value)
+def _extract_backend_pin(cls: type) -> type[Backend[Any]] | None:
+    """Return the `Backend` subclass pinned via the class's parameterised base.
+
+    Two capture paths share the same return contract:
+
+    * `Store[T, B]` / `BlobStore[B]` / `Channel[T, B]` keep the
+      parametrisation visible on ``__orig_bases__``; the walk below
+      picks the `Backend` subclass out of the generic args directly.
+    * `Relational[B]` flows through `SQLModelMetaclass`, which
+      overwrites ``__orig_bases__`` on subclasses. The token is stashed
+      on ``__skaal_backend_pin__`` by `Relational.__class_getitem__`
+      instead; subclasses inherit it via the normal MRO.
+
+    ``Backend`` itself — the default value of the ``B`` `TypeVar` on
+    every primitive — is ignored so un-pinned declarations
+    (``Store[User]``) report no pin. Returns ``None`` when no pin is
+    present.
+    """
+    pinned: Any = getattr(cls, "__skaal_backend_pin__", None)
+    if isinstance(pinned, type) and issubclass(pinned, Backend) and pinned is not Backend:
+        return cast("type[Backend[Any]]", pinned)
+
+    bases: tuple[Any, ...] = getattr(cls, "__orig_bases__", ())
+    for base in bases:
+        args = get_args(base)
+        for arg in args:
+            origin = get_origin(arg)
+            candidate: Any = origin if isinstance(origin, type) else arg
+            if (
+                isinstance(candidate, type)
+                and issubclass(candidate, Backend)
+                and candidate is not Backend
+            ):
+                return cast("type[Backend[Any]]", candidate)
+    return None
 
 
-def _coerce_throughput(
-    value: Throughput | str | int | float | None,
-) -> Throughput | int | float | None:
-    if value is None or isinstance(value, (Throughput, int, float)):
-        return value
-    return Throughput(value)
-
-
-def _apply_metadata(target: C, attribute: str, metadata: Any) -> C:
-    setattr(target, attribute, metadata)
-    return target
-
-
-def _apply_callable_metadata(target: F, attribute: str, metadata: Any) -> F:
-    setattr(target, attribute, metadata)
-    return target
-
-
-def _build_storage_metadata(
-    *,
-    kind: str,
-    read_latency: Latency | str | None,
-    write_latency: Latency | str | None,
-    durability: Durability | str,
-    size_hint: str | None,
-    access_pattern: AccessPattern | str,
-    write_throughput: Throughput | str | int | float | None,
-    residency: str | None,
-    retention: Retention | str | None,
-    auto_optimize: bool,
-    decommission_policy: DecommissionPolicy | None,
-    collocate_with: str | None,
-    schema: dict[str, Any],
-    indexes: list[SecondaryIndex] | None = None,
-) -> dict[str, Any]:
-    return {
-        "kind": kind,
-        "read_latency": _coerce_enum(read_latency, Latency),
-        "write_latency": _coerce_enum(write_latency, Latency),
-        "durability": _coerce_enum(durability, Durability),
-        "size_hint": size_hint,
-        "access_pattern": _coerce_enum(access_pattern, AccessPattern),
-        "write_throughput": _coerce_throughput(write_throughput),
-        "residency": residency,
-        "retention": _coerce_retention(retention),
-        "auto_optimize": auto_optimize,
-        "decommission_policy": decommission_policy,
-        "collocate_with": collocate_with,
-        "indexes": list(indexes or []),
-        "schema": schema,
-    }
+_STORAGE_KIND_TO_RESOURCE_KIND: dict[StorageKind, ResourceKind] = {
+    "kv": ResourceKind.STORE,
+    "blob": ResourceKind.BLOB,
+    "relational": ResourceKind.RELATIONAL,
+}
 
 
 def _normalize_storage_kind(kind: StorageKind | str) -> StorageKind:
     normalized = kind.strip().lower()
-    if normalized not in {"kv", "blob", "relational", "vector"}:
+    if normalized not in {"kv", "blob", "relational"}:
         raise ValueError(f"Unsupported storage kind: {kind!r}")
     return cast(StorageKind, normalized)
 
 
-def _default_access_pattern(kind: StorageKind) -> AccessPattern:
-    if kind == "blob":
-        return AccessPattern.BULK_READ
-    if kind == "relational":
-        return AccessPattern.TRANSACTIONAL
-    if kind == "vector":
-        return AccessPattern.BULK_READ
-    return AccessPattern.RANDOM_READ
+def _validate_storage_class(cls: type, *, kind: StorageKind) -> None:
+    """Run the kind-specific structural validation for a storage class.
 
-
-def _storage_schema(
-    cls: C,
-    *,
-    kind: StorageKind,
-    dim: int | None,
-    metric: str,
-) -> dict[str, Any]:
+    Phase 1 used the schema-hints helpers as the validation entry point;
+    Phase 4 keeps the validation but no longer surfaces the hints onto
+    the class — the inference layer's `SchemaRef` is the canonical source.
+    """
     if kind == "blob":
         validate_blob_model(cls)
-        try:
-            from skaal.storage import _schema_hints
-
-            return _schema_hints(cls)
-        except Exception:
-            return {}
-
+        return
     if kind == "relational":
-        from skaal.relational import _schema_hints as relational_schema_hints
-        from skaal.relational import validate_relational_model
+        from skaal.table import validate_relational_model
 
         validate_relational_model(cls)
-        return relational_schema_hints(cls)
-
-    if kind == "vector":
-        from skaal.vector import VectorStore, validate_vector_model
-        from skaal.vector import _schema_hints as vector_schema_hints
-
-        vector_cls = cast(type[VectorStore[Any]], cls)
-        validate_vector_model(vector_cls)
-        if dim is None or dim <= 0:
-            raise ValueError('@app.storage(kind="vector") requires dim > 0.')
-        vector_cls.__skaal_vector_dimensions__ = dim
-        vector_cls.__skaal_vector_metric__ = metric.lower()
-        return vector_schema_hints(vector_cls)
-
-    try:
-        from skaal.storage import _schema_hints
-
-        return _schema_hints(cls)
-    except Exception:
-        return {}
 
 
-@overload
-def storage(
+def _storage_inferred(
+    cls: type,
     *,
-    kind: Literal["vector"],
-    dim: int,
-    metric: str = "cosine",
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | int | float | None = None,
-    residency: str | None = None,
-    retention: Retention | str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
+    kind: StorageKind,
     indexes: list[SecondaryIndex] | None = None,
-) -> Callable[[C], C]: ...
+    external_name: str | None = None,
+) -> BlueprintResource:
+    _validate_storage_class(cls, kind=kind)
+    idx = tuple(indexes or ()) if kind == "kv" else ()
+    pinned_token = _extract_backend_pin(cls)
+    overrides = Overrides(
+        backend=pinned_token.name if pinned_token is not None else None,
+        external=external_name is not None,
+        external_name=external_name,
+    )
+    return BlueprintResource(
+        id=BlueprintResource.id_for(cls),
+        kind=_STORAGE_KIND_TO_RESOURCE_KIND[kind],
+        source=SourceLocation.from_object(cls),
+        schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
+        indexes=idx,
+        overrides=overrides,
+    )
 
 
-@overload
+def _attach_storage_inferred(
+    cls: type,
+    *,
+    kind: StorageKind,
+    indexes: list[SecondaryIndex] | None = None,
+    external_name: str | None = None,
+) -> BlueprintResource:
+    inferred = _storage_inferred(
+        cls,
+        kind=kind,
+        indexes=indexes,
+        external_name=external_name,
+    )
+    cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+    return inferred
+
+
+def _channel_inferred(
+    cls: type,
+    *,
+    buffer: int = 1000,
+) -> BlueprintResource:
+    pinned_token = _extract_backend_pin(cls)
+    return BlueprintResource(
+        id=BlueprintResource.id_for(cls),
+        kind=ResourceKind.CHANNEL,
+        source=SourceLocation.from_object(cls),
+        schema_=SchemaRef.from_class(cls),  # pyright: ignore[reportCallIssue]
+        overrides=Overrides(
+            backend=pinned_token.name if pinned_token is not None else None,
+            channel_buffer=buffer,
+        ),
+    )
+
+
+def _attach_channel_inferred(
+    cls: type,
+    *,
+    buffer: int = 1000,
+) -> BlueprintResource:
+    inferred = _channel_inferred(cls, buffer=buffer)
+    cls.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+    return inferred
+
+
 def storage(
     *,
     kind: StorageKind | str = "kv",
-    dim: None = None,
-    metric: str = "cosine",
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | int | float | None = None,
-    residency: str | None = None,
-    retention: Retention | str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
-    indexes: list[SecondaryIndex] | None = None,
-) -> Callable[[C], C]: ...
-
-
-def storage(
-    *,
-    kind: StorageKind | str = "kv",
-    dim: int | None = None,
-    metric: str = "cosine",
-    read_latency: Latency | str | None = None,
-    write_latency: Latency | str | None = None,
-    durability: Durability | str = Durability.PERSISTENT,
-    size_hint: str | None = None,
-    access_pattern: AccessPattern | str | None = None,
-    write_throughput: Throughput | str | int | float | None = None,
-    residency: str | None = None,
-    retention: Retention | str | None = None,
-    auto_optimize: bool = False,
-    decommission_policy: DecommissionPolicy | None = None,
-    collocate_with: str | None = None,
     indexes: list[SecondaryIndex] | None = None,
 ) -> Callable[[C], C]:
-    """Declare infrastructure constraints for a storage variable or Store class."""
+    """Declare a Skaal storage class.
+
+    Constraint keyword arguments (latency, durability, access pattern, …)
+    have been removed per ADR 028. The inference layer in Phase 2 derives
+    storage shape from the class itself; the binding layer in Phase 3
+    selects a backend via a fixed defaults table.
+    """
     normalized_kind = _normalize_storage_kind(kind)
 
     def decorator(cls: C) -> C:
-        schema = _storage_schema(cls, kind=normalized_kind, dim=dim, metric=metric)
-
-        return _apply_metadata(
-            cls,
-            "__skaal_storage__",
-            _build_storage_metadata(
-                kind=normalized_kind,
-                read_latency=read_latency,
-                write_latency=write_latency,
-                durability=durability,
-                size_hint=size_hint,
-                access_pattern=access_pattern or _default_access_pattern(normalized_kind),
-                write_throughput=write_throughput,
-                residency=residency,
-                retention=retention if normalized_kind in {"kv", "blob"} else None,
-                auto_optimize=auto_optimize,
-                decommission_policy=decommission_policy,
-                collocate_with=collocate_with,
-                indexes=indexes if normalized_kind == "kv" else None,
-                schema=schema,
-            ),
-        )
+        _attach_storage_inferred(cls, kind=normalized_kind, indexes=indexes)
+        return cls
 
     return decorator
 
 
-def compute(
+def connect(
     *,
-    latency: Latency | str | None = None,
-    throughput: Throughput | str | None = None,
-    compute_type: ComputeType | str = ComputeType.CPU,
-    memory: str | None = None,
-    schedule: str = "realtime",
-    collocate_with: str | None = None,
-    retry: RetryPolicy | None = None,
-    circuit_breaker: CircuitBreaker | None = None,
-    rate_limit: RateLimitPolicy | None = None,
-    bulkhead: Bulkhead | None = None,
-) -> Callable[[F], F]:
-    """Declare infrastructure constraints for a compute function.
+    name: str,
+    kind: StorageKind | str = "kv",
+) -> Callable[[C], C]:
+    """Declare an externally-provisioned resource.
 
-    Resilience policies (*retry*, *circuit_breaker*, *rate_limit*, *bulkhead*)
-    are honoured by the runtime — see :mod:`skaal.runtime.middleware`.
+    The decorated class must declare a `Backend` type-pin via its second
+    generic parameter (`Store[T, Postgres]`, `BlobStore[S3]`, etc.).
+    `name` indexes into `Environment.backends` at bind time — the runtime
+    adapter reads the connection from there, and the deploy layer skips
+    Pulumi provisioning for this resource.
+
+    Args:
+        name: Key into ``[env.<name>.backends]`` from `skaal.toml`.
+        kind: The storage kind, mirroring `@storage`.
+
+    Raises:
+        SkaalConfigError: If the class is not type-pinned to a registered
+            `Backend` subclass. External resources without a pin are not
+            actionable — the binder cannot guess the wire protocol.
+    """
+    from skaal.errors import SkaalConfigError
+
+    normalized_kind = _normalize_storage_kind(kind)
+
+    def decorator(cls: C) -> C:
+        pinned_token = _extract_backend_pin(cls)
+        if pinned_token is None:
+            raise SkaalConfigError(
+                f"@external requires a Backend type-pin on {cls.__name__!r}; "
+                "declare e.g. `class LegacyDb(Relational[Postgres])`."
+            )
+        _attach_storage_inferred(cls, kind=normalized_kind, external_name=name)
+        return cls
+
+    return decorator
+
+
+def expose(
+    *,
+    retry: Retry | None = None,
+    circuit_breaker: CircuitBreaker | None = None,
+    rate_limit: RateLimit | None = None,
+    bulkhead: Bulkhead | None = None,
+) -> Callable[[Callable[P, R]], FunctionRef[P, R]]:
+    """Declare a Skaal compute function with optional resilience policies.
+
+    Resilience policies (`retry`, `circuit_breaker`, `rate_limit`,
+    `bulkhead`) are honoured by the local runtime middleware. The
+    decorator returns a `FunctionRef` carrying ``id``, ``overrides``,
+    and ``__skaal_inferred__`` for runtime / deploy consumers; no
+    per-decorator legacy dunder is written.
+
+    The decorator factory's return type is
+    ``Callable[[Callable[P, R]], FunctionRef[P, R]]`` — Pyright infers
+    ``P`` and ``R`` from each decorated function, so call sites preserve
+    the underlying signature (ADR 028 §6.13.3 "decorator preserves
+    signatures").
     """
 
-    def decorator(fn: F) -> F:
-        return _apply_callable_metadata(
-            fn,
-            "__skaal_compute__",
-            Compute(
-                latency=latency,
-                throughput=throughput,
-                compute_type=_coerce_enum(compute_type, ComputeType) or ComputeType.CPU,
-                memory=memory,
-                schedule=schedule,
-                collocate_with=collocate_with,
+    def decorator(fn: Callable[P, R]) -> FunctionRef[P, R]:
+        import contextlib
+
+        overrides = Overrides(
+            resilience=_resilience(
                 retry=retry,
                 circuit_breaker=circuit_breaker,
                 rate_limit=rate_limit,
                 bulkhead=bulkhead,
             ),
         )
-
-    return decorator
-
-
-def scale(
-    *,
-    instances: int | str = "auto",
-    strategy: ScaleStrategy | str = ScaleStrategy.ROUND_ROBIN,
-) -> Callable[[F], F]:
-    """Declare scaling policy for a function."""
-
-    def decorator(fn: F) -> F:
-        return _apply_callable_metadata(
-            fn,
-            "__skaal_scale__",
-            Scale(
-                instances=instances,
-                strategy=_coerce_enum(strategy, ScaleStrategy) or ScaleStrategy.ROUND_ROBIN,
-            ),
+        inferred = BlueprintResource(
+            id=BlueprintResource.id_for(fn),
+            kind=ResourceKind.FUNCTION,
+            source=SourceLocation.from_object(fn),
+            overrides=overrides,
         )
+        with contextlib.suppress(AttributeError, TypeError):
+            fn.__skaal_inferred__ = inferred  # type: ignore[attr-defined]
+        return FunctionRef(fn, id=inferred.id, overrides=overrides, inferred=inferred)
 
     return decorator
 
 
-def shared(
+def _resilience(
     *,
-    consistency: Consistency | str = Consistency.EVENTUAL,
-) -> Callable[[F], F]:
-    """Mark a variable or Channel as distributed across all instances."""
+    retry: Retry | None,
+    circuit_breaker: CircuitBreaker | None,
+    rate_limit: RateLimit | None,
+    bulkhead: Bulkhead | None,
+) -> ResiliencePolicies | None:
+    """Build a `ResiliencePolicies` from the four kwarg policies, or `None`.
 
-    def decorator(fn: F) -> F:
-        return _apply_callable_metadata(
-            fn,
-            "__skaal_shared__",
-            {
-                "consistency": _coerce_enum(consistency, Consistency) or Consistency.EVENTUAL,
-            },
-        )
-
-    return decorator
-
-
-def handler(fn: F) -> F:
-    """Mark a method on an Agent as a message handler."""
-    return _apply_callable_metadata(fn, "__skaal_handler__", True)
+    Collapsing the empty-envelope case to ``None`` keeps the `BoundPlan`
+    fingerprint stable for resources that declare zero policies — the
+    common case in examples and tests.
+    """
+    policies = ResiliencePolicies(
+        retry=retry,
+        circuit_breaker=circuit_breaker,
+        rate_limit=rate_limit,
+        bulkhead=bulkhead,
+    )
+    return None if policies.is_empty else policies

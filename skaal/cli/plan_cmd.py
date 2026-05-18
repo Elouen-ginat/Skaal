@@ -1,160 +1,102 @@
-"""`skaal plan` — run constraint solver, generate plan.skaal.lock."""
+"""`skaal plan` — render the environment diff implied by the current app.
+
+Phase 6 starts by diffing the current `BoundPlan` against `skaal.lock` for
+the requested environment. Live deployed-state reconciliation, `skaal map`,
+and `where` / `trace` land in follow-ups.
+"""
 
 from __future__ import annotations
 
-import logging
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
+from skaal.api import PlanDiff, diff_plan, render_plan_diff_markdown
+from skaal.binding import LockFile
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._utils import load_app  # noqa: F401 — re-exported for test patching
-from skaal.cli.config import SkaalSettings
-
-if TYPE_CHECKING:
-    from skaal.plan import PlanFile
-
-app = typer.Typer(help="Run the constraint solver and generate a plan.")
-log = logging.getLogger("skaal.cli")
+from skaal.cli._load import load_app, load_plan
 
 
-def _print_plan_table(plan_file: PlanFile) -> None:
-    """Pretty-print a plan's storage assignments as a bordered table."""
-    col_w = [30, 25, 60]
-    header = (
-        f"| {'Storage variable':<{col_w[0]}} | {'Backend':<{col_w[1]}} | {'Reason':<{col_w[2]}} |"
-    )
-    sep = f"+-{'-' * col_w[0]}-+-{'-' * col_w[1]}-+-{'-' * col_w[2]}-+"
-    log.info(sep)
-    log.info(header)
-    log.info(sep)
-    for spec in plan_file.storage.values():
-        log.info(
-            f"| {spec.variable_name:<{col_w[0]}} | "
-            f"{spec.backend:<{col_w[1]}} | "
-            f"{spec.reason[: col_w[2]]:<{col_w[2]}} |"
-        )
-    log.info(sep)
+class PlanOutputFormat(StrEnum):
+    """Supported output formats for `skaal plan`."""
 
-    if plan_file.compute:
-        log.info("")
-        log.info("Compute assignments:")
-        for cspec in plan_file.compute.values():
-            log.info("  %s: %s  (%s)", cspec.function_name, cspec.instance_type, cspec.reason)
+    TABLE = "table"
+    GITHUB_MARKDOWN = "github-markdown"
 
-    if plan_file.secrets:
-        log.info("")
-        log.info("Secrets:")
-        for sspec in plan_file.secrets.values():
-            required = "required" if sspec.required else "optional"
-            log.info(
-                "  %s -> $%s via %s [%s]",
-                sspec.name,
-                sspec.env,
-                sspec.provider,
-                required,
-            )
+
+app = typer.Typer(
+    help="Render the diff between the current app and `skaal.lock`.",
+    context_settings={"allow_interspersed_args": True},
+)
 
 
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
-    target_app: str | None = typer.Argument(
-        None,
+    target: str = typer.Argument(
+        ...,
         help=(
-            "App to plan. Either 'module:variable' (e.g. 'examples.counter:app') "
-            "or the name of an entry in [tool.skaal.apps]. Falls back to "
-            "'app' in [tool.skaal] of pyproject.toml."
-        ),
-        metavar="[MODULE:APP|APP_NAME]",
-    ),
-    all_apps: bool = typer.Option(
-        False,
-        "--all",
-        help="Plan every app declared in [tool.skaal.apps] in topological order.",
-    ),
-    target: str | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help=(
-            "Deploy target: aws, gcp, aws-lambda, gcp-cloudrun, k8s, ecs. "
-            "Env: SKAAL_TARGET. pyproject: tool.skaal.target."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    catalog: Path | None = typer.Option(
-        None,
-        "--catalog",
-        help="Path to catalog TOML. Env: SKAAL_CATALOG. pyproject: tool.skaal.catalog.",
+    env_name: str = typer.Option(
+        "local",
+        "--env",
+        "-e",
+        help="Environment name from `skaal.toml` (defaults to `local`).",
     ),
-    reoptimize: bool = typer.Option(
-        False, "--reoptimize", help="Force re-solving all backend choices."
-    ),
-    pin: list[str] = typer.Option(
-        [], "--pin", help="Pin a variable to a backend, e.g. profiles=redis."
+    output_format: PlanOutputFormat = typer.Option(
+        PlanOutputFormat.TABLE,
+        "--format",
+        help="Output format: `table` or `github-markdown`.",
     ),
 ) -> None:
-    """
-    Analyze the app's constraints via Z3 and write plan.skaal.lock.
-
-    Solver output includes: backend selections, instance types, placement rules,
-    estimated cost, and UNSAT explanations if constraints cannot be met.
-
-    Example:
-
-        skaal plan examples.counter:app --target aws
-    """
-    from skaal import api
-    from skaal.plan import PLAN_FILE_NAME
-
-    cfg = SkaalSettings()
-
-    # Multi-app: --all or a positional app-name from [tool.skaal.apps].
-    if all_apps:
-        steps = api.plan_all()
-        for step in steps:
-            marker = "OK " if step.success else "FAIL"
-            log.info("[%s] %s", marker, step.name)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
+    skaal_app = load_app(target)
+    loaded_plan = load_plan(skaal_app, env_name)
+    lock = LockFile.load(Path("skaal.lock"))
+    diff = diff_plan(loaded_plan.bound, lock)
+    if output_format is PlanOutputFormat.GITHUB_MARKDOWN:
+        typer.echo(render_plan_diff_markdown(diff))
         return
+    _render(diff)
 
-    if target_app and ":" not in target_app and target_app in cfg.apps:
-        from skaal.cli._orchestrator import plan_all as _plan_all
 
-        graph = api.project_graph()
-        steps = _plan_all(graph, only=[target_app])
-        for step in steps:
-            marker = "OK " if step.success else "FAIL"
-            log.info("[%s] %s", marker, step.name)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
-        return
-
-    resolved_app = target_app or cfg.app
-    resolved_target = target or cfg.target
-
-    if resolved_app is None:
-        raise ValueError(
-            "missing MODULE:APP.\n"
-            "  Pass it as an argument: skaal plan mypackage.app:skaal_app\n"
-            "  Or set 'app' in [tool.skaal] of pyproject.toml.\n"
-            "  Or declare apps under [tool.skaal.apps.<name>] and use "
-            "`skaal plan --all`."
-        )
-
-    skaal_app = api.resolve_app(resolved_app)
-
-    log.info("Solving constraints for %r -> target=%r ...", skaal_app.name, resolved_target)
-
-    plan_file = api.plan(
-        resolved_app,
-        target=resolved_target,
-        catalog=catalog,
-        write=True,
+def _render(diff: PlanDiff) -> None:
+    console = Console()
+    console.print(
+        f"[bold]{diff.bound.app}[/bold] / env=[cyan]{diff.bound.environment}[/cyan]  "
+        f"app={diff.bound.app_fingerprint or '-'}  "
+        f"current={diff.bound.bound_fingerprint or '-'}  "
+        f"deployed={diff.deployed_fingerprint or '-'}"
     )
 
-    log.info("Wrote %s", PLAN_FILE_NAME)
-    log.info("")
-    _print_plan_table(plan_file)
+    if not diff.bound.resources:
+        console.print("[dim]No resources discovered.[/dim]")
+        return
+
+    if not diff.changes:
+        console.print("[green]No changes.[/green] `skaal.lock` already matches this plan.")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Action")
+    table.add_column("Resource")
+    table.add_column("Kind")
+    table.add_column("Backend")
+    table.add_column("Region")
+    table.add_column("Details")
+
+    for change in diff.changes:
+        table.add_row(
+            change.action,
+            change.resource_id,
+            change.kind,
+            change.backend,
+            change.region or "-",
+            change.details,
+        )
+
+    console.print(table)

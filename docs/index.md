@@ -3,523 +3,307 @@ hide:
   - navigation
   - toc
 ---
-<section class="lp-hero" id="top">
-  <div class="lp-hero__copy">
-    <span class="lp-kicker"><span class="lp-kicker__pulse"></span>Infrastructure as Constraints for Python</span>
-    <h1 class="lp-hero__h1">Stop hard-coding the backend.<br /><em>Declare the contract instead.</em></h1>
-    <p class="lp-hero__lead">
-      You picked SQLite to start, then rewrote the data layer for Postgres, then again for DynamoDB.
-      Each migration leaked infra into business code. Skaal lets you declare the <em>behavior</em>
-      a resource needs &mdash; latency, durability, throughput, residency &mdash; and a Z3 solver picks
-      the cheapest backend in your catalog that satisfies it. Local, AWS, and GCP, from one app file.
-    </p>
-    <div class="lp-hero__actions">
-      <a class="sk-btn sk-btn--primary" href="tutorials/">Start tutorials</a>
-      <a class="sk-btn sk-btn--ghost" href="cli/">Browse the CLI</a>
-      <span class="sk-btn sk-btn--ghost sk-btn--copy"><code>pip install &quot;skaal[serve]&quot;</code></span>
-    </div>
-    <div class="lp-hero__meta">
-      <span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        One app model, many targets
-      </span>
-      <span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        Auditable plan.skaal.lock output
-      </span>
-      <span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        Local, AWS, and GCP
-      </span>
-    </div>
-  </div>
 
-  <div class="lp-hero__visual">
-    <div class="lp-codecard">
-      <div class="lp-codecard__head">
-        <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
-        <span class="lp-codecard__file">app.py</span>
-        <span class="lp-codecard__lang">Python</span>
-      </div>
-      <pre class="lp-codecard__body"><span class="kw">from</span> skaal <span class="kw">import</span> App, storage
-<span class="kw">from</span> skaal.storage <span class="kw">import</span> Map
-
-app = <span class="cls">App</span>(<span class="str">&quot;todo&quot;</span>)
-
-
-<span class="deco">@storage</span>(
-    read_latency=<span class="str">&quot;&lt; 10ms&quot;</span>,
-    durability=<span class="str">&quot;strong&quot;</span>,
-    throughput=<span class="str">&quot;&gt; 100 rps&quot;</span>,
-    retention=<span class="str">&quot;30d&quot;</span>,
-)
-<span class="kw">class</span> <span class="cls">Todos</span>(<span class="cls">Map</span>[<span class="cls">str</span>, <span class="cls">dict</span>]):
-    <span class="kw">pass</span></pre>
-    </div>
-
-    <div class="lp-flowarrow" aria-hidden="true">
-      <span class="lp-flowarrow__line"></span>
-      <span class="lp-flowarrow__dot"></span>
-      Solve
-      <span class="lp-flowarrow__dot"></span>
-      <span class="lp-flowarrow__line"></span>
-    </div>
-
-    <div class="lp-plancard">
-      <div class="lp-plancard__head">
-        <h4>plan.skaal.lock - target=aws</h4>
-        <span class="sk-sig sk-sig--resolved"><span class="sk-sig__dot"></span>Resolved</span>
-      </div>
-      <div class="lp-plancard__body">
-        <div class="lp-plancard__title-row">
-          <h4>Storage.Todos</h4>
-          <span>3 candidates evaluated</span>
+<section class="lp-hero">
+    <div class="lp-hero__copy">
+        <div class="lp-kicker"><span class="lp-kicker__pulse"></span>code-first infrastructure for Python</div>
+        <h1 id="skaal" class="lp-hero__h1">Ship the app you wrote. <em>Keep</em> the infrastructure you own.</h1>
+        <p class="lp-hero__lead">Declare <code>Store</code>, <code>Table</code>, <code>BlobStore</code>, <code>Topic</code>, exposed functions, and mounted HTTP in Python. Skaal infers the blueprint, binds it to one environment from <code>skaal.toml</code>, and renders deploy output you can inspect.</p>
+        <div class="lp-hero__actions">
+            <a class="sk-btn sk-btn--primary" href="getting-started/">Get started</a>
+            <a class="sk-btn sk-btn--ghost" href="tutorials/">Follow the tutorial track</a>
+            <a class="sk-btn sk-btn--ghost" href="comparison/">See the trade-offs</a>
         </div>
-        <div class="lp-bcand is-selected">
-          <span class="lp-bcand__name">dynamodb</span>
-          <span class="lp-bcand__cost">$0.018 / wu - 7ms p50</span>
-          <span class="lp-bcand__tag">selected</span>
+        <div class="lp-hero__meta">
+            <span>typed clients at the call site</span>
+            <span>real Pulumi output on disk</span>
+            <span>one app graph across local and cloud environments</span>
         </div>
-        <div class="lp-bcand is-rejected">
-          <span class="lp-bcand__name">postgres</span>
-          <span class="lp-bcand__cost">$0.024 / wu - 12ms p50</span>
-          <span class="lp-bcand__tag">cost</span>
-        </div>
-        <div class="lp-bcand is-rejected">
-          <span class="lp-bcand__name">sqlite</span>
-          <span class="lp-bcand__cost">$0 - 5ms p50</span>
-          <span class="lp-bcand__tag">throughput</span>
-        </div>
-      </div>
     </div>
-  </div>
+    <div class="lp-hero__visual">
+        <div class="lp-codecard">
+            <div class="lp-codecard__head">
+                <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
+                <span class="lp-codecard__file">billing/app.py</span>
+                <span class="lp-codecard__lang">python</span>
+            </div>
+            <pre class="lp-codecard__body"><span class="kw">from</span> skaal <span class="kw">import</span> <span class="cls">App</span>, <span class="cls">Store</span>, <span class="cls">Topic</span>
+
+app = <span class="cls">App</span>(<span class="str">"billing"</span>)
+
+<span class="deco">@app.storage</span>
+<span class="kw">class</span> <span class="cls">Users</span>(<span class="cls">Store</span>[<span class="cls">User</span>]):
+        ...
+
+<span class="deco">@app.expose()</span>
+<span class="kw">async def</span> signup(user: <span class="cls">User</span>) -&gt; <span class="cls">User</span>:
+        <span class="kw">await</span> Users.set(user.id, user)
+        <span class="kw">return</span> user</pre>
+        </div>
+        <div class="lp-flowarrow">
+            <span class="lp-flowarrow__dot"></span>
+            <span>bind for prod</span>
+            <span class="lp-flowarrow__line"></span>
+        </div>
+        <div class="lp-plancard">
+            <div class="lp-plancard__head">
+                <h4>Bound plan</h4>
+                <span class="sk-sig sk-sig--resolved"><span class="sk-sig__dot"></span>ready</span>
+            </div>
+            <div class="lp-plancard__body">
+                <div class="lp-plancard__title-row">
+                    <h4>examples.todo_api</h4>
+                    <span>env=prod</span>
+                </div>
+                <div class="lp-bcand is-selected">
+                    <span class="lp-bcand__name">Todos -&gt; dynamodb</span>
+                    <span class="lp-bcand__cost">aws</span>
+                    <span class="lp-bcand__tag">bound</span>
+                </div>
+                <div class="lp-bcand is-selected">
+                    <span class="lp-bcand__name">Comments -&gt; postgres</span>
+                    <span class="lp-bcand__cost">aws</span>
+                    <span class="lp-bcand__tag">bound</span>
+                </div>
+                <div class="lp-bcand is-selected">
+                    <span class="lp-bcand__name">Uploads -&gt; s3</span>
+                    <span class="lp-bcand__cost">aws</span>
+                    <span class="lp-bcand__tag">bound</span>
+                </div>
+                <div class="lp-bcand is-rejected">
+                    <span class="lp-bcand__name">local sqlite fallback</span>
+                    <span class="lp-bcand__cost">local</span>
+                    <span class="lp-bcand__tag">other env</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
 
 <div class="lp-installstrip">
-  <span class="lp-installstrip__lbl">Runs on</span>
-  <div class="lp-installstrip__items">
-    <span><code>Python 3.11+</code></span>
-    <span>Z3 solver</span>
-    <span>SQLite, Postgres, Redis</span>
-    <span>DynamoDB, Firestore</span>
-    <span>S3, GCS, Local FS</span>
-    <span>Pulumi, Docker, Lambda, Cloud Run</span>
-  </div>
+    <span class="lp-installstrip__lbl">fastest path</span>
+    <div class="lp-installstrip__items">
+        <span><code>pip install "skaal[serve]"</code></span>
+        <span><code>skaal run examples.counter:app</code></span>
+        <span><code>skaal build examples.todo_api:app --env prod</code></span>
+        <span><code>skaal deploy examples.todo_api:app --env prod</code></span>
+    </div>
 </div>
 
-<section class="lp-section" id="how">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">How Skaal works</span>
-    <div class="lp-section__heading">
-      <h2>Stop hard-coding the stack into your business logic.</h2>
-      <a class="lp-section__anchor" href="#how" aria-label="Link to how-it-works section">#how</a>
-    </div>
-    <p class="lp-section__sub">
-      Most frameworks make you choose infrastructure on day one. Skaal flips that trade:
-      describe the behavior your code needs, solve it against a catalog, and keep the
-      application model stable while the target changes underneath it.
-    </p>
-  </div>
+<nav class="lp-quicknav" aria-label="Homepage shortcuts">
+    <a class="lp-quicknav__link" href="#how-it-lands">how it lands</a>
+    <a class="lp-quicknav__link" href="#environment-loop">environment loop</a>
+    <a class="lp-quicknav__link" href="#command-surface">command surface</a>
+    <a class="lp-quicknav__link" href="#what-you-can-ship">what you can ship</a>
+</nav>
 
-  <div class="lp-steps">
-    <div class="lp-step lp-step--declare">
-      <div class="lp-step__icon">
-        <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><path d="M5 9h12M22 9h5M5 16h5M15 16h12M5 23h17" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle class="lp-icon-fill-accent" cx="19" cy="9" r="3" /><circle class="lp-icon-fill-highlight" cx="12" cy="16" r="3" /><circle class="lp-icon-fill-accent" cx="24" cy="23" r="3" /></svg>
-      </div>
-      <span class="lp-step__num">01 / Declare</span>
-      <h3>Constraints, not connection strings</h3>
-      <p>Express latency, durability, throughput, residency, and access patterns on typed surfaces like <code>Map</code>, <code>Collection</code>, <code>BlobStore</code>, and <code>VectorStore</code>.</p>
-      <span class="lp-step__tag">@storage, @function, @schedule</span>
+<section class="lp-section" id="how-it-lands">
+    <div class="lp-section__intro">
+        <div class="lp-eyebrow">What Skaal does</div>
+        <div class="lp-section__heading">
+            <h2>One application model. Four concrete steps.</h2>
+            <a class="lp-section__anchor" href="how-it-works/">open guide</a>
+        </div>
+        <p class="lp-section__sub">The point is not to hide infrastructure. The point is to keep the app graph, environment binding, and deploy output in one coherent loop.</p>
     </div>
-    <div class="lp-step lp-step--catalog">
-      <div class="lp-step__icon">
-        <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect x="4" y="6" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="18" y="6" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="4" y="20" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="18" y="20" width="10" height="6" rx="1.5" stroke="currentColor" stroke-width="2" /><path class="lp-icon-stroke-accent" d="M9 12v8M23 12v8" stroke-width="2" /></svg>
-      </div>
-      <span class="lp-step__num">02 / Catalog</span>
-      <h3>Describe what each environment can do</h3>
-      <p>Per-environment TOML catalogs list real backend options, costs, and capability flags. Use overlay catalogs to move from dev to prod without forking the app.</p>
-      <span class="lp-step__tag">catalogs/local.toml, aws.toml</span>
+    <div class="lp-steps">
+        <article class="lp-step">
+            <div class="lp-step__num">01</div>
+            <div class="lp-step__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <rect x="3" y="3" width="14" height="14" rx="4" class="lp-icon-stroke-accent" stroke-width="1.8"></rect>
+                    <path d="M6 10H14M10 6V14" class="lp-icon-stroke-accent" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+            </div>
+            <h3>Declare the primitives</h3>
+            <p>Write <code>Store</code>, <code>Table</code>, <code>BlobStore</code>, <code>Topic</code>, and exposed functions in Python instead of hand-wiring cloud resources.</p>
+            <span class="lp-step__tag">app code first</span>
+        </article>
+        <article class="lp-step lp-step--catalog">
+            <div class="lp-step__num">02</div>
+            <div class="lp-step__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M4 5.5H16M4 10H16M4 14.5H12" class="lp-icon-stroke-accent" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+            </div>
+            <h3>Bind one environment</h3>
+            <p><code>skaal.toml</code> names <code>local</code>, <code>prod</code>, and any other environment you care about. Skaal binds the same app graph against each one.</p>
+            <span class="lp-step__tag">skaal.toml</span>
+        </article>
+        <article class="lp-step lp-step--solve">
+            <div class="lp-step__num">03</div>
+            <div class="lp-step__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M4 10L8 14L16 6" class="lp-icon-stroke-highlight" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+            </div>
+            <h3>Inspect the bound plan</h3>
+            <p>Use <code>skaal plan</code> and <code>skaal map</code> to see what changed and where each resource came from before you render or deploy anything.</p>
+            <span class="lp-step__tag">plan + map</span>
+        </article>
+        <article class="lp-step lp-step--generate">
+            <div class="lp-step__num">04</div>
+            <div class="lp-step__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M5 5H15V15H5V5Z" class="lp-icon-stroke-accent" stroke-width="1.8"></path>
+                    <path d="M8 8H12M8 10.5H13M8 13H11" class="lp-icon-stroke-highlight" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+            </div>
+            <h3>Render and own the output</h3>
+            <p><code>skaal build</code> and <code>skaal deploy</code> write deploy artifacts you can inspect, keep, and run through Pulumi. Skaal helps generate them. It does not hide them.</p>
+            <span class="lp-step__tag">build + deploy</span>
+        </article>
     </div>
-    <div class="lp-step lp-step--solve">
-      <div class="lp-step__icon">
-        <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><circle cx="8" cy="9" r="3" stroke="currentColor" stroke-width="2" /><circle cx="24" cy="9" r="3" stroke="currentColor" stroke-width="2" /><circle class="lp-icon-fill-highlight" cx="16" cy="23" r="3" /><path class="lp-icon-stroke-accent" d="M10 11l5 9M22 11l-5 9" stroke-width="2" /></svg>
-      </div>
-      <span class="lp-step__num">03 / Solve</span>
-      <h3>The Z3 planner picks the cheapest valid path</h3>
-      <p>Each declared need becomes part of the solve. The result is an explicit plan file with selected and rejected candidates instead of hidden framework defaults.</p>
-      <span class="lp-step__tag">plan.skaal.lock, skaal plan --explain</span>
-    </div>
-    <div class="lp-step lp-step--generate">
-      <div class="lp-step__icon">
-        <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><path d="M9 4h10l5 5v17a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="2" /><path d="M19 4v5h5" stroke="currentColor" stroke-width="2" /><path class="lp-icon-stroke-accent" d="M12 16h8M12 21h6" stroke-width="2" stroke-linecap="round" /></svg>
-      </div>
-      <span class="lp-step__num">04 / Generate</span>
-      <h3>Artifacts and runtime surfaces, ready to ship</h3>
-      <p>Skaal emits the runtime entry point, Dockerfile, Pulumi program, and stack metadata under <code>artifacts/</code>, then deploy hands off to Pulumi.</p>
-      <span class="lp-step__tag">artifacts/, Lambda, Cloud Run, Docker</span>
-    </div>
-  </div>
 </section>
 
-<section class="lp-section" id="use-cases">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Built for</span>
-    <div class="lp-section__heading">
-      <h2>The application shapes Skaal is meant to support.</h2>
-      <a class="lp-section__anchor" href="#use-cases" aria-label="Link to use-cases section">#use-cases</a>
+<section class="lp-section lp-section--compact" id="environment-loop">
+    <div class="lp-section__intro">
+        <div class="lp-eyebrow">Environment loop</div>
+        <div class="lp-section__heading">
+            <h2>The environment file is part of the product.</h2>
+            <a class="lp-section__anchor" href="cli-configuration/">configuration</a>
+        </div>
+        <p class="lp-section__sub">Local development works without configuration. The moment you want named environments, the docs stay concrete: one file for environments, one lock file for pins.</p>
     </div>
-    <p class="lp-section__sub">
-      Real services, not toy CRUD. Mount FastAPI, Starlette, Dash, or another ASGI or WSGI
-      framework and let Skaal handle the storage, scheduling, and deployment scaffolding.
-    </p>
-  </div>
+    <div class="lp-split">
+        <div class="lp-split__col">
+            <h3>Define the environment</h3>
+            <p>Use <code>skaal.toml</code> to tell Skaal what <code>local</code> and <code>prod</code> mean.</p>
+            <pre class="lp-toml"><span class="sec">[env.local]</span>
+<span class="key">target</span> = <span class="str">"local"</span>
 
-  <div class="lp-uses">
-    <div class="lp-use">
-      <p class="lp-use__lead">Backends</p>
-      <h3>API + Postgres + queue</h3>
-      <ul>
-        <li>FastAPI mounted via <code>mount_asgi</code></li>
-        <li>SQLModel entities with Alembic migrations</li>
-        <li>Outbox-backed background jobs</li>
-        <li>Per-route retry and rate-limit policies</li>
-      </ul>
+<span class="sec">[env.prod]</span>
+<span class="key">target</span> = <span class="str">"aws"</span>
+<span class="key">region</span> = <span class="str">"us-east-1"</span>
+
+<span class="sec">[env.prod.backends.aws]</span>
+<span class="key">table_prefix</span> = <span class="str">"prod-"</span></pre>
+        </div>
+        <div class="lp-split__col">
+            <h3>Keep deploy pins explicit</h3>
+            <p><code>skaal.lock</code> records concrete bindings per environment, so later plan runs tell you what changed instead of guessing.</p>
+            <pre class="lp-toml"><span class="sec">[entries.prod."examples.todo_api.Todos"]</span>
+<span class="key">backend</span> = <span class="str">"dynamodb"</span>
+<span class="key">region</span> = <span class="str">"us-east-1"</span>
+
+<span class="sec">[entries.prod."examples.todo_api.Comments"]</span>
+<span class="key">backend</span> = <span class="str">"postgres"</span>
+<span class="key">region</span> = <span class="str">"us-east-1"</span></pre>
+        </div>
     </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">RAG and AI</p>
-      <h3>Vector retrieval at scale</h3>
-      <ul>
-        <li><code>VectorStore</code> with metadata filters</li>
-        <li>Embeddings declared on the surface</li>
-        <li><code>BlobStore</code> for source documents</li>
-        <li>Streamed responses via mounted ASGI</li>
-      </ul>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Internal tools</p>
-      <h3>Dash app + scheduled ETL</h3>
-      <ul>
-        <li>Dash mounted via <code>mount_wsgi</code></li>
-        <li><code>@app.schedule</code> cron jobs</li>
-        <li>Relational tier as the data layer</li>
-        <li>Local dev to Cloud Run with one catalog swap</li>
-      </ul>
-    </div>
-  </div>
 </section>
 
-<section class="lp-section" id="tiers">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Storage surfaces</span>
-    <div class="lp-section__heading">
-      <h2>Six tiers. One declarative API.</h2>
-      <a class="lp-section__anchor" href="#tiers" aria-label="Link to storage tiers section">#tiers</a>
+<section class="lp-section" id="command-surface">
+    <div class="lp-section__intro">
+        <div class="lp-eyebrow">Command loop</div>
+        <div class="lp-section__heading">
+            <h2>The CLI reads like the workflow.</h2>
+            <a class="lp-section__anchor" href="cli/">CLI</a>
+        </div>
+        <p class="lp-section__sub">The current alpha keeps the command surface small. That makes the loop easier to evaluate: run locally, inspect the plan, render the artifacts, deploy when you are ready.</p>
     </div>
-    <p class="lp-section__sub">
-      Skaal ships first-class surfaces for the storage shapes real applications reach for.
-      Backend choice happens at solve time, so your code keeps the same API from local dev
-      to production.
-    </p>
-  </div>
+    <div class="lp-cli">
+        <div class="lp-cli__terminal">
+            <div class="lp-cli__head">
+                <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
+                <span class="lp-cli__file">powershell</span>
+            </div>
+            <pre class="lp-cli__body"><span class="prompt">PS&gt;</span> <span class="cmd">skaal run examples.counter:app --env local</span>
+<span class="info">Serving app "counter" on 127.0.0.1:8000</span>
 
-  <div class="lp-tiers">
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Key-value</h3>
-        <span class="lp-tier__deco">Map, Collection</span>
-      </div>
-      <p>Generic stores with cursor pagination, secondary indexes, and per-row TTL via <code>retention=</code>.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">SQLite</span>
-        <span class="lp-tier__be">Postgres</span>
-        <span class="lp-tier__be">Redis</span>
-        <span class="lp-tier__be">DynamoDB</span>
-        <span class="lp-tier__be">Firestore</span>
-      </div>
+<span class="prompt">PS&gt;</span> <span class="cmd">skaal plan examples.todo_api:app --env prod</span>
+<span class="arrow">+</span> <span class="flag">examples.todo_api.Todos</span> <span class="arg">store</span> <span class="ok">dynamodb</span>
+<span class="arrow">+</span> <span class="flag">examples.todo_api.Comments</span> <span class="arg">table</span> <span class="ok">postgres</span>
+
+<span class="prompt">PS&gt;</span> <span class="cmd">skaal build examples.todo_api:app --env prod</span>
+<span class="info">Built 4 resource artifact(s) -&gt; .skaal/build/prod</span>
+
+<span class="prompt">PS&gt;</span> <span class="cmd">skaal deploy examples.todo_api:app --env prod --preview</span>
+<span class="info">Pulumi stack todos-prod</span></pre>
+        </div>
+        <div class="lp-cli__commands">
+            <div class="lp-cmd">
+                <span class="lp-cmd__name">run</span>
+                <div class="lp-cmd__desc"><b>Local runtime.</b> Bind one environment and serve the app as it exists now.</div>
+            </div>
+            <div class="lp-cmd">
+                <span class="lp-cmd__name">plan</span>
+                <div class="lp-cmd__desc"><b>Diff the bound plan.</b> See what changed before touching deploy output.</div>
+            </div>
+            <div class="lp-cmd">
+                <span class="lp-cmd__name">map</span>
+                <div class="lp-cmd__desc"><b>Trace the graph.</b> Print the source-to-resource tree and emit JSON for machines.</div>
+            </div>
+            <div class="lp-cmd">
+                <span class="lp-cmd__name">build</span>
+                <div class="lp-cmd__desc"><b>Render artifacts.</b> Write Dockerfiles, entrypoints, and Pulumi files without deploying.</div>
+            </div>
+            <div class="lp-cmd">
+                <span class="lp-cmd__name">deploy</span>
+                <div class="lp-cmd__desc"><b>Apply with Pulumi.</b> Render again, preview or apply, then update <code>skaal.lock</code>.</div>
+            </div>
+        </div>
     </div>
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Relational</h3>
-        <span class="lp-tier__deco">@app.relational</span>
-      </div>
-      <p>SQLModel-backed entities with Alembic migrations, autogenerate, upgrade, downgrade, drift checks, and dry-run SQL.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">SQLite</span>
-        <span class="lp-tier__be">Postgres</span>
-        <span class="lp-tier__be is-new">Alembic</span>
-      </div>
-    </div>
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Vector</h3>
-        <span class="lp-tier__deco">VectorStore</span>
-      </div>
-      <p>Similarity search with metadata filters, namespaces, and embedding configuration attached to the surface.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">Chroma</span>
-        <span class="lp-tier__be">pgvector</span>
-        <span class="lp-tier__be">Pinecone</span>
-      </div>
-    </div>
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Blob</h3>
-        <span class="lp-tier__deco">BlobStore</span>
-      </div>
-      <p>Object storage with streamed uploads, presigned URLs, metadata, and the same constraint vocabulary as the rest of the platform.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">Local FS</span>
-        <span class="lp-tier__be is-new">S3</span>
-        <span class="lp-tier__be is-new">GCS</span>
-      </div>
-    </div>
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Channels</h3>
-        <span class="lp-tier__deco">EventLog, Outbox</span>
-      </div>
-      <p>Durable event streams with replay-by-offset, consumer groups, and Outbox-backed at-least-once relay.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">Local KV</span>
-        <span class="lp-tier__be">Redis Streams</span>
-        <span class="lp-tier__be">SNS, SQS</span>
-      </div>
-    </div>
-    <div class="lp-tier">
-      <div class="lp-tier__head">
-        <h3>Compute</h3>
-        <span class="lp-tier__deco">@app.function, @app.job</span>
-      </div>
-      <p>Functions, schedules, and background work with retries, circuit breakers, rate limits, and bulkheads attached per function.</p>
-      <div class="lp-tier__backends">
-        <span class="lp-tier__be">Local async</span>
-        <span class="lp-tier__be">Lambda</span>
-        <span class="lp-tier__be">Cloud Run</span>
-      </div>
-    </div>
-  </div>
 </section>
 
-<section class="lp-section" id="catalogs">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Catalog overlays</span>
-    <div class="lp-section__heading">
-      <h2>One app. Many environments. Zero forks.</h2>
-      <a class="lp-section__anchor" href="#catalogs" aria-label="Link to catalogs section">#catalogs</a>
+<section class="lp-section" id="what-you-can-ship">
+    <div class="lp-section__intro">
+        <div class="lp-eyebrow">What you can ship</div>
+        <div class="lp-section__heading">
+            <h2>Build the service shapes you already recognize.</h2>
+            <a class="lp-section__anchor" href="examples/">examples</a>
+        </div>
+        <p class="lp-section__sub">Skaal is not trying to invent a new category of app. It is trying to make the infrastructure declaration live inside the Python service you were already going to write.</p>
     </div>
-    <p class="lp-section__sub">
-      Catalogs inherit and override. Stage a higher-durability production stack on top of
-      your development catalog with <code>extends</code>, and keep the source of every
-      backend explicit in the merged result.
-    </p>
-  </div>
-
-  <div class="lp-split">
-    <div class="lp-split__col">
-      <h3>catalogs/local.toml</h3>
-      <p>Development defaults for fast feedback and low ceremony.</p>
-      <pre class="lp-toml"><span class="cmt"># base catalog</span>
-<span class="sec">[storage.sqlite]</span>
-<span class="key">read_latency</span>  = <span class="str">"&lt; 5ms"</span>
-<span class="key">durability</span>    = <span class="str">"local"</span>
-<span class="key">throughput</span>    = <span class="str">"&gt; 5000 rps"</span>
-<span class="key">cost_per_unit</span> = <span class="num">0.0</span>
-<span class="key">supports_ttl</span>  = true
-
-<span class="sec">[storage.redis]</span>
-<span class="key">read_latency</span>  = <span class="str">"&lt; 2ms"</span>
-<span class="key">durability</span>    = <span class="str">"ephemeral"</span></pre>
+    <div class="lp-uses">
+        <article class="lp-use">
+            <p class="lp-use__lead">Mounted HTTP API</p>
+            <h3>FastAPI or Starlette on top, Skaal behind it</h3>
+            <ul>
+                <li>use public routes, auth, validation, and OpenAPI from your web framework</li>
+                <li>keep <code>Store</code>, <code>Table</code>, and exposed functions in the same app graph</li>
+                <li>start from <a href="tutorials/http-api/">Tutorial 2</a> or <a href="examples/">Todo API</a></li>
+            </ul>
+        </article>
+        <article class="lp-use">
+            <p class="lp-use__lead">Data-backed service</p>
+            <h3>Key-value, relational, blob, and topic surfaces together</h3>
+            <ul>
+                <li>mix <code>Store</code>, <code>Table</code>, and <code>BlobStore</code> without splitting the deploy story</li>
+                <li>bind local and cloud environments from the same declarations</li>
+                <li>inspect the result through <a href="how-it-works/">How it works</a> and <a href="concepts/">Concepts</a></li>
+            </ul>
+        </article>
+        <article class="lp-use">
+            <p class="lp-use__lead">Streaming and jobs</p>
+            <h3>Async responses, scheduled work, and typed events</h3>
+            <ul>
+                <li>stream responses with <code>app.invoke_stream(...)</code></li>
+                <li>publish to topics and schedule recurring work next to the business logic</li>
+                <li>use <a href="tutorials/files-and-streaming/">Tutorial 5</a> and the repo examples as anchors</li>
+            </ul>
+        </article>
     </div>
-    <div class="lp-split__col">
-      <h3>catalogs/prod.toml</h3>
-      <p>Overlay the base catalog and swap in managed services.</p>
-      <pre class="lp-toml"><span class="sec">[skaal]</span>
-<span class="key">extends</span> = <span class="str">"./local.toml"</span>
-<span class="key">remove</span>  = [<span class="str">"storage.sqlite"</span>]
-
-<span class="sec">[storage.dynamodb]</span>
-<span class="key">read_latency</span>  = <span class="str">"&lt; 8ms"</span>
-<span class="key">durability</span>    = <span class="str">"strong"</span>
-<span class="key">throughput</span>    = <span class="str">"&gt; 10000 rps"</span>
-<span class="key">residency</span>     = <span class="str">"eu-west-1"</span>
-<span class="key">cost_per_unit</span> = <span class="num">0.018</span>
-
-<span class="sec">[storage.dynamodb.deploy]</span>
-<span class="key">table_class</span>   = <span class="str">"STANDARD_IA"</span>
-<span class="key">billing_mode</span>  = <span class="str">"PAY_PER_REQUEST"</span></pre>
-    </div>
-  </div>
-</section>
-
-<section class="lp-section" id="cli">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Command line</span>
-    <div class="lp-section__heading">
-      <h2>From install to deploy in the same planner-shaped loop.</h2>
-      <a class="lp-section__anchor" href="#cli" aria-label="Link to CLI section">#cli</a>
-    </div>
-    <p class="lp-section__sub">
-      The CLI is organized around the plan file. Every command works from the same resolved
-      state, so the runtime and deployment artifacts stay regenerable and auditable.
-    </p>
-  </div>
-
-  <div class="lp-cli">
-    <div class="lp-cli__terminal">
-      <div class="lp-cli__head">
-        <div class="lp-codecard__dots"><i></i><i></i><i></i></div>
-        <span class="lp-cli__file">~/projects/todo</span>
-      </div>
-      <pre class="lp-cli__body"><span class="prompt">$</span> <span class="cmd">pip install</span> <span class="arg">&quot;skaal[serve,runtime]&quot;</span>
-<span class="prompt">$</span> <span class="cmd">skaal init</span> <span class="arg">todo</span> <span class="cmt"># scaffolds ./todo/</span>
-<span class="prompt">$</span> <span class="cmd">skaal run</span> <span class="flag">--reload</span>
-<span class="info">&gt; watching ./ for changes</span>
-<span class="info">&gt; using catalog: catalogs/local.toml</span>
-<span class="info">&gt; solve: 3 candidates -&gt; sqlite (selected)</span>
-<span class="ok">ok http://127.0.0.1:8000 - ready in 412ms</span>
-
-<span class="prompt">$</span> <span class="cmd">skaal plan</span> <span class="flag">--catalog</span> <span class="arg">catalogs/prod.toml</span>
-<span class="info">  Storage.Todos       </span><span class="arrow">-&gt;</span><span class="info"> dynamodb    7ms p50  $0.018/wu</span>
-<span class="info">  Storage.Sessions    </span><span class="arrow">-&gt;</span><span class="info"> redis       1ms p50  $0.004/wu</span>
-<span class="info">  Compute.create_todo </span><span class="arrow">-&gt;</span><span class="info"> lambda      cold 280ms</span>
-<span class="ok">ok resolved - plan.skaal.lock written</span></pre>
-    </div>
-
-    <div class="lp-cli__commands">
-      <div class="lp-cmd">
-        <span class="lp-cmd__name">skaal init</span>
-        <span class="lp-cmd__desc"><b>Scaffold</b> a starter project with a base catalog, a hello-world app, and a deployable layout.</span>
-      </div>
-      <div class="lp-cmd">
-        <span class="lp-cmd__name">skaal run</span>
-        <span class="lp-cmd__desc"><b>Local dev loop</b> with auto-reload, mounted ASGI or WSGI apps, and runtime engines started for you.</span>
-      </div>
-      <div class="lp-cmd">
-        <span class="lp-cmd__name">skaal plan</span>
-        <span class="lp-cmd__desc"><b>Solve</b> the catalog against your constraints and write <code>plan.skaal.lock</code> with reasons and rejected candidates.</span>
-      </div>
-      <div class="lp-cmd">
-        <span class="lp-cmd__name">skaal build</span>
-        <span class="lp-cmd__desc"><b>Generate</b> the runtime entry point, Dockerfile, and Pulumi program for the resolved plan.</span>
-      </div>
-      <div class="lp-cmd">
-        <span class="lp-cmd__name">skaal deploy</span>
-        <span class="lp-cmd__desc"><b>Ship</b> the generated target artifacts without hand-maintaining deployment glue.</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="lp-section lp-section--compact" id="compare">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Compare &amp; FAQ</span>
-    <div class="lp-section__heading">
-      <h2>Where Skaal sits, and the questions you'd ask before adopting it.</h2>
-      <a class="lp-section__anchor" href="#compare" aria-label="Link to compare and FAQ section">#compare</a>
-    </div>
-    <p class="lp-section__sub">
-      Skaal isn't trying to be Encore, SST, Wing, Modal, or plain Pulumi &mdash; it overlaps
-      with each in a different way. The comparison page maps the differences honestly,
-      and the FAQ covers lock-in, license, and the eject path.
-    </p>
-  </div>
-
-  <div class="lp-uses">
-    <div class="lp-use">
-      <p class="lp-use__lead">Compare</p>
-      <h3>Skaal vs. the alternatives</h3>
-      <p>Side-by-side with Encore, SST, Wing, Modal, and Pulumi. Includes &ldquo;when another tool wins&rdquo; for each.</p>
-      <p><a href="comparison/">Read the comparison</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">FAQ</p>
-      <h3>Lock-in, license, and ejection</h3>
-      <p>Can you keep the generated Pulumi if you stop using Skaal? Is GPL-3.0 compatible with a closed SaaS? What does the solver do when constraints are unsatisfiable?</p>
-      <p><a href="faq/">Read the FAQ</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Not for you if</p>
-      <h3>Honest disqualifiers</h3>
-      <ul>
-        <li>You already maintain a mature Terraform / CDK monorepo.</li>
-        <li>Your stack relies on backends Skaal doesn't model (Kafka, Spanner, Cosmos DB).</li>
-        <li>You can't take a GPL-3.0-or-later runtime dependency.</li>
-        <li>You need production-grade GCP today.</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<section class="lp-section" id="tutorials">
-  <div class="lp-section__intro">
-    <span class="lp-eyebrow">Tutorial path</span>
-    <div class="lp-section__heading">
-      <h2>Learn Skaal in five progressive passes.</h2>
-      <a class="lp-section__anchor" href="#tutorials" aria-label="Link to tutorials section">#tutorials</a>
-    </div>
-    <p class="lp-section__sub">
-      The tutorials are written against real code in this repository and add one concept at a time:
-      local storage first, mounted HTTP next, then planning, deployment, migrations, uploads, and streams.
-    </p>
-  </div>
-
-  <div class="lp-uses">
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 1</p>
-      <h3>Build a counter app</h3>
-      <p>Start with <code>App</code>, <code>Store</code>, <code>@app.storage</code>, and <code>@app.function</code>, then run the generated HTTP surface locally.</p>
-      <p><a href="tutorials/first-app/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 2</p>
-      <h3>Mount FastAPI</h3>
-      <p>Keep your public routes in FastAPI and route application work through Skaal compute with <code>app.invoke(...)</code>.</p>
-      <p><a href="tutorials/http-api/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 3</p>
-      <h3>Solve, build, deploy</h3>
-      <p>Inspect catalogs, write <code>plan.skaal.lock</code>, generate artifacts, and move the same app model to a new target.</p>
-      <p><a href="tutorials/planning-and-deployment/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 4</p>
-      <h3>Add relational data</h3>
-      <p>Introduce SQLModel-backed storage and use the relational migration commands instead of hand-maintaining schema changes.</p>
-      <p><a href="tutorials/relational-and-migrations/">Start tutorial</a></p>
-    </div>
-    <div class="lp-use">
-      <p class="lp-use__lead">Tutorial 5</p>
-      <h3>Handle files and streams</h3>
-      <p>Finish with blob uploads, pagination-friendly file listing, and streaming responses from Skaal functions.</p>
-      <p><a href="tutorials/files-and-streaming/">Start tutorial</a></p>
-    </div>
-  </div>
 </section>
 
 <section class="lp-cta">
-  <div class="lp-cta__inner">
-    <div>
-      <h2>Stop writing the same plumbing for every new app.</h2>
-      <p class="lp-cta__lead">
-        Declare the contract once. Let Skaal pick the stack, generate the artifacts, and
-        keep your code portable from your laptop to the next environment you need to ship.
-      </p>
-      <div class="lp-cta__actions">
-        <a class="sk-btn sk-btn--primary" href="getting-started/">Read the quickstart</a>
-        <a class="sk-btn sk-btn--ghost" href="https://github.com/Elouen-ginat/Skaal" target="_blank" rel="noreferrer">Star on GitHub</a>
-      </div>
+    <div class="lp-cta__inner">
+        <div>
+            <h2>Decide in one afternoon.</h2>
+            <p class="lp-cta__lead">Read the concepts, run the counter app, inspect the environment loop, and decide whether code-first infrastructure is the right trade for your team.</p>
+            <div class="lp-cta__actions">
+                <a class="sk-btn sk-btn--primary" href="getting-started/">Start with the local loop</a>
+                <a class="sk-btn sk-btn--ghost" href="tutorials/">Walk the tutorials</a>
+            </div>
+        </div>
+        <div class="lp-cta__links">
+            <h4>Read next</h4>
+            <ul>
+                <li><a href="concepts/">Concepts</a> <span>glossary of the model</span></li>
+                <li><a href="how-it-works/">How it works</a> <span>declare -&gt; infer -&gt; bind -&gt; deploy</span></li>
+                <li><a href="comparison/">Comparison</a> <span>when plain Pulumi or a platform is simpler</span></li>
+                <li><a href="whats-new/">What's new</a> <span>current alpha scope and gaps</span></li>
+            </ul>
+        </div>
     </div>
-    <div class="lp-cta__links">
-      <h4>Read next</h4>
-      <ul>
-        <li><a href="how-it-works/">How Skaal Works</a><span>Planner lifecycle</span></li>
-        <li><a href="comparison/">Comparison</a><span>Skaal vs. Encore, SST, Wing, Modal, Pulumi</span></li>
-        <li><a href="faq/">FAQ</a><span>Lock-in, license, eject path</span></li>
-        <li><a href="platform-features/">Platform Features</a><span>Surfaces and runtime</span></li>
-        <li><a href="catalogs/">Catalogs</a><span>Overlay model</span></li>
-        <li><a href="reference/python-api/">Python API</a><span>In-process orchestration</span></li>
-      </ul>
-    </div>
-  </div>
 </section>

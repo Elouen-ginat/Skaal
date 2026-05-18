@@ -1,32 +1,19 @@
-"""skaal.types — all constraint and schema types.
+"""skaal.types — value types and protocol surfaces.
 
-Re-exports everything so existing code using ``from skaal.types import X``
-continues to work without change.
+The constraint vocabulary (`Latency`, `Throughput`, `AccessPattern`,
+`Durability`, `Persistent`, `Consistency`, `DecommissionPolicy`) and the
+solver / catalog / pattern types have been removed per ADR 028 / ADR 029
+Phase 1. The inferred-plan / bound-plan typing surface lands in Phases 2-3
+under `skaal.inference` and `skaal.binding`.
 """
 
-from importlib import import_module
-
-from skaal.types.blob import BlobObject
-from skaal.types.catalog import CatalogRaw, CatalogSource
+from skaal.types.blob import BlobItem
 from skaal.types.cli import ChangeBatch, ChangeStream, ChildArgv, ReloadDirs, ReloadMode
 from skaal.types.compute import (
     Bulkhead,
     CircuitBreaker,
-    Compute,
-    ComputeType,
-    RateLimitPolicy,
-    RetryPolicy,
-    Scale,
-    ScaleStrategy,
-)
-from skaal.types.constraints import (
-    AccessPattern,
-    Consistency,
-    DecommissionPolicy,
-    Durability,
-    Latency,
-    Persistent,
-    Throughput,
+    RateLimit,
+    Retry,
 )
 from skaal.types.deploy import (
     AppLike,
@@ -69,7 +56,7 @@ from skaal.types.deploy import (
     TargetName,
 )
 from skaal.types.duration import TTL, Duration, Retention
-from skaal.types.invoke import BeforeInvoke, InvokeContext, StreamFn
+from skaal.types.invoke import BeforeInvocation, InvocationContext, StreamFn
 from skaal.types.job import JobHandle, JobResult, JobSpec, JobStatus
 from skaal.types.observability import (
     EngineTelemetrySnapshot,
@@ -78,29 +65,6 @@ from skaal.types.observability import (
     TelemetryConfig,
     TelemetryExporter,
 )
-from skaal.types.patterns import (
-    EventLogPatternConfig,
-    EventLogPatternMetadata,
-    EventLogStorageMetadata,
-    OutboxChannelRef,
-    OutboxDelivery,
-    OutboxPatternConfig,
-    OutboxPatternMetadata,
-    PatternConfig,
-    PatternMetadata,
-    ProjectionDeadLetterRef,
-    ProjectionDeadLetterSink,
-    ProjectionFailureError,
-    ProjectionFailurePayload,
-    ProjectionHandler,
-    ProjectionHandlerResult,
-    ProjectionPatternConfig,
-    ProjectionPatternMetadata,
-    SagaPatternConfig,
-    SagaPatternMetadata,
-    SagaStepMetadata,
-)
-from skaal.types.project import AppNode, ProjectGraph, build_project_graph
 from skaal.types.protocols import (
     AsyncPublishRef,
     AsyncPublishTarget,
@@ -133,23 +97,12 @@ from skaal.types.secret import (
     SecretResolver,
     SecretSpec,
 )
-from skaal.types.solver import (
-    CandidateReport,
-    Diagnosis,
-    RelaxSuggestion,
-    ResourceKind,
-    Violation,
-)
 from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 __all__ = [
     "TTL",
-    "AccessPattern",
-    "AgentsService",
     "AppLike",
-    "AppNode",
     "AppRefConfig",
-    "AsyncClosable",
     "AsyncPublishRef",
     "AsyncPublishTarget",
     "AuthConfig",
@@ -157,14 +110,10 @@ __all__ = [
     "AwsSecretsManagerClient",
     "AwsSecretsManagerSession",
     "BackendIndexFields",
-    "BackendOverrides",
     "BackendWiring",
-    "BeforeInvoke",
-    "BlobObject",
+    "BeforeInvocation",
+    "BlobItem",
     "Bulkhead",
-    "CandidateReport",
-    "CatalogRaw",
-    "CatalogSource",
     "ChangeBatch",
     "ChangeStream",
     "ChildArgv",
@@ -174,17 +123,10 @@ __all__ = [
     "CloudRunSecretKeyRef",
     "ComponentConfig",
     "ComponentKind",
-    "Compute",
-    "ComputeType",
     "ConfigOverrides",
-    "Consistency",
-    "ConstructorKwargs",
     "CronTriggerConfig",
     "CursorPayload",
-    "DecommissionPolicy",
     "DeployMeta",
-    "Diagnosis",
-    "DispatchResult",
     "DockerBuildConfig",
     "DockerContainerProperties",
     "DockerHealthcheck",
@@ -193,12 +135,8 @@ __all__ = [
     "DockerNetworkAttachment",
     "DockerPortBinding",
     "DockerVolumeMount",
-    "Durability",
     "Duration",
     "EngineTelemetrySnapshot",
-    "EventLogPatternConfig",
-    "EventLogPatternMetadata",
-    "EventLogStorageMetadata",
     "EveryTriggerConfig",
     "ExternalComponentConfig",
     "ExternalObservabilityConfig",
@@ -209,38 +147,20 @@ __all__ = [
     "GcpSecretPayload",
     "GcpSecretVersionResponse",
     "HeaderMap",
-    "InvokeContext",
+    "InvocationContext",
     "JobHandle",
     "JobResult",
     "JobSpec",
     "JobStatus",
-    "Latency",
     "LocalServiceSpec",
-    "MeshClient",
-    "OutboxChannelRef",
-    "OutboxDelivery",
-    "OutboxPatternConfig",
-    "OutboxPatternMetadata",
     "Page",
-    "PatternConfig",
-    "PatternMetadata",
-    "Persistent",
-    "ProjectGraph",
-    "ProjectionDeadLetterRef",
-    "ProjectionDeadLetterSink",
-    "ProjectionFailureError",
-    "ProjectionFailurePayload",
-    "ProjectionHandler",
-    "ProjectionHandlerResult",
-    "ProjectionPatternConfig",
-    "ProjectionPatternMetadata",
     "PulumiPlugins",
     "PulumiProviderPlugin",
     "PulumiResource",
     "PulumiResourceOptions",
     "PulumiStack",
+    "RateLimit",
     "RateLimitConfig",
-    "RateLimitPolicy",
     "ReadinessState",
     "RelationalMigrationBackend",
     "RelationalMigrationOp",
@@ -249,30 +169,12 @@ __all__ = [
     "RelationalMigrationStep",
     "RelationalModelType",
     "RelationalRevision",
-    "RelaxSuggestion",
     "ReloadDirs",
     "ReloadMode",
     "ResolvedSecret",
-    "ResourceKind",
     "Retention",
-    "RetryPolicy",
+    "Retry",
     "RouteSpec",
-    "RuntimeApp",
-    "RuntimeCallable",
-    "RuntimeInstance",
-    "RuntimeInvoker",
-    "RuntimeKwargs",
-    "RuntimeMode",
-    "RuntimeObserver",
-    "RuntimePayload",
-    "RuntimePlanSource",
-    "RuntimeServices",
-    "RuntimeWireParams",
-    "SagaPatternConfig",
-    "SagaPatternMetadata",
-    "SagaStepMetadata",
-    "Scale",
-    "ScaleStrategy",
     "ScheduleTriggerConfig",
     "SecondaryIndex",
     "SecretGrant",
@@ -282,9 +184,6 @@ __all__ = [
     "SecretSpec",
     "StackOutputs",
     "StackProfile",
-    "StateService",
-    "StorageClassMap",
-    "StorageKindName",
     "StreamFn",
     "SupportsAsyncAppend",
     "SupportsAsyncSend",
@@ -293,41 +192,6 @@ __all__ = [
     "TargetName",
     "TelemetryConfig",
     "TelemetryExporter",
-    "Throughput",
-    "Violation",
     "apply_migrations",
-    "build_project_graph",
     "migrate_from",
 ]
-
-_LAZY_RUNTIME_EXPORTS = {
-    "AgentsService",
-    "AsyncClosable",
-    "BackendOverrides",
-    "ConstructorKwargs",
-    "DispatchResult",
-    "MeshClient",
-    "RuntimeObserver",
-    "RuntimeApp",
-    "RuntimeCallable",
-    "RuntimeInstance",
-    "RuntimeInvoker",
-    "RuntimeKwargs",
-    "RuntimeMode",
-    "RuntimePayload",
-    "RuntimePlanSource",
-    "RuntimeServices",
-    "RuntimeWireParams",
-    "StateService",
-    "StorageClassMap",
-    "StorageKindName",
-}
-
-
-def __getattr__(name: str) -> object:
-    if name in _LAZY_RUNTIME_EXPORTS:
-        module = import_module("skaal.types.runtime")
-        value = getattr(module, name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

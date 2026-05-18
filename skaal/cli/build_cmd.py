@@ -1,14 +1,12 @@
-"""`skaal build` — generate deployment artifacts from plan.skaal.lock.
+"""`skaal build` — render Pulumi-adjacent artefacts from a plan.
 
-Reads the lock file produced by ``skaal plan`` and writes a self-contained
-artifacts directory (default: ``artifacts/``) containing:
+The verb walks ``blueprint → plan`` and feeds the resulting `Plan` into
+`skaal.deploy.build_artefacts`, which writes the per-Lambda Dockerfile,
+handler, bootstrap, and requirements files to ``./.skaal/build/<env>/``.
 
-  AWS   — ``handler.py``, ``Pulumi.yaml``, ``pyproject.toml``, ``skaal-meta.json``
-  GCP   — ``main.py``, ``Dockerfile``, ``Pulumi.yaml``, ``pyproject.toml``, ``skaal-meta.json``
-    local — ``main.py``, ``Dockerfile``, ``Pulumi.yaml``, ``pyproject.toml``, ``skaal-meta.json``
-
-Run ``skaal plan MODULE:APP --target TARGET`` first to produce the lock file,
-then ``skaal deploy`` afterwards to push to the cloud.
+`skaal build` does not invoke Pulumi; it is pure templating. `skaal
+deploy` runs `build` and then drives the Pulumi Automation API against
+the rendered tree.
 """
 
 from __future__ import annotations
@@ -17,141 +15,73 @@ import logging
 from pathlib import Path
 
 import typer
+from rich.console import Console
 
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli.config import SkaalSettings
+from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.deploy import build_artefacts
 
-app = typer.Typer(help="Generate deployment artifacts from plan.skaal.lock.")
+app = typer.Typer(
+    help="Render deploy artefacts from a bound plan.",
+    context_settings={"allow_interspersed_args": True},
+)
 log = logging.getLogger("skaal.cli")
 
 
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def build(
-    app_name: str | None = typer.Argument(
-        None,
-        help="Name of an app declared in [tool.skaal.apps] to build only.",
-        metavar="[APP_NAME]",
-    ),
-    all_apps: bool = typer.Option(
-        False,
-        "--all",
-        help="Build every app declared in [tool.skaal.apps] in topological order.",
-    ),
-    region: str | None = typer.Option(
-        None,
-        "--region",
-        "-r",
-        help="Cloud region override (e.g. us-east-1, us-central1). Env: SKAAL_REGION.",
-    ),
-    stack: str | None = typer.Option(
-        None,
-        "--stack",
-        "-s",
+    target: str = typer.Argument(
+        ...,
         help=(
-            "Stack profile to resolve per-stack settings against "
-            "([tool.skaal.stacks.<name>]). Env: SKAAL_STACK."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    out: Path | None = typer.Option(
+    env_name: str = typer.Option(
+        "local",
+        "--env",
+        "-e",
+        help="Environment name from `skaal.toml`.",
+    ),
+    out_dir: Path | None = typer.Option(
         None,
         "--out",
         "-o",
-        help="Output directory for generated artifacts. Env: SKAAL_OUT.",
+        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
+    ),
+    python_version: str = typer.Option(
+        "3.11",
+        "--python-version",
+        help="Python minor version embedded in the Dockerfile base image.",
     ),
     dev: bool = typer.Option(
         False,
         "--dev",
         help=(
-            "Bundle the local skaal source into the artifact so the Docker image "
-            "uses your working copy instead of the PyPI release. "
-            "Useful when developing skaal itself."
+            "Ship the local Skaal checkout inside each Lambda image instead of "
+            "installing `skaal[...]` from PyPI. Use during the 0.4.0 alpha while "
+            "the package is not yet published."
         ),
     ),
 ) -> None:
-    """
-    Generate deployable artifacts from ``plan.skaal.lock``.
-
-    The lock file is the single source of truth — target, source module, and
-    backend assignments are all read from it.  Run ``skaal plan`` first if the
-    lock file does not exist or needs to be updated.
-
-    Supported targets (determined by the lock file):
-
-    \b
-      aws   — AWS Lambda + DynamoDB + API Gateway (Pulumi YAML)
-      gcp   — GCP Cloud Run + Firestore/Redis/Postgres (Pulumi YAML + Dockerfile)
-            local — Docker + Pulumi (for local testing)
-    """
-    from skaal import api
-    from skaal.deploy import get_target
-    from skaal.plan import PLAN_FILE_NAME, PlanFile
-
-    cfg = SkaalSettings()
-
-    if all_apps:
-        steps = api.build_all(dev=dev)
-        for step in steps:
-            marker = "OK " if step.success else "FAIL"
-            log.info("[%s] %s", marker, step.name)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
-        return
-
-    if app_name and app_name in cfg.apps:
-        from skaal.cli._orchestrator import build_all as _build_all
-
-        graph = api.project_graph()
-        steps = _build_all(graph, only=[app_name], dev=dev)
-        for step in steps:
-            marker = "OK " if step.success else "FAIL"
-            log.info("[%s] %s", marker, step.name)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
-        return
-
-    cfg = cfg.for_stack(stack)
-    resolved_region = region or cfg.region
-    resolved_out = out or cfg.out
-
-    plan_path = Path(PLAN_FILE_NAME)
-    if not plan_path.exists():
-        raise FileNotFoundError(
-            f"{PLAN_FILE_NAME} not found.\n  Run `skaal plan MODULE:APP --target TARGET` first."
-        )
-
-    log.info("Building from %s ...", plan_path)
-
     try:
-        generated = api.build(
-            plan=plan_path,
-            output_dir=resolved_out,
-            region=resolved_region,
-            stack=stack,
-            dev=dev,
-        )
+        app_spec = AppSpec.parse(target)
     except ValueError as exc:
-        if "source_module" in str(exc):
-            raise ValueError(
-                f"{PLAN_FILE_NAME} is missing source_module — it was created by an older "
-                "version of skaal.\n"
-                "  Re-run `skaal plan MODULE:APP --target TARGET` to regenerate it."
-            ) from exc
-        raise
-    except Exception as exc:
-        raise ValueError(f"could not build from {PLAN_FILE_NAME}: {exc}") from exc
+        raise typer.BadParameter(str(exc)) from exc
+    skaal_app = load_app(app_spec)
+    loaded = load_plan(skaal_app, env_name)
 
-    plan_file = PlanFile.read(plan_path)
+    written = build_artefacts(
+        loaded.bound,
+        loaded.env,
+        app_spec,
+        out_dir=out_dir,
+        python_version=python_version,
+        dev=dev,
+    )
 
-    log.info("Generating artifacts in %s/ ...", resolved_out)
-    log.info("")
-    log.info("Generated %s files:", len(generated))
-    for path in generated:
-        log.info("  %s", path)
-
-    target_adapter = get_target(plan_file.deploy_target)
-    log.info("")
-    if target_adapter.name == "local":
-        log.info("Run `skaal deploy` to start the local stack.")
-    else:
-        log.info("Run `skaal deploy` to push to %s.", plan_file.deploy_target.upper())
+    artefact_count = sum(1 for r in loaded.bound.resources if not r.external)
+    Console().print(
+        f"Built [bold]{artefact_count}[/bold] resource artefact(s) for "
+        f"[cyan]{env_name}[/cyan] → {written}"
+    )

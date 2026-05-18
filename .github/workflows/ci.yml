@@ -31,20 +31,43 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build local skaal-mesh wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
-        with:
-          working-directory: mesh
-          args: --release --out dist --interpreter python
+      - name: Verify redesign tracker present
+        run: test -s notes/redesign-status.md
 
       - name: Install dev dependencies
-        run: >-
-          uv sync --group dev --extra runtime --extra deploy --extra mesh
-          --no-sources --find-links mesh/dist
+        run: uv sync --group dev --extra runtime --extra deploy --extra aws --extra fastapi
 
       - uses: pre-commit/action@v3.0.1
+
+  pyright:
+    # Phase 5b (ADR 033): the strict-typing gate is now blocking. The
+    # `ignore` list in `pyrightconfig.json` still excludes 14 modules
+    # whose strict-clean sweep depends on third-party stub quality
+    # (alembic, fsspec, optional-extras SDKs); the remaining surface is
+    # pyright-strict-clean.
+    name: Pyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install typecheck dependencies
+        run: uv sync --group typecheck --extra runtime --extra deploy --extra aws --extra fastapi
+
+      - name: Run pyright
+        run: uv run pyright
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -77,18 +100,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Build local skaal-mesh wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
-        with:
-          working-directory: mesh
-          args: --release --out dist --interpreter python
-
       - name: Install dev dependencies
-        run: >-
-          uv sync --group dev --extra runtime --extra deploy --extra mesh
-          --no-sources --find-links mesh/dist
+        run: uv sync --group dev --extra runtime --extra deploy --extra aws --extra fastapi
 
       - name: Run tests with coverage
         run: >-

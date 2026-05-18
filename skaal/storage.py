@@ -49,22 +49,26 @@ from typing import (
     Any,
     ClassVar,
     Generic,
-    TypeVar,
+    cast,
     get_args,
     get_origin,
     overload,
 )
 
+from typing_extensions import TypeVar
+
 if TYPE_CHECKING:
     from skaal.backends.base import StorageBackend
 
+from skaal.backends._base import Backend
 from skaal.serialization import deserialize_value as _deserialize
 from skaal.serialization import serialize_value as _serialize
 from skaal.sync import run as _sync_run
-from skaal.types import TTL
+from skaal.types import TTL, Duration
 from skaal.types.storage import BackendIndexFields, CursorPayload, Page, SecondaryIndex
 
 T = TypeVar("T")
+B = TypeVar("B", bound="Backend[Any]", default="Backend[Any]")
 _PAGE_DRAIN_LIMIT = 1000
 
 
@@ -79,9 +83,11 @@ def _is_pydantic(t: Any) -> bool:
 
 def _primary_key_field(model: type) -> str:
     """Infer the primary key field name from a Pydantic model."""
-    if not hasattr(model, "model_fields"):
+    model_fields: Any = getattr(model, "model_fields", None)
+    if not isinstance(model_fields, dict):
         return "id"
-    fields = list(model.model_fields.keys())
+    mapping = cast(dict[Any, Any], model_fields)
+    fields = [str(name) for name in mapping]
     for candidate in ("id", "pk", "key"):
         if candidate in fields:
             return candidate
@@ -89,11 +95,11 @@ def _primary_key_field(model: type) -> str:
 
 
 def _schema_hints(cls: type) -> dict[str, Any]:
-    """
-    Extract solver-visible hints from a ``Store`` subclass.
+    """Extract structural hints from a ``Store`` subclass.
 
-    These are stored in ``__skaal_storage__["schema"]`` and surfaced in
-    ``skaal plan`` output. They do not yet change backend selection.
+    Returns a dict of declarative shape hints (field count, nested-model
+    count, …) used by tests and the inference layer's `SchemaRef` to
+    fingerprint a model.
     """
     hints: dict[str, Any] = {}
     value_type = getattr(cls, "__skaal_value_type__", None)
@@ -141,7 +147,7 @@ def _decode_cursor(cursor: str | None) -> CursorPayload:
         raise ValueError("Invalid cursor") from exc
     if not isinstance(decoded, dict):
         raise ValueError("Invalid cursor")
-    return CursorPayload(**decoded)
+    return cast(CursorPayload, decoded)
 
 
 def _validate_cursor(
@@ -151,7 +157,7 @@ def _validate_cursor(
     extra: dict[str, Any] | None = None,
 ) -> CursorPayload:
     decoded = _decode_cursor(cursor)
-    expected = {"mode": mode, **(extra or {})}
+    expected: dict[str, Any] = {"mode": mode, **(extra or {})}
     for key, value in expected.items():
         if decoded and decoded.get(key) != value:
             raise ValueError("Cursor does not match this query")
@@ -183,7 +189,8 @@ def _lex_sort_token(value: Any) -> str:
 
 def _field_value(value: Any, field_name: str) -> Any:
     if isinstance(value, dict):
-        return value.get(field_name)
+        mapping = cast(dict[str, Any], value)
+        return mapping.get(field_name)
     return getattr(value, field_name, None)
 
 
@@ -192,15 +199,17 @@ def _configure_backend_indexes(backend: Any, indexes: list[SecondaryIndex]) -> N
 
 
 def _get_backend_indexes(backend: Any) -> dict[str, SecondaryIndex]:
-    indexes = getattr(backend, "_skaal_secondary_indexes", {})
+    indexes: Any = getattr(backend, "_skaal_secondary_indexes", {})
     if isinstance(indexes, dict):
+        mapping = cast(dict[Any, Any], indexes)
         normalized: dict[str, SecondaryIndex] = {}
-        for name, value in indexes.items():
+        for name, value in mapping.items():
+            key = str(name)
             if isinstance(value, SecondaryIndex):
-                normalized[name] = value
+                normalized[key] = value
                 continue
             if isinstance(value, dict):
-                normalized[name] = SecondaryIndex(name=name, **value)
+                normalized[key] = SecondaryIndex(name=key, **cast(dict[str, Any], value))
         return normalized
     return {}
 
@@ -221,7 +230,7 @@ def _page_items(
     extra: dict[str, Any] | None = None,
 ) -> Page[T]:
     limit = _normalize_limit(limit)
-    expected = {"mode": mode, **(extra or {})}
+    expected: dict[str, Any] = {"mode": mode, **(extra or {})}
     decoded = _validate_cursor(cursor, mode=mode, extra=extra)
     offset = int(decoded.get("offset", 0)) if decoded else 0
     if offset < 0:
@@ -301,7 +310,7 @@ def _query_index_from_entries(
 _List = list
 
 
-class Store(Generic[T]):
+class Store(Generic[T, B]):
     """
     Typed key-value storage with optional model-centric helpers.
 
@@ -311,12 +320,18 @@ class Store(Generic[T]):
     For model-centric usage, ``add()`` infers the key from ``id``, ``pk``,
     ``key``, or the model's first field. ``update()`` accepts either a full
     replacement value or an atomic transform function.
+
+    The second generic parameter ``B`` is an optional `Backend` type-pin
+    (ADR 028 §6.6, ADR 032 §4.4). ``class Cache(Store[Session, Redis])``
+    pins the resource to the registered `redis` backend regardless of
+    environment defaults; ``class Sessions(Store[Session])`` leaves the
+    binding open for the defaults table to fill in.
     """
 
     __skaal_key_type__: ClassVar[type] = str
     __skaal_value_type__: ClassVar[type | None] = None
     __skaal_key_field__: ClassVar[str] = "id"
-    __skaal_default_ttl_seconds__: ClassVar[float | None] = None
+    default_ttl: ClassVar[str | Duration | None] = None
     _backend: ClassVar[StorageBackend | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -330,14 +345,20 @@ class Store(Generic[T]):
                     if "__skaal_key_field__" not in cls.__dict__:
                         cls.__skaal_key_field__ = _primary_key_field(args[0])
                 break
+        if cls is Store:
+            return
+        from skaal.decorators import _attach_storage_inferred
+
+        _attach_storage_inferred(cls, kind="kv")
 
     @classmethod
     def wire(cls, backend: StorageBackend) -> None:
         """Bind *backend* to this storage class."""
+        from skaal.inference.model import BlueprintResource
+
         cls._backend = backend
-        indexes = list(getattr(cls, "__skaal_storage__", {}).get("indexes", []))
-        retention = getattr(cls, "__skaal_storage__", {}).get("retention")
-        cls.__skaal_default_ttl_seconds__ = getattr(retention, "default_ttl_seconds", None)
+        inferred = getattr(cls, "__skaal_inferred__", None)
+        indexes = list(inferred.indexes) if isinstance(inferred, BlueprintResource) else []
         _configure_backend_indexes(backend, indexes)
 
     @classmethod
@@ -347,7 +368,10 @@ class Store(Generic[T]):
     ) -> float | None:
         resolved = TTL.coerce(ttl)
         if resolved is None:
-            return cls.__skaal_default_ttl_seconds__
+            default = TTL.coerce(cls.default_ttl)
+            if default is None or default.is_never:
+                return None
+            return default.seconds
         if resolved.is_never:
             return None
         return resolved.seconds
@@ -531,6 +555,27 @@ class Store(Generic[T]):
         """Release any resources held by the backend."""
         if cls._backend is not None:
             await cls._backend.close()
+
+    @classmethod
+    async def native(cls) -> Any:
+        """Return the native SDK client for the wired backend (ADR 028 §6.13).
+
+        For type-pinned subclasses (``class Cache(Store[Session, Redis])``),
+        Pylance resolves the concrete SDK type via the backend token's
+        ``NativeClient`` declaration in Phase 5b; in Phase 5a the runtime
+        unwraps `backend.native()` when defined, else returns the backend
+        instance itself so that backend-specific code in user-land can
+        proceed.
+
+        Raises:
+            NotImplementedError: If the class has not been wired by the
+                local runtime or a deploy step yet.
+        """
+        from skaal._native import resolve_native
+
+        cls._ensure_wired()
+        assert cls._backend is not None
+        return await resolve_native(cls._backend)
 
     @classmethod
     async def add(

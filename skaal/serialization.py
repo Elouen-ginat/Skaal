@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 
 def decode_json_value(raw: Any) -> Any:
@@ -10,7 +10,7 @@ def decode_json_value(raw: Any) -> Any:
     return raw
 
 
-def serialize_value(value: Any, value_type: type | None) -> Any:
+def serialize_value(value: Any, value_type: object) -> Any:
     if value_type is None:
         return value
     try:
@@ -20,13 +20,14 @@ def serialize_value(value: Any, value_type: type | None) -> Any:
             if isinstance(value, BaseModel):
                 return value.model_dump()
             if isinstance(value, dict):
-                return value_type.model_validate(value).model_dump()
+                payload = cast(dict[str, Any], value)
+                return value_type.model_validate(payload).model_dump()
     except ImportError:
         pass
-    return value
+    return cast(Any, value)
 
 
-def deserialize_value(raw: Any, value_type: type | None) -> Any:
+def deserialize_value(raw: Any, value_type: object) -> Any:
     if raw is None or value_type is None:
         return raw
     try:
@@ -37,9 +38,10 @@ def deserialize_value(raw: Any, value_type: type | None) -> Any:
                 return raw
             decoded = decode_json_value(raw)
             if isinstance(decoded, dict):
+                payload = cast(dict[str, Any], decoded)
                 from skaal.types.schema import apply_migrations
 
-                return value_type.model_validate(apply_migrations(decoded, value_type))
+                return value_type.model_validate(apply_migrations(payload, value_type))
     except ImportError:
         pass
     return raw

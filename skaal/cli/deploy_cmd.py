@@ -1,146 +1,194 @@
-"""`skaal deploy` — package and deploy previously-built artifacts.
+"""`skaal deploy` — render artefacts and drive Pulumi via the Automation API.
 
-Reads ``skaal-meta.json`` from the artifacts directory to detect the target
-platform, then packages and runs ``pulumi up`` in one cross-platform step.
+The verb walks `infer → bind`, renders the build tree via
+`build_artefacts(...)`, then invokes `pulumi.automation` to spin up (or
+update) a stack whose program is `pulumi_program_for(bound, env, build_dir)`.
 
-Works on Windows, macOS, and Linux — no shell scripts required.
-
-Defaults are resolved from (highest to lowest priority):
-  CLI flags > SKAAL_* env vars > .skaal.env > [tool.skaal] in pyproject.toml.
-
-Multi-app projects:
-
-  skaal deploy --all          — every app in [tool.skaal.apps] in topo order.
-  skaal deploy <app_name>     — single app declared in [tool.skaal.apps];
-                                upstream URLs are read from
-                                plan.skaal.project.lock.
-
-Example pyproject.toml::
-
-    [tool.skaal]
-    stack       = "prod"
-    region      = "eu-west-1"
-    gcp_project = "my-project"    # GCP only
-
-Then::
-
-    skaal deploy
+On success the lock file is updated with the bindings the stack used so
+follow-up runs of `skaal plan` short-circuit when nothing has changed.
+The actual lock-write step is gated on whether the binder pinned any
+new resources during this run.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
+from rich.console import Console
 
+from skaal.binding.model import Environment, LockEntry, LockFile, Plan
 from skaal.cli._errors import cli_error_boundary
+from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.deploy import (
+    PulumiProgram,
+    build_artefacts,
+    get_target,
+    pulumi_program_for,
+)
+from skaal.errors import MissingExtraError, SkaalDeployError
 
-app = typer.Typer(help="Package and deploy previously-built artifacts.")
+app = typer.Typer(
+    help="Provision infrastructure via Pulumi.",
+    context_settings={"allow_interspersed_args": True},
+)
 log = logging.getLogger("skaal.cli")
 
 
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def deploy(
-    app_name: str | None = typer.Argument(
-        None,
+    target: str = typer.Argument(
+        ...,
         help=(
-            "Name of an app declared in [tool.skaal.apps]. "
-            "When omitted and --all is not set, deploys from --artifacts-dir."
+            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
-        metavar="[APP_NAME]",
     ),
-    all_apps: bool = typer.Option(
+    env_name: str = typer.Option(
+        "prod",
+        "--env",
+        "-e",
+        help="Environment name from `skaal.toml`.",
+    ),
+    out_dir: Path | None = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
+    ),
+    preview: bool = typer.Option(
         False,
-        "--all",
-        help="Deploy every app declared in [tool.skaal.apps] in topological order.",
-    ),
-    artifacts_dir: Path = typer.Option(
-        Path("artifacts"),
-        "--artifacts-dir",
-        "-a",
-        help="Path to the artifacts directory produced by `skaal build`.",
-    ),
-    stack: str | None = typer.Option(
-        None,
-        "--stack",
-        "-s",
-        help="Pulumi stack name. Env: SKAAL_STACK. pyproject: tool.skaal.stack.",
-    ),
-    region: str | None = typer.Option(
-        None,
-        "--region",
-        "-r",
-        help="Cloud region override. Env: SKAAL_REGION. pyproject: tool.skaal.region.",
-    ),
-    gcp_project: str | None = typer.Option(
-        None,
-        "--gcp-project",
-        help=(
-            "GCP project ID (required for GCP target). "
-            "Env: SKAAL_GCP_PROJECT. pyproject: tool.skaal.gcp_project."
-        ),
+        "--preview",
+        help="Run `pulumi preview` instead of `pulumi up`.",
     ),
     yes: bool = typer.Option(
-        True,
-        "--yes/--no-yes",
-        help="Pass --yes to pulumi up (non-interactive).",
+        False,
+        "--yes",
+        "-y",
+        help="Skip the interactive confirmation prompt and apply immediately.",
+    ),
+    lock_path: Path = typer.Option(
+        Path("skaal.lock"),
+        "--lock",
+        help="Path to `skaal.lock` (created on first deploy).",
+    ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help=(
+            "Ship the local Skaal checkout inside each Lambda image instead of "
+            "installing `skaal[...]` from PyPI. Use during the 0.4.0 alpha while "
+            "the package is not yet published."
+        ),
     ),
 ) -> None:
-    """
-    Package the app and deploy it using Pulumi.
+    try:
+        app_spec = AppSpec.parse(target)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    skaal_app = load_app(app_spec)
+    loaded = load_plan(skaal_app, env_name, lock_path=lock_path)
 
-    Reads ``skaal-meta.json`` from the artifacts directory to detect the
-    target platform (AWS Lambda or GCP Cloud Run), then:
+    written = build_artefacts(loaded.bound, loaded.env, app_spec, out_dir=out_dir, dev=dev)
+    console = Console()
+    console.print(f"Rendered artefacts for [cyan]{env_name}[/cyan] → {written}")
 
-    \b
-    AWS  — installs deps, packages handler.py + source, runs pulumi up.
-    GCP  — runs pulumi up (infra), builds + pushes Docker image, runs pulumi up.
-
-        Prerequisites:
-            AWS: AWS credentials configured.
-            GCP: Application Default Credentials configured and a reachable Docker daemon.
-    """
-    from skaal import api
-
-    if all_apps:
-        steps = api.deploy_all(yes=yes)
-        _summarize(steps)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
-        return
-
-    if app_name is not None:
-        from skaal.cli._orchestrator import deploy_all as _deploy_all
-        from skaal.cli._orchestrator import hydrate_env_from_lock
-
-        graph = api.project_graph()
-        if app_name not in graph.apps:
-            raise ValueError(
-                f"App {app_name!r} is not declared in [tool.skaal.apps].\n"
-                f"  Known apps: {sorted(graph.apps)}."
-            )
-        hydrate_env_from_lock(graph, app_name)
-        steps = _deploy_all(graph, only=[app_name], yes=yes)
-        _summarize(steps)
-        if any(not s.success for s in steps):
-            raise typer.Exit(code=1)
-        return
-
-    log.debug("Deploying artifacts from %s", artifacts_dir)
-    api.deploy(
-        artifacts_dir=artifacts_dir,
-        stack=stack,
-        region=region,
-        gcp_project=gcp_project,
+    program = pulumi_program_for(loaded.bound, loaded.env, written)
+    _run_pulumi(
+        bound=loaded.bound,
+        env=loaded.env,
+        program=program,
+        preview=preview,
         yes=yes,
+        console=console,
     )
 
+    _write_lock_pins(loaded.bound, loaded.env, lock_path=lock_path)
+    console.print(f"[green]✓[/green] {'preview' if preview else 'deploy'} complete.")
 
-def _summarize(steps: list) -> None:
-    """Print one line per orchestration step."""
-    for step in steps:
-        marker = "OK " if step.success else "FAIL"
-        suffix = step.url or step.error or "-"
-        log.info("[%s] %s %s", marker, step.name, suffix)
+
+def _run_pulumi(
+    *,
+    bound: Plan,
+    env: Environment,
+    program: PulumiProgram,
+    preview: bool,
+    yes: bool,
+    console: Console,
+) -> None:
+    """Invoke the Pulumi Automation API against `program`.
+
+    Imports `pulumi.automation` lazily so the rest of the CLI does not
+    pay the import cost. Stack naming and stack-config wiring delegate
+    to the registered `DeployTarget` so a new cloud target plugs in
+    without editing this file.
+    """
+    try:
+        from pulumi import automation as auto
+    except ImportError as exc:
+        raise MissingExtraError(
+            "`skaal deploy` requires the Pulumi SDKs. Install them with "
+            "`pip install 'skaal[deploy,aws]'`."
+        ) from exc
+
+    # Importing the target package registers the target; the program
+    # callable would do this on invocation, but we need the target
+    # registered here too for stack-name / stack-config wiring.
+    __import__(f"skaal.deploy.{env.target.value}")
+    target = get_target(env.target)
+
+    project_name = bound.app or "skaal"
+    stack_name = target.stack_name(bound, env)
+    console.print(f"Pulumi stack [bold]{stack_name}[/bold] (project=[cyan]{project_name}[/cyan])")
+
+    stack = auto.create_or_select_stack(
+        stack_name=stack_name,
+        project_name=project_name,
+        program=program,
+    )
+    for key, value in target.stack_config(env).items():
+        stack.set_config(key, auto.ConfigValue(value=value))
+
+    try:
+        if preview:
+            stack.preview(on_output=console.print)
+        else:
+            if not yes and not typer.confirm(
+                f"Apply {stack_name!r} to target {env.target.value!r}?",
+                default=False,
+            ):
+                raise typer.Abort()
+            stack.up(on_output=console.print)
+    except auto.CommandError as exc:  # pragma: no cover - network/integration path
+        raise SkaalDeployError(f"Pulumi {('preview' if preview else 'up')} failed: {exc}") from exc
+
+
+def _write_lock_pins(bound: Plan, env: Environment, *, lock_path: Path) -> None:
+    """Pin every non-external bound resource into `skaal.lock`.
+
+    First-deploy runs convert the binder's defaults / overrides into
+    explicit `LockEntry` rows so subsequent `skaal plan` runs short-circuit
+    when nothing has changed. Already-locked entries are kept as-is.
+    """
+    existing = LockFile.load(lock_path)
+    new_entries = dict(existing.entries)
+    now = datetime.now(UTC)
+    for resource in bound.resources:
+        if resource.external:
+            continue
+        key = (env.name, resource.inferred.id)
+        if key in new_entries:
+            continue
+        new_entries[key] = LockEntry(
+            backend=resource.backend,
+            region=resource.region,
+            pinned_at=now,
+            pinned_by="skaal-deploy",
+            fingerprint=bound.bound_fingerprint or None,
+        )
+
+    if new_entries != existing.entries:
+        updated = LockFile(version=existing.version, entries=new_entries)
+        updated.save(lock_path)

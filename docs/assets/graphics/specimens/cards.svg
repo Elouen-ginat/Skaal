@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="170" viewBox="0 0 700 170" fill="none">
+  <foreignObject width="700" height="170">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="asset-root">
+      <style>@import url('../../stylesheets/colors_and_type.css');
+.asset-root,
+.asset-root *,
+.asset-root *::before,
+.asset-root *::after { box-sizing: border-box; }
+.asset-root { font-family: var(--font-body); color: var(--fg-1); }
+.asset-root .card {
+  width: 700px;
+  padding: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--skaal-color-mist) 100%);
+}
+.asset-root .row { display: flex; gap: 12px; align-items: stretch; }
+.asset-root .grid { display: grid; gap: 12px; }
+.asset-root .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.asset-root .label.on-dark { color: var(--fg-on-dark-3); }
+.asset-root .value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+}</style>
+      <div class="card">
+<style>
+  .c { border: 1px solid rgba(167,180,194,0.22); border-radius: 22px; background: rgba(255,255,255,0.84); box-shadow: 0 16px 40px rgba(14,23,38,0.08); padding: 18px 20px; }
+  .c h3 { margin: 0 0 6px; font: 600 16px/1.2 'Space Grotesk'; letter-spacing: -0.01em; }
+  .c p { margin: 0; font: 400 13px/1.55 'IBM Plex Sans'; color: rgba(14,23,38,0.72); }
+  .ckicker { font: 700 10px/1 'IBM Plex Sans'; color: #13B5A8; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; display: block; }
+</style>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+  <div class="c"><span class="ckicker">Step 01</span><h3>Declare</h3><p>Classes and decorated functions — Store, Topic, Table, @app.expose.</p></div>
+  <div class="c"><span class="ckicker">Step 02</span><h3>Infer</h3><p>Skaal walks the App graph and produces a Blueprint.</p></div>
+</div>
+</div>
+    </div>
+  </foreignObject>
+</svg>
