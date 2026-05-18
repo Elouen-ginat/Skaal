@@ -1,0 +1,191 @@
+name: Non-regression deploy
+
+# Runs the `tests/nonregression/` suite, which deploys a real Skaal app to
+# every supported target, exercises it over HTTP, and then destroys the
+# stack. The destroy step is wrapped in a try/finally inside the test so a
+# failed assertion still tears down infrastructure.
+#
+# Triggered on every merge to `main` (a push event after PR squash-merge)
+# and on `workflow_dispatch` so maintainers can re-run a target after fixing
+# a regression without waiting for the next merge.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated subset of targets to run (local,aws,gcp)."
+        required: false
+        default: "local,aws,gcp"
+
+# Serialise non-regression runs on `main`. Two overlapping runs would race on
+# cloud resource names and risk orphaning a stack — better to queue the next
+# run than to interleave them.
+concurrency:
+  group: nonregression-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Needed by aws-actions/configure-aws-credentials and google-github-actions/auth
+  # to mint short-lived federated credentials. No long-lived secrets are stored.
+  id-token: write
+
+jobs:
+  local:
+    name: Local target
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.inputs.targets, 'local')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SKAAL_RUN_NONREGRESSION: "1"
+      SKAAL_NONREGRESSION_LOCAL: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: uv sync --group dev --extra runtime --extra deploy --extra fastapi
+
+      - name: Run local non-regression
+        run: uv run pytest tests/nonregression/test_local_deploy.py -q -s
+
+  aws:
+    name: AWS target
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.inputs.targets, 'aws')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SKAAL_RUN_NONREGRESSION: "1"
+      SKAAL_NONREGRESSION_AWS: "1"
+      AWS_REGION: ${{ vars.SKAAL_NONREGRESSION_AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_NONREGRESSION_ROLE_ARN }}
+          role-session-name: skaal-nonregression-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Pulumi
+        uses: pulumi/actions@v6
+        with:
+          pulumi-version: "^3.0"
+
+      - name: Install dev dependencies
+        run: uv sync --group dev --extra runtime --extra deploy --extra aws --extra fastapi
+
+      - name: Run AWS non-regression
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        run: uv run pytest tests/nonregression/test_aws_deploy.py -q -s
+
+  gcp:
+    name: GCP target
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.inputs.targets, 'gcp')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SKAAL_RUN_NONREGRESSION: "1"
+      SKAAL_NONREGRESSION_GCP: "1"
+      SKAAL_NONREGRESSION_GCP_PROJECT: ${{ vars.SKAAL_NONREGRESSION_GCP_PROJECT }}
+      SKAAL_NONREGRESSION_GCP_REGION: ${{ vars.SKAAL_NONREGRESSION_GCP_REGION || 'us-central1' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_NONREGRESSION_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Pulumi
+        uses: pulumi/actions@v6
+        with:
+          pulumi-version: "^3.0"
+
+      - name: Install dev dependencies
+        run: uv sync --group dev --extra runtime --extra deploy --extra gcp --extra fastapi
+
+      - name: Run GCP non-regression
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-auth.outputs.credentials_file_path }}
+        run: uv run pytest tests/nonregression/test_gcp_deploy.py -q -s
+
+  # A single aggregating job so branch-protection only has one required check
+  # to gate `main` on, and the matrix can grow without editing settings.
+  summary:
+    name: Non-regression summary
+    if: always()
+    needs: [local, aws, gcp]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any target regressed
+        run: |
+          set -euo pipefail
+          declare -A results=(
+            [local]="${{ needs.local.result }}"
+            [aws]="${{ needs.aws.result }}"
+            [gcp]="${{ needs.gcp.result }}"
+          )
+          failed=0
+          for target in "${!results[@]}"; do
+            result="${results[$target]}"
+            echo "$target: $result"
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              failed=1
+            fi
+          done
+          exit "$failed"
