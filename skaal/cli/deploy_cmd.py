@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 import typer
@@ -52,6 +53,29 @@ app = typer.Typer(
     context_settings={"allow_interspersed_args": True},
 )
 log = logging.getLogger("skaal.cli")
+
+_BASE_GCP_REQUIRED_SERVICES: tuple[str, ...] = (
+    "serviceusage.googleapis.com",
+    "compute.googleapis.com",
+    "run.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "iam.googleapis.com",
+)
+_OPTIONAL_GCP_REQUIRED_SERVICES: frozenset[str] = frozenset(
+    {
+        "bigquery.googleapis.com",
+        "cloudscheduler.googleapis.com",
+        "cloudtasks.googleapis.com",
+        "firestore.googleapis.com",
+        "pubsub.googleapis.com",
+        "secretmanager.googleapis.com",
+        "sqladmin.googleapis.com",
+        "storage.googleapis.com",
+    }
+)
+_KNOWN_GCP_DEPLOY_SERVICES: frozenset[str] = frozenset(
+    (*_BASE_GCP_REQUIRED_SERVICES, *_OPTIONAL_GCP_REQUIRED_SERVICES)
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -348,17 +372,7 @@ def _resolve_gcp_access_token() -> str:
 
 def _gcp_required_services(bound: Plan) -> tuple[str, ...]:
     """Return the set of GCP APIs required by the current bound plan."""
-    services: dict[str, None] = {
-        "serviceusage.googleapis.com": None,
-        # The pulumi-gcp provider calls `compute.regions.list` during
-        # initialization even when no Compute Engine resources are in the
-        # plan; without this enabled, every GCP deploy errors at the first
-        # API call.
-        "compute.googleapis.com": None,
-        "run.googleapis.com": None,
-        "artifactregistry.googleapis.com": None,
-        "iam.googleapis.com": None,
-    }
+    services: dict[str, None] = dict.fromkeys(_BASE_GCP_REQUIRED_SERVICES)
 
     for resource in bound.resources:
         if resource.external:
@@ -387,10 +401,24 @@ def _gcp_required_services(bound: Plan) -> tuple[str, ...]:
     return tuple(services)
 
 
+def _validated_gcp_service_name(service: str) -> str:
+    """Return `service` when it is one of Skaal's known deploy-time APIs."""
+    if service in _KNOWN_GCP_DEPLOY_SERVICES:
+        return service
+
+    msg = (
+        f"Unsupported GCP API identifier {service!r} encountered during deploy preflight. "
+        "This is an internal Skaal bug."
+    )
+    raise SkaalDeployError(msg)
+
+
 def _gcp_service_state(project: str, service: str, token: str) -> str | None:
     """Return the current Service Usage state for one API in `project`."""
+    safe_service = _validated_gcp_service_name(service)
+    safe_project = quote(project, safe="")
     request = Request(
-        f"https://serviceusage.googleapis.com/v1/projects/{project}/services/{service}",
+        f"https://serviceusage.googleapis.com/v1/projects/{safe_project}/services/{quote(safe_service, safe='')}",
         headers={"Authorization": f"Bearer {token}"},
     )
     try:
@@ -398,13 +426,13 @@ def _gcp_service_state(project: str, service: str, token: str) -> str | None:
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:  # pragma: no cover - network/integration path
         detail = exc.read().decode("utf-8", errors="replace")
-        if service == "serviceusage.googleapis.com":
+        if safe_service == "serviceusage.googleapis.com":
             raise SkaalDeployError(
                 f"GCP project {project!r} must have `serviceusage.googleapis.com` enabled "
                 "before Skaal can verify the required deploy APIs."
             ) from exc
         raise SkaalDeployError(
-            f"Could not verify whether GCP API {service!r} is enabled for project {project!r}: "
+            f"Could not verify whether GCP API {safe_service!r} is enabled for project {project!r}: "
             f"HTTP {exc.code}. {detail}"
         ) from exc
     except URLError as exc:  # pragma: no cover - network/integration path

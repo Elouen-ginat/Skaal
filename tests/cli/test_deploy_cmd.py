@@ -18,7 +18,12 @@ from typer.testing import CliRunner
 
 from skaal import App, Store
 from skaal.binding.model import BackendConfig, Environment, LockFile, Target
-from skaal.cli.deploy_cmd import _gcp_required_services, _preflight_gcp_target, _print_stack_outputs
+from skaal.cli.deploy_cmd import (
+    _gcp_required_services,
+    _gcp_service_state,
+    _preflight_gcp_target,
+    _print_stack_outputs,
+)
 from skaal.cli.main import app as cli_app
 from skaal.errors import SkaalDeployError
 
@@ -182,3 +187,15 @@ def test_gcp_required_services_include_cloud_run_and_firestore() -> None:
     assert "artifactregistry.googleapis.com" in services
     assert "iam.googleapis.com" in services
     assert "firestore.googleapis.com" in services
+
+
+def test_gcp_service_state_rejects_unknown_service_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_urlopen(*args: object, **kwargs: object) -> None:
+        raise AssertionError("urlopen should not be called for unknown services")
+
+    monkeypatch.setattr("skaal.cli.deploy_cmd.urlopen", fail_urlopen)
+
+    with pytest.raises(SkaalDeployError, match="Unsupported GCP API identifier"):
+        _gcp_service_state("acme-prod", "run.googleapis.com/../../evil", "token")
