@@ -142,10 +142,12 @@ def registered_runtime_targets() -> Mapping[str, RuntimeTargetRegistration]:
 
 def _ensure_builtin_targets_loaded() -> None:
     from skaal.runtime.aws.target import register_builtin_runtime_target as register_aws
+    from skaal.runtime.gcp.target import register_builtin_runtime_target as register_gcp
     from skaal.runtime.local.target import register_builtin_runtime_target as register_local
 
     register_local()
     register_aws()
+    register_gcp()
 
 
 def _ensure_plugins_loaded() -> None:

@@ -106,11 +106,10 @@ def build_artefacts(
         MissingExtraError: If the templating dependency (`jinja2`) is not
             installed.
     """
-    if env.target is not Target.AWS:
+    if env.target not in (Target.AWS, Target.GCP):
         raise BuildError(
-            f"`skaal build` only supports target {Target.AWS.value!r} in 0.4.0-alpha; "
-            f"env {env.name!r} targets {env.target.value!r}. "
-            "GCP support lands in a 0.4.x point release per ADR 032."
+            f"`skaal build` supports targets {Target.AWS.value!r} and "
+            f"{Target.GCP.value!r}; env {env.name!r} targets {env.target.value!r}."
         )
 
     template_env = _Jinja2(_template_root(env.target))
@@ -126,7 +125,7 @@ def build_artefacts(
         )
 
     resolved_requirements: tuple[str, ...] = (
-        tuple(requirements) if requirements is not None else _default_requirements()
+        tuple(requirements) if requirements is not None else _default_requirements(env.target)
     )
     if dev:
         resolved_requirements = _rewrite_requirements_for_dev(resolved_requirements)
@@ -320,15 +319,17 @@ def _slug_for(resource: PlannedResource) -> str:
     return resource_slug(resource)
 
 
-def _default_requirements() -> tuple[str, ...]:
+def _default_requirements(target: Target) -> tuple[str, ...]:
     """Default `[project].dependencies` for the rendered `pyproject.toml`.
 
     Returns only `skaal[...]` extras — every transitive third-party
     dependency (mangum for ASGI-on-Lambda, asyncpg for Postgres,
-    boto3 for AWS clients, …) is pulled in through skaal's
+    google-cloud-* for GCP clients, …) is pulled in through skaal's
     optional-dependency table in ``pyproject.toml``. Pinning bare
     package names here would split the dependency source-of-truth.
     """
+    if target is Target.GCP:
+        return ("skaal[runtime,gcp]",)
     return ("skaal[runtime,aws]",)
 
 

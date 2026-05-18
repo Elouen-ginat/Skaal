@@ -111,7 +111,7 @@ def test_build_artefacts_rejects_non_aws_target(tmp_path: Path) -> None:
     env = Environment(name="local", target=Target.LOCAL)
     bound, _ = _bound_for(app, env=env)
 
-    with pytest.raises(BuildError, match="only supports target 'aws'"):
+    with pytest.raises(BuildError, match="supports targets 'aws' and 'gcp'"):
         build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
 
 

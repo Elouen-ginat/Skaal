@@ -1,0 +1,53 @@
+"""Boot-time setup for `handler.py` — logging, secret hydration, warm-up.
+
+Rendered from `skaal/deploy/templates/gcp/bootstrap.py.j2`. Edits to this
+file are overwritten on the next build.
+"""
+
+from __future__ import annotations
+
+import importlib
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+from skaal.runtime.gcp import wire_app_from_environment
+from skaal.runtime.models import RuntimeBindingManifest
+
+_LOG = logging.getLogger("skaal.cloudrun")
+_LOG.setLevel(os.environ.get("SKAAL_LOG_LEVEL", "INFO"))
+
+
+def load_app() -> Any:
+    """Import the user's `App` instance from ``SKAAL_APP_TARGET``."""
+    target = os.environ.get("SKAAL_APP_TARGET", "{{ app_target }}")
+    if ":" not in target:
+        raise RuntimeError(
+            f"SKAAL_APP_TARGET={target!r} is not a `module:attribute` reference"
+        )
+    module_path, attr = target.split(":", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, attr)
+
+
+def warm_up(app: Any) -> None:
+    """Run one-shot setup before the first invocation."""
+    if os.environ.get("SKAAL_RUNTIME_WIRE") == "1":
+        manifest_path = Path(os.environ.get("APP_ROOT", "/app")) / "runtime_bindings.json"
+        if not manifest_path.exists():
+            manifest_path = Path("runtime_bindings.json")
+        manifest = RuntimeBindingManifest.model_validate_json(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        wire_app_from_environment(app, manifest=manifest, env=os.environ)
+    else:
+        _LOG.warning("skaal.cloudrun boot: runtime wiring disabled (set SKAAL_RUNTIME_WIRE=1)")
+
+    _LOG.info(
+        "skaal.cloudrun boot: app=%r env=%s target=%s fingerprint=%s",
+        getattr(app, "name", "?"),
+        os.environ.get("SKAAL_ENV", "?"),
+        os.environ.get("SKAAL_TARGET", "?"),
+        os.environ.get("SKAAL_BOUND_FINGERPRINT", "?"),
+    )

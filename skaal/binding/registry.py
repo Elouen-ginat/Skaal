@@ -28,6 +28,7 @@ from skaal.backends._tokens import (
     Apscheduler,
     Asyncio,
     AwsSecretsManager,
+    BigQuery,
     CloudRun,
     CloudSchedulerCloudRun,
     CloudTasksCloudRun,
@@ -258,6 +259,11 @@ REGISTRY: tuple[BackendSpec, ...] = (
         GcpSecretManager,
         _GCP,
         default_for=_default_cells(GcpSecretManager, Target.GCP),
+    ),
+    _entry(
+        BigQuery,
+        frozenset({Target.LOCAL, Target.GCP}),
+        capabilities=BackendCapabilities(partitioning=True, row_updates=False),
     ),
 )
 

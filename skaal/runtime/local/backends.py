@@ -49,6 +49,37 @@ def build_in_process_channel(context: RuntimeBackendFactoryContext) -> Any:
     return None
 
 
+def build_bigquery_relational(context: RuntimeBackendFactoryContext) -> Any:
+    """Construct a `BigQueryBackend` for a locally-running app pinned to BigQuery.
+
+    Reads connection details from `[env.local.backends.bigquery]` in
+    `skaal.toml` (project + dataset + optional location). The pin flows in
+    via `BackendConfig` on the planned resource; falling back to per-env
+    overrides keeps `skaal run` against real BigQuery one TOML edit away.
+    """
+    from skaal.backends.bigquery_backend import BigQueryBackend
+
+    bound = require_planned_resource(context)
+    project = ""
+    dataset = ""
+    location = "US"
+    if bound.backend_config is not None:
+        project = bound.backend_config.project or ""
+        dataset = bound.backend_config.dataset or ""
+        for key, raw in bound.backend_config.options.items():
+            if key == "location" and isinstance(raw, str):
+                location = raw
+    project = bound.options.get("project", project)
+    dataset = bound.options.get("dataset", dataset)
+    location = bound.options.get("location", location)
+    if not project or not dataset:
+        raise RuntimeWiringError(
+            "BigQuery local runtime requires `project` and `dataset` set under "
+            "`[env.local.backends.bigquery]` in `skaal.toml`."
+        )
+    return BigQueryBackend(project=project, dataset=dataset, location=location)
+
+
 def require_planned_resource(context: RuntimeBackendFactoryContext) -> Any:
     bound = context.planned_resource
     if bound is None:
@@ -60,6 +91,7 @@ def require_planned_resource(context: RuntimeBackendFactoryContext) -> Any:
 
 
 __all__ = [
+    "build_bigquery_relational",
     "build_filesystem_blob",
     "build_in_process_channel",
     "build_redis_store",

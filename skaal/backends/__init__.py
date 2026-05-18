@@ -42,6 +42,7 @@ __all__ = [
 
 
 _LAZY_BACKENDS: dict[str, tuple[str, str]] = {
+    "BigQueryBackend": ("skaal.backends.bigquery_backend", "BigQueryBackend"),
     "DynamoBackend": ("skaal.backends.dynamodb_backend", "DynamoBackend"),
     "FirestoreBackend": ("skaal.backends.firestore_backend", "FirestoreBackend"),
     "PostgresBackend": ("skaal.backends.postgres_backend", "PostgresBackend"),

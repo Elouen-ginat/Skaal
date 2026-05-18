@@ -36,6 +36,7 @@ _REEXPORT_MODULE: dict[str, str] = {
     "DotenvSecret": "skaal.backends.dotenv",
     "AwsSecretsManager": "skaal.backends.aws_secrets_manager",
     "GcpSecretManager": "skaal.backends.gcp_secret_manager",
+    "BigQuery": "skaal.backends.bigquery",
 }
 
 

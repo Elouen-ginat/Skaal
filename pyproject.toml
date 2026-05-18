@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skaal"
-version = "0.4.0a0"
+version = "0.4.0"
 description = "A Python framework where the application code is the infrastructure declaration."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -75,6 +75,9 @@ gcp = [
     "google-auth>=2.32",
     "google-cloud-firestore>=2.16",
     "google-cloud-storage>=2.16",
+    "google-cloud-pubsub>=2.21",
+    "google-cloud-bigquery>=3.25",
+    "google-cloud-secret-manager>=2.20",
     "gcsfs>=2025.3.0",
     "asyncpg>=0.29",
     "cloud-sql-python-connector[asyncpg]>=1.9",
@@ -221,6 +224,7 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::DeprecationWarning:google.*",
+    "ignore::DeprecationWarning:pulumi_gcp.*",
     "ignore::PendingDeprecationWarning",
     "ignore::ResourceWarning",
 ]

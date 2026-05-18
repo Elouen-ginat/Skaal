@@ -32,6 +32,7 @@ from skaal.runtime.local.adapters import (
     store as store_adapter,
 )
 from skaal.runtime.local.backends import (
+    build_bigquery_relational,
     build_filesystem_blob,
     build_in_process_channel,
     build_redis_store,
@@ -67,6 +68,11 @@ def register_builtin_runtime_target() -> RuntimeTargetRegistration:
         ResourceKind.RELATIONAL,
         "sqlite",
         build_sqlite_relational,
+    )
+    LOCAL_RUNTIME_TARGET.register_backend_factory(
+        ResourceKind.RELATIONAL,
+        "bigquery",
+        build_bigquery_relational,
     )
     LOCAL_RUNTIME_TARGET.register_backend_factory(
         ResourceKind.CHANNEL,

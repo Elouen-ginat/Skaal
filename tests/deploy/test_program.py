@@ -13,7 +13,7 @@ import pytest
 from skaal import App
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.deploy import pulumi_program_for
-from skaal.errors import MissingExtraError, SkaalDeployError
+from skaal.errors import MissingExtraError
 
 
 def _bound_aws(app: App) -> tuple:
@@ -92,14 +92,10 @@ def test_program_invocation_extras_missing_raises_missing_extra(
         program()
 
 
-def test_pulumi_program_for_unknown_target_raises_on_invocation(
+def test_pulumi_program_for_gcp_target_resolves(
     tmp_path: Path,
 ) -> None:
-    """A target with no registered deploy package surfaces an error.
-
-    GCP has no `skaal.deploy.gcp` package yet, so invoking its program
-    raises `MissingExtraError` (the target package import fails).
-    """
+    """GCP now has a registered deploy package (ADR 042); the program builds."""
     app = App("svc")
 
     @app.expose()
@@ -108,6 +104,7 @@ def test_pulumi_program_for_unknown_target_raises_on_invocation(
 
     env = Environment(name="gcp-prod", target=Target.GCP, region="us-central1")
     bound = app.plan(env, lock=LockFile())
+    # `pulumi_program_for` returns a callable; we don't invoke it (that requires
+    # a running event loop / Pulumi stack), but the build path must succeed.
     program = pulumi_program_for(bound, env, tmp_path)
-    with pytest.raises((MissingExtraError, SkaalDeployError)):
-        program()
+    assert callable(program)

@@ -144,6 +144,11 @@ class GcpSecretManager(Backend[object]):
     kinds = frozenset({"secret"})
 
 
+class BigQuery(Backend[object]):
+    name = "bigquery"
+    kinds = frozenset({"relational"})
+
+
 ALL_TOKENS: tuple[type[Backend[Any]], ...] = (
     Sqlite,
     Postgres,
@@ -170,4 +175,5 @@ ALL_TOKENS: tuple[type[Backend[Any]], ...] = (
     DotenvSecret,
     AwsSecretsManager,
     GcpSecretManager,
+    BigQuery,
 )

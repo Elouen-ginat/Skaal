@@ -4,7 +4,7 @@ authors:
 - family-names: "Ginat"
   given-names: "Elouen"
 title: "Skaal"
-version: "0.4.0-alpha"
-date-released: 2026-05-13
+version: "0.4.0"
+date-released: 2026-05-18
 url: "https://github.com/Elouen-ginat/Skaal"
 license: GPL-3.0-or-later

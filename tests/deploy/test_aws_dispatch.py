@@ -81,9 +81,9 @@ def test_aws_target_config_overlays_env_options() -> None:
 
 def test_aws_target_stack_name_is_app_plus_env() -> None:
     """`stack_name` is `<app>-<env>`."""
-    from skaal.binding.model import BoundPlan, Environment
+    from skaal.binding.model import Environment, Plan
 
-    bound = BoundPlan(app="svc", environment="prod")
+    bound = Plan(app="svc", environment="prod")
     env = Environment(name="prod", target=Target.AWS)
     assert TARGET.stack_name(bound, env) == "svc-prod"
 
