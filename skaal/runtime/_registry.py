@@ -49,15 +49,29 @@ RuntimeBackendFactoryFn = Callable[[RuntimeBackendFactoryContext], Any]
 RuntimeBindingWiringFn = Callable[[RuntimeBackendFactoryContext], None]
 
 
+def _adapter_map() -> dict[ResourceKind, RuntimeAdapterFn]:
+    return {}
+
+
+def _binding_wirer_map() -> dict[ResourceKind, RuntimeBindingWiringFn]:
+    return {}
+
+
+def _backend_factory_map() -> dict[tuple[ResourceKind, str], RuntimeBackendFactoryFn]:
+    return {}
+
+
 @dataclass
 class RuntimeTargetRegistration:
     """Mutable registration bucket for one runtime target."""
 
     name: str
-    kind_adapters: dict[ResourceKind, RuntimeAdapterFn] = field(default_factory=dict)
-    binding_wirers: dict[ResourceKind, RuntimeBindingWiringFn] = field(default_factory=dict)
+    kind_adapters: dict[ResourceKind, RuntimeAdapterFn] = field(default_factory=_adapter_map)
+    binding_wirers: dict[ResourceKind, RuntimeBindingWiringFn] = field(
+        default_factory=_binding_wirer_map
+    )
     backend_factories: dict[tuple[ResourceKind, str], RuntimeBackendFactoryFn] = field(
-        default_factory=dict
+        default_factory=_backend_factory_map
     )
     _lock: Lock = field(default_factory=Lock, init=False, repr=False)
 

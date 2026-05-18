@@ -4,11 +4,34 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import quote_plus
 
 from skaal.errors import RuntimeWiringError
 from skaal.runtime._registry import RuntimeBackendFactoryContext
+
+
+class GcpSecretPayload(Protocol):
+    data: bytes
+
+
+class GcpSecretVersionResponse(Protocol):
+    payload: GcpSecretPayload
+
+
+class GcpSecretManagerClient(Protocol):
+    def access_secret_version(self, *, request: dict[str, str]) -> GcpSecretVersionResponse: ...
+
+
+if TYPE_CHECKING:
+
+    def _secretmanager_client() -> GcpSecretManagerClient: ...
+else:
+
+    def _secretmanager_client() -> GcpSecretManagerClient:
+        from google.cloud import secretmanager
+
+        return cast(GcpSecretManagerClient, secretmanager.SecretManagerServiceClient())
 
 
 def build_firestore_store(context: RuntimeBackendFactoryContext) -> Any:
@@ -90,13 +113,11 @@ def build_bigquery_relational(context: RuntimeBackendFactoryContext) -> Any:
 def load_secret_payload(secret_id: str, *, project: str | None) -> dict[str, Any]:
     """Read a Secret Manager secret's latest version as JSON."""
     try:
-        from google.cloud import secretmanager
+        client = _secretmanager_client()
     except ImportError as exc:  # pragma: no cover - exercised when extras absent
         raise RuntimeWiringError(
             "Cloud SQL runtime wiring requires google-cloud-secret-manager."
         ) from exc
-
-    client = secretmanager.SecretManagerServiceClient()
     name = f"projects/{project or '-'}/secrets/{secret_id}/versions/latest"
     try:
         response = client.access_secret_version(request={"name": name})
@@ -107,14 +128,14 @@ def load_secret_payload(secret_id: str, *, project: str | None) -> dict[str, Any
 
     raw = response.payload.data.decode("utf-8")
     try:
-        payload = json.loads(raw)
+        payload_obj = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeWiringError(
             f"Secret Manager payload for {secret_id!r} is not valid JSON: {exc}"
         ) from exc
-    if not isinstance(payload, dict):
+    if not isinstance(payload_obj, dict):
         raise RuntimeWiringError(f"Secret Manager payload for {secret_id!r} must be a JSON object.")
-    return payload
+    return cast(dict[str, Any], payload_obj)
 
 
 def require_secret_field(payload: dict[str, Any], key: str, resource_id: str) -> str:

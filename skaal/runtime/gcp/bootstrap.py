@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Awaitable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from skaal.app import App
 from skaal.errors import RuntimeWiringError, SecretMissingError
@@ -14,7 +14,30 @@ from skaal.runtime._registry import RuntimeBackendFactoryContext, get_runtime_ta
 from skaal.runtime.gcp.target import GCP_RUNTIME_TARGET_NAME
 from skaal.runtime.models import RuntimeBindingManifest, RuntimeResourceBinding
 from skaal.secrets import SecretRegistry
-from skaal.types.secret import ResolvedSecret, SecretProvider, SecretSpec
+from skaal.types.secret import ResolvedSecret, SecretProvider, SecretResolver, SecretSpec
+
+
+class GcpSecretPayload(Protocol):
+    data: bytes
+
+
+class GcpSecretVersionResponse(Protocol):
+    payload: GcpSecretPayload
+
+
+class GcpSecretManagerClient(Protocol):
+    def access_secret_version(self, *, request: dict[str, str]) -> GcpSecretVersionResponse: ...
+
+
+if TYPE_CHECKING:
+
+    def _secretmanager_client() -> GcpSecretManagerClient: ...
+else:
+
+    def _secretmanager_client() -> GcpSecretManagerClient:
+        from google.cloud import secretmanager
+
+        return cast(GcpSecretManagerClient, secretmanager.SecretManagerServiceClient())
 
 
 def wire_app_from_environment(
@@ -69,13 +92,14 @@ def wire_declared_secrets(app: App, env: Mapping[str, str]) -> None:
     if not refs:
         return
 
+    resolvers: dict[SecretProvider, SecretResolver] = {
+        "env": cast(SecretResolver, EnvMappingResolver("env", env)),
+        "pulumi-config": cast(SecretResolver, EnvMappingResolver("pulumi-config", env)),
+        "gcp-secret-manager": cast(SecretResolver, GcpSecretResolver(env)),
+    }
     registry = SecretRegistry(
         {name: ref.to_spec() for name, ref in refs.items()},
-        resolvers={
-            "env": EnvMappingResolver("env", env),
-            "pulumi-config": EnvMappingResolver("pulumi-config", env),
-            "gcp-secret-manager": GcpSecretResolver(env),
-        },
+        resolvers=resolvers,
     )
     run_blocking(registry.warmup(), context="warm declared secrets")
     app._set_secret_registry(registry)
@@ -90,7 +114,9 @@ class EnvMappingResolver:
         raw = self._env.get(spec.env)
         if raw is None and spec.source != spec.env:
             raw = self._env.get(spec.source)
-        return ResolvedSecret(name=spec.name, value=raw, provider=self.provider)
+        return ResolvedSecret(
+            name=spec.name, value=raw, provider=cast(SecretProvider, self.provider)
+        )
 
     async def close(self) -> None:
         return None
@@ -109,15 +135,13 @@ class GcpSecretResolver:
             return ResolvedSecret(name=spec.name, value=None, provider=self.provider)
 
         try:
-            from google.cloud import secretmanager
+            client = _secretmanager_client()
         except ImportError as exc:
             raise SecretMissingError(
                 spec.name,
                 self.provider,
                 detail="google-cloud-secret-manager is required for GCP cold-start secret wiring",
             ) from exc
-
-        client = secretmanager.SecretManagerServiceClient()
         name = f"projects/{self._project or '-'}/secrets/{secret_id}/versions/latest"
         try:
             response = await asyncio.to_thread(client.access_secret_version, request={"name": name})
@@ -129,7 +153,11 @@ class GcpSecretResolver:
             ) from exc
 
         raw = response.payload.data.decode("utf-8")
-        return ResolvedSecret(name=spec.name, value=raw, provider=self.provider)
+        return ResolvedSecret(
+            name=spec.name,
+            value=raw,
+            provider=cast(SecretProvider, self.provider),
+        )
 
     async def close(self) -> None:
         return None

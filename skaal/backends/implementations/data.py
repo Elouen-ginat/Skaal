@@ -9,10 +9,10 @@ import json
 import math
 import re
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import aiosqlite
 
@@ -41,6 +41,51 @@ from skaal.types.storage import CursorPayload, Page
 
 def _decode_jsonb(raw: Any) -> Any:
     return decode_json_value(raw)
+
+
+if TYPE_CHECKING:
+
+    async def _create_asyncpg_pool(
+        dsn: str,
+        *,
+        min_size: int,
+        max_size: int,
+    ) -> AsyncpgPoolProtocol: ...
+
+    def _redis_client_from_url(url: str) -> RedisNativeClient: ...
+
+    def _dynamodb_client(region: str) -> DynamoDbClientProtocol: ...
+
+    def _firestore_transactional(fn: Callable[[Any], Any]) -> Callable[[Any], Any]: ...
+else:
+
+    async def _create_asyncpg_pool(
+        dsn: str,
+        *,
+        min_size: int,
+        max_size: int,
+    ) -> AsyncpgPoolProtocol:
+        import asyncpg
+
+        return cast(
+            AsyncpgPoolProtocol,
+            await asyncpg.create_pool(dsn, min_size=min_size, max_size=max_size),
+        )
+
+    def _redis_client_from_url(url: str) -> RedisNativeClient:
+        import redis.asyncio as aioredis
+
+        return cast(RedisNativeClient, aioredis.from_url(url, decode_responses=True))
+
+    def _dynamodb_client(region: str) -> DynamoDbClientProtocol:
+        import boto3
+
+        return cast(DynamoDbClientProtocol, boto3.client("dynamodb", region_name=region))
+
+    def _firestore_transactional(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        from google.cloud import firestore
+
+        return cast(Callable[[Any], Any], firestore.transactional(fn))
 
 
 class SqliteBackend:
@@ -421,7 +466,7 @@ class SqliteBackend:
         return self._engine
 
     @asynccontextmanager
-    async def open_relational_session(self, model_cls: type) -> AsyncIterator[Any]:
+    async def open_relational_session(self, model_cls: type) -> AsyncGenerator[Any, None]:
         await self.ensure_relational_schema(model_cls)
         assert self._session_factory is not None
         async with self._session_factory() as session:
@@ -482,7 +527,7 @@ class PostgresBackend:
     async def connect(self) -> None:
         import asyncpg
 
-        self._pool = await asyncpg.create_pool(
+        self._pool = await _create_asyncpg_pool(
             self.dsn,
             min_size=self.min_size,
             max_size=self.max_size,
@@ -759,7 +804,7 @@ class PostgresBackend:
                 ORDER BY sort_value, key
                 LIMIT $7
             """
-            params = [
+            params: list[Any] = [
                 self.namespace,
                 partition_path,
                 partition_value,
@@ -778,7 +823,13 @@ class PostgresBackend:
                 ORDER BY sort_value, key
                 LIMIT $5
             """
-            params = [self.namespace, partition_path, partition_value, sort_path, limit + 1]
+            params = [
+                self.namespace,
+                partition_path,
+                partition_value,
+                sort_path,
+                limit + 1,
+            ]
 
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
@@ -877,7 +928,7 @@ class PostgresBackend:
         return self._engine
 
     @asynccontextmanager
-    async def open_relational_session(self, model_cls: type) -> AsyncIterator[Any]:
+    async def open_relational_session(self, model_cls: type) -> AsyncGenerator[Any, None]:
         await self.ensure_relational_schema(model_cls)
         assert self._session_factory is not None
         async with self._session_factory() as session:
@@ -1042,14 +1093,10 @@ class RedisBackend:
         await self._ensure_connected()
 
     async def _ensure_connected(self) -> Any:
-        import redis.asyncio as aioredis
-
         loop = asyncio.get_running_loop()
         loop_id = id(loop)
         if loop_id not in self._clients:
-            self._clients[loop_id] = aioredis.from_url(  # type: ignore[no-untyped-call]
-                self.url, decode_responses=True
-            )
+            self._clients[loop_id] = _redis_client_from_url(self.url)
         return self._clients[loop_id]
 
     async def get(self, key: str) -> Any | None:
@@ -1296,7 +1343,7 @@ class RedisBackend:
         self._clients.clear()
 
     async def native(self) -> RedisNativeClient:
-        return await self._ensure_connected()
+        return cast(RedisNativeClient, await self._ensure_connected())
 
     def __repr__(self) -> str:
         return f"RedisBackend(url={self.url!r}, namespace={self.namespace!r})"
@@ -1311,12 +1358,11 @@ class DynamoBackend:
     def _get_client(self) -> DynamoDbClientProtocol:
         if self._client is None:
             try:
-                import boto3
+                self._client = _dynamodb_client(self.region)
             except ImportError as exc:
                 raise ImportError(
                     "boto3 is required for DynamoBackend. Install it with: pip install boto3"
                 ) from exc
-            self._client = boto3.client("dynamodb", region_name=self.region)
         return self._client
 
     def _secondary_index_name(self, index_name: str) -> str:
@@ -1485,7 +1531,7 @@ class DynamoBackend:
             has_more = len(collected) > limit or bool(last_key)
             next_cursor = None
             if has_more and last_key is not None:
-                payload = {"mode": mode, "exclusive_start_key": last_key}
+                payload: dict[str, Any] = {"mode": mode, "exclusive_start_key": last_key}
                 if prefix is not None and mode == "scan":
                     payload["prefix"] = prefix
                 next_cursor = _encode_cursor(payload)
@@ -1588,12 +1634,12 @@ class DynamoBackend:
                 return None
             table = client.describe_table(TableName=self.table_name).get("Table", {})
             existing = {
-                gsi.get("IndexName")
+                str(gsi.get("IndexName"))
                 for gsi in table.get("GlobalSecondaryIndexes", [])
                 if gsi.get("IndexName")
             }
             defined = {
-                attr.get("AttributeName")
+                str(attr.get("AttributeName"))
                 for attr in table.get("AttributeDefinitions", [])
                 if attr.get("AttributeName")
             }
@@ -1653,9 +1699,13 @@ class DynamoBackend:
                 ReturnValues="ALL_NEW",
             )
             new_val = resp["Attributes"]["counter"]
-            if isinstance(new_val, dict) and "N" in new_val:
-                return int(new_val["N"])
-            return int(new_val)
+            if isinstance(new_val, dict):
+                if "N" in new_val:
+                    return int(cast(str, new_val["N"]))
+                raise SkaalBackendError("DynamoDB counter response did not include an 'N' value")
+            if isinstance(new_val, (int, float, str)):
+                return int(new_val)
+            raise SkaalBackendError("DynamoDB counter response was not numeric")
 
         return await self._run(_increment)
 
@@ -1716,7 +1766,9 @@ class DynamoBackend:
                         ExpressionAttributeValues={":cur": {"N": str(current_ver)}},
                     )
             except botocore.exceptions.ClientError as client_exc:
-                code = client_exc.response.get("Error", {}).get("Code", "")
+                response = cast(dict[str, Any], client_exc.response)
+                error = cast(dict[str, Any], response.get("Error", {}))
+                code = str(error.get("Code", ""))
                 if code == "ConditionalCheckFailedException":
                     return False, None
                 raise
@@ -1790,7 +1842,7 @@ class FirestoreBackend:
 
     @staticmethod
     def _resume_values(doc: Any, order_fields: list[str]) -> list[Any]:
-        data = doc.to_dict() or {}
+        data = cast(dict[str, Any], doc.to_dict() or {})
         return [doc.id if field == "pk" else data.get(field) for field in order_fields]
 
     def _bounded_live_query(
@@ -1852,7 +1904,7 @@ class FirestoreBackend:
             doc = self._col().document(key).get()
             if not doc.exists:
                 return None
-            data = doc.to_dict()
+            data = cast(dict[str, Any] | None, doc.to_dict())
             if self._is_expired_data(data):
                 return None
             return json.loads(doc.get("value"))
@@ -1861,7 +1913,7 @@ class FirestoreBackend:
 
     async def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
         def _set() -> None:
-            payload = {
+            payload: dict[str, Any] = {
                 "pk": key,
                 "value": json.dumps(value),
                 "expires_at": self._expiry_deadline(ttl),
@@ -1890,16 +1942,17 @@ class FirestoreBackend:
         decoded = _validate_cursor(cursor, mode="list")
 
         def _list_page() -> Page[tuple[str, Any]]:
-            start_after = decoded.get("start_after")
-            if start_after is None and decoded.get("last_key") is not None:
-                start_after = [decoded["last_key"]]
+            start_after = cast(list[Any] | None, decoded.get("start_after"))
+            last_key = decoded.get("last_key")
+            if start_after is None and last_key is not None:
+                start_after = [last_key]
             page_docs, has_more, next_start_after = self._bounded_live_query(
                 lambda: self._col().order_by("pk"),
                 order_fields=["pk"],
                 limit=limit,
                 start_after=start_after,
             )
-            items = []
+            items: list[tuple[str, Any]] = []
             for doc, data in page_docs:
                 if data and "value" in data:
                     items.append((doc.id, json.loads(data["value"])))
@@ -1930,9 +1983,10 @@ class FirestoreBackend:
         decoded = _validate_cursor(cursor, mode="scan", extra={"prefix": prefix})
 
         def _scan_page() -> Page[tuple[str, Any]]:
-            start_after = decoded.get("start_after")
-            if start_after is None and decoded.get("last_key") is not None:
-                start_after = [decoded["last_key"]]
+            start_after = cast(list[Any] | None, decoded.get("start_after"))
+            last_key = decoded.get("last_key")
+            if start_after is None and last_key is not None:
+                start_after = [last_key]
 
             def _build_query() -> Any:
                 query = self._col().order_by("pk")
@@ -1946,7 +2000,7 @@ class FirestoreBackend:
                 limit=limit,
                 start_after=start_after,
             )
-            items = []
+            items: list[tuple[str, Any]] = []
             for doc, data in page_docs:
                 if data and "value" in data:
                     items.append((doc.id, json.loads(data["value"])))
@@ -1989,9 +2043,10 @@ class FirestoreBackend:
         def _query_index() -> Page[Any]:
             fields = _backend_index_fields(index)
             if index.sort_key is None:
-                start_after = decoded.get("start_after")
-                if start_after is None and decoded.get("last_key") is not None:
-                    start_after = [decoded["last_key"]]
+                start_after = cast(list[Any] | None, decoded.get("start_after"))
+                last_key = decoded.get("last_key")
+                if start_after is None and last_key is not None:
+                    start_after = [last_key]
                 page_docs, has_more, next_start_after = self._bounded_live_query(
                     lambda: self._col().where(fields.partition_field, "==", key).order_by("pk"),
                     order_fields=["pk"],
@@ -2013,9 +2068,9 @@ class FirestoreBackend:
                     )
                 return Page(items=items, next_cursor=next_cursor, has_more=has_more)
 
-            start_after = decoded.get("start_after")
+            start_after = cast(list[Any] | None, decoded.get("start_after"))
             if start_after is None and decoded.get("has_last_sort"):
-                start_after = [decoded.get("last_sort"), decoded.get("last_key")]
+                start_after = cast(list[Any], [decoded.get("last_sort"), decoded.get("last_key")])
             sort_field = fields.sort_field
             if sort_field is None:
                 raise ValueError(f"Secondary index {index_name!r} requires a sort field")
@@ -2061,12 +2116,10 @@ class FirestoreBackend:
 
     async def increment_counter(self, key: str, delta: int = 1) -> int:
         def _increment() -> int:
-            from google.cloud import firestore
-
             db = self._get_client()
             doc_ref = self._col().document(key)
 
-            @firestore.transactional
+            @_firestore_transactional
             def _update_in_txn(txn: Any) -> int:
                 doc = doc_ref.get(transaction=txn)
                 current = json.loads(doc.get("value")) if doc.exists else 0
@@ -2088,7 +2141,6 @@ class FirestoreBackend:
         def _apply() -> Any:
             try:
                 from google.api_core import exceptions as g_exc
-                from google.cloud import firestore
             except ImportError as exc:
                 raise SkaalUnavailable(
                     "google-cloud-firestore is required for atomic_update"
@@ -2097,10 +2149,10 @@ class FirestoreBackend:
             db = self._get_client()
             doc_ref = self._col().document(key)
 
-            @firestore.transactional
+            @_firestore_transactional
             def _update_in_txn(txn: Any) -> Any:
                 doc = doc_ref.get(transaction=txn)
-                current_data = doc.to_dict() if doc.exists else None
+                current_data = cast(dict[str, Any] | None, doc.to_dict() if doc.exists else None)
                 current = (
                     None
                     if self._is_expired_data(current_data)
@@ -2234,7 +2286,7 @@ class BigQueryBackend:
         await self._run(_create)
 
     @asynccontextmanager
-    async def open_relational_session(self, model_cls: type) -> AsyncIterator[Any]:
+    async def open_relational_session(self, model_cls: type) -> AsyncGenerator[Any, None]:
         await self.ensure_relational_schema(model_cls)
         raise NotImplementedError(
             "BigQuery does not support transactional sessions. "

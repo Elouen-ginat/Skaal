@@ -16,7 +16,7 @@ This module exposes two entry points for declaring relational tables:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast, overload
 
@@ -129,7 +129,7 @@ class Table(SQLModel, Generic[B]):
 
     @classmethod
     @asynccontextmanager
-    async def session(cls) -> AsyncIterator[AsyncSession]:
+    async def session(cls) -> AsyncGenerator[AsyncSession, None]:
         """Yield an async session bound to this model's wired backend."""
         async with open_session(cls) as session:
             yield session
@@ -200,7 +200,7 @@ async def ensure_schema(model_cls: type) -> None:
 
 
 @asynccontextmanager
-async def open_session(model_cls: type) -> AsyncIterator[AsyncSession]:
+async def open_session(model_cls: type) -> AsyncGenerator[AsyncSession, None]:
     """Yield an ``AsyncSession`` bound to *model_cls*'s wired backend."""
     backend = get_backend(model_cls)
     await backend.ensure_relational_schema(model_cls)

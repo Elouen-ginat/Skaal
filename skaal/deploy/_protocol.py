@@ -218,12 +218,12 @@ def _normalize_synth_tokens(
     if not isinstance(raw, (tuple, list)):
         raise TypeError("`SynthSpec.tokens` must be a sequence of backend tokens.")
     tokens: list[type[Backend[Any]]] = []
-    for item in raw:
+    for item in cast(tuple[object, ...] | list[object], raw):
         if isinstance(item, str):
             tokens.append(lookup(item).token_class)
             continue
         if isinstance(item, type) and issubclass(item, Backend):
-            tokens.append(item)
+            tokens.append(cast(type[Backend[Any]], item))
             continue
         raise TypeError(
             "`SynthSpec.tokens` items must be `Backend` subclasses or legacy "
@@ -257,10 +257,7 @@ class SynthSpec(BaseModel):
     # limitation handled in `skaal.binding.registry.BackendEntry`), so we
     # store the bare `Backend` and expose the fully-typed `token_classes`
     # property below for static-typing consumers.
-    tokens: tuple[
-        type[Backend],  # pyright: ignore[reportMissingTypeArgument] - Pydantic rejects parameterised generics in schema generation
-        ...,
-    ]
+    tokens: tuple[type[Any], ...]
     description: str = ""
     where: WhereSpec | None = None
 
@@ -270,16 +267,28 @@ class SynthSpec(BaseModel):
         """Accept token-based metadata and coerce legacy name-based input."""
         if not isinstance(data, dict):
             return data
-        raw_tokens = data.pop("tokens", None)
-        raw_backends = data.pop("backends", None)
+        normalized_data = dict(cast(dict[str, object], data))
+        raw_tokens = normalized_data.pop("tokens", None)
+        raw_backends = normalized_data.pop("backends", None)
         if raw_tokens is not None and raw_backends is not None:
             raise ValueError("Provide only one of `tokens` or `backends` to `SynthSpec`.")
         if raw_tokens is None and raw_backends is None:
             raise ValueError("`SynthSpec` requires `tokens` (or legacy `backends`).")
         tokens = _normalize_synth_tokens(raw_tokens if raw_tokens is not None else raw_backends)
-        raw_kinds = data.pop("kinds", None)
+        raw_kinds = normalized_data.pop("kinds", None)
         derived_kinds = _kinds_for_synth_tokens(tokens)
-        provided_kinds = frozenset(raw_kinds) if raw_kinds is not None else None
+        provided_kinds: frozenset[ResourceKind] | None = None
+        if raw_kinds is not None:
+            if not isinstance(raw_kinds, (tuple, list, set, frozenset)):
+                raise TypeError("`SynthSpec.kinds` must be a sequence of `ResourceKind` values.")
+            kind_values = cast(
+                tuple[object, ...] | list[object] | set[object] | frozenset[object],
+                raw_kinds,
+            )
+            provided_kinds = frozenset(
+                kind if isinstance(kind, ResourceKind) else ResourceKind(str(kind))
+                for kind in kind_values
+            )
         if provided_kinds is not None and provided_kinds != derived_kinds:
             expected = ", ".join(sorted(kind.value for kind in derived_kinds))
             provided = ", ".join(sorted(kind.value for kind in provided_kinds))
@@ -287,17 +296,18 @@ class SynthSpec(BaseModel):
                 "`SynthSpec.kinds` is derived from the supplied backend tokens and "
                 f"must match them exactly. Expected: [{expected}]. Provided: [{provided}]."
             )
-        return {**data, "tokens": tokens}
+        return {**normalized_data, "tokens": tokens}
 
     @property
     def token_classes(self) -> tuple[type[Backend[Any]], ...]:
         """Return `tokens` as fully-parameterised backend token classes."""
-        return cast("tuple[type[Backend[Any]], ...]", self.tokens)
+        return cast(tuple[type[Backend[Any]], ...], self.tokens)
 
     @property
     def backends(self) -> tuple[str, ...]:
         """Return the backend names derived from `tokens`."""
-        return tuple(_backend_name_for_token(token) for token in self.token_classes)
+        tokens = cast(tuple[type[Backend[Any]], ...], self.tokens)
+        return tuple(_backend_name_for_token(token) for token in tokens)
 
     @property
     def kinds(self) -> frozenset[ResourceKind]:

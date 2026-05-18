@@ -5,9 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from skaal.backends._native_types import RedisNativeClient, SqsClientProtocol
+
+if TYPE_CHECKING:
+
+    def _sqs_client(region: str | None) -> SqsClientProtocol: ...
+else:
+
+    def _sqs_client(region: str | None) -> SqsClientProtocol:
+        import boto3
+
+        return cast(SqsClientProtocol, boto3.client("sqs", region_name=region))
 
 
 class RedisStreamChannel:
@@ -141,13 +151,11 @@ class SqsChannelBackend:
         self.queue_url = queue_url
         self.region = region
         self.wait_time_seconds = wait_time_seconds
-        self._client: Any | None = None
+        self._client: SqsClientProtocol | None = None
 
     def _get_client(self) -> SqsClientProtocol:
         if self._client is None:
-            import boto3
-
-            self._client = boto3.client("sqs", region_name=self.region)
+            self._client = _sqs_client(self.region)
         return self._client
 
     async def _run(self, fn: Any, *args: Any, **kwargs: Any) -> Any:

@@ -71,7 +71,7 @@ async def record_sale(
     await Sale.migrate()
     client: Any = await Sale.native()
     occurred = occurred_at or datetime.now(timezone.utc).isoformat()
-    row = {
+    row: dict[str, Any] = {
         "id": id,
         "sku": sku,
         "customer": customer,

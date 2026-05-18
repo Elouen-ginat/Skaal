@@ -59,7 +59,9 @@ class SecretManagerSynth(SynthModule[GcpConfig]):
                 ),
             )
         else:
-            replication = gcp.secretmanager.SecretReplicationArgs(auto={})
+            replication = gcp.secretmanager.SecretReplicationArgs(
+                auto=gcp.secretmanager.SecretReplicationAutoArgs()
+            )
         secret = gcp.secretmanager.Secret(
             ctx.pulumi_name,
             secret_id=ctx.resource_slug,

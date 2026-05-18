@@ -12,6 +12,7 @@ later phases and are not registered here.
 import typer
 
 from skaal.cli._logging import LogFormat, configure_cli_logging
+from skaal.cli._params import Option
 from skaal.cli.build_cmd import app as build_app
 from skaal.cli.deploy_cmd import app as deploy_app
 from skaal.cli.doctor_cmd import app as doctor_app
@@ -43,20 +44,20 @@ app.add_typer(doctor_app, name="doctor")
 
 @app.callback()
 def _root(
-    verbose: int = typer.Option(
+    verbose: int = Option(
         0,
         "--verbose",
         "-v",
         count=True,
         help="Increase log verbosity. -v=INFO, -vv=DEBUG.",
     ),
-    quiet: bool = typer.Option(
+    quiet: bool = Option(
         False,
         "--quiet",
         "-q",
         help="Suppress INFO logs. Errors still print.",
     ),
-    log_format: LogFormat | None = typer.Option(
+    log_format: LogFormat | None = Option(
         None,
         "--log-format",
         help="text or json. Env: SKAAL_LOG_FORMAT.",

@@ -14,6 +14,7 @@ import typer
 from rich.console import Console
 
 from skaal.cli._errors import cli_error_boundary
+from skaal.cli._params import Option
 from skaal.stubs.emit import StubEmitError, discover_app, emit_stubs
 
 app = typer.Typer(
@@ -25,7 +26,7 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def stubs(
-    source: str = typer.Option(
+    source: str = Option(
         ...,
         "--from",
         help=(
@@ -33,12 +34,12 @@ def stubs(
             "(e.g. `services.billing:app`)."
         ),
     ),
-    out_dir: Path = typer.Option(
+    out_dir: Path = Option(
         ...,
         "--to",
         help="Destination directory for the emitted stub package.",
     ),
-    package_name: str | None = typer.Option(
+    package_name: str | None = Option(
         None,
         "--as",
         help=(

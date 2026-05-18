@@ -10,76 +10,98 @@
 
 **Your Python app is your architecture.**
 
-Write classes and functions. Skaal infers the infrastructure, generates the Pulumi, and your primitive classes are the typed clients. Pylance follows every call site straight down to the underlying SDK. One codebase. One mental model. `skaal deploy` knows what to build.
+Write classes and functions. Skaal infers the infrastructure, generates the Pulumi program, and keeps the resource classes themselves as the typed clients. Pylance can follow a call from your app code down to the native SDK client without a code generation step.
 
-## What Skaal looks like
+## Quickstart
 
-```python
-from skaal import App, BlobStore, Cron, Store, Topic
-from pydantic import BaseModel
-
-class User(BaseModel):
-    id: str
-    email: str
-
-class Users(Store[User]):
-    """One table. The class is the table."""
-    by_email = "email"  # declarative secondary index
-
-class Avatars(BlobStore):
-    """One bucket. The class is the bucket."""
-
-class SignupEvents(Topic[User]):
-    """One topic. The class is the topic."""
-
-app = App("acme")
-
-@app.expose
-async def signup(user: User) -> User:
-    await Users.put(user.id, user)
-    await SignupEvents.publish(user)
-    return user
-
-@app.schedule(Cron("0 * * * *"))
-async def hourly_compact() -> None:
-    ...
-```
-
-The class **is** the typed client, importable from anywhere with no codegen step:
+This is a runnable local app using the current `0.4.x` surface:
 
 ```python
-from acme.users import Users
-user: User | None = await Users.get("u1")   # Pylance: user is User | None
+from typing import Any
+
+from skaal import App, Store
+
+app = App("counter")
+
+
+@app.storage
+class Counts(Store[int]):
+    """Named counters stored in Skaal's default KV backend."""
+
+
+@app.expose()
+async def increment(name: str, by: int = 1) -> dict[str, Any]:
+    current = await Counts.get(name) or 0
+    new_value = current + by
+    await Counts.set(name, new_value)
+    return {"name": name, "value": new_value}
+
+
+@app.expose()
+async def get_count(name: str) -> dict[str, Any]:
+    return {"name": name, "value": await Counts.get(name) or 0}
 ```
 
-When you need a backend-specific feature, you pin the type and get the real SDK client back, typed:
-
-```python
-from skaal import Store
-from skaal.backends.redis import Redis
-
-class Sessions(Store[SessionRecord, Redis]):
-    """Session rows backed by Redis in every environment."""
-
-r = await Sessions.native()    # redis.asyncio.Redis, in every environment
-```
-
-The CLI is symmetric:
+Run it locally:
 
 ```bash
-skaal run                      # local: SQLite + filesystem + in-memory topic
-skaal plan --env prod          # diff: Users -> DynamoDB, Avatars -> S3, ...
-skaal deploy --env prod        # Pulumi up against AWS
+pip install "skaal[serve,runtime]"
+skaal run app:app
 ```
 
-There is no constraint DSL. There is no catalog you maintain. There is no solver. The shape of the code is the deployment plan; an environment picks the backend by a fixed table the framework owns.
+Exercise the endpoints:
+
+```bash
+curl -s http://localhost:8000/increment -d '{"name": "hits"}'
+curl -s http://localhost:8000/get_count -d '{"name": "hits"}'
+```
+
+## Working examples in this repo
+
+- [`examples/counter.py`](examples/counter.py) — minimal `Store[T]` plus `@app.expose()` functions.
+- [`examples/todo_api/app.py`](examples/todo_api/app.py) — FastAPI mounted on Skaal with `Store[T]` and relational `Table` storage.
+- [`examples/blob_smoke.py`](examples/blob_smoke.py) — `BlobStore` declarations and blob listing/reads.
+- [`examples/session_cache.py`](examples/session_cache.py) — backend pinning with `Store[T, Redis]` and TTL handling.
+- [`examples/team_directory.py`](examples/team_directory.py) — native secondary-index queries with `SecondaryIndex`.
+
+The CLI stays symmetrical across local and cloud targets:
+
+```bash
+skaal run examples.counter:app
+skaal plan examples.todo_api:app --env prod
+skaal deploy examples.todo_api:app --env prod
+```
+
+When you need backend-specific features, pin the second generic parameter and use the typed native client. This is the same pattern used in [`examples/session_cache.py`](examples/session_cache.py):
+
+```python
+from pydantic import BaseModel
+
+from skaal import App, Store
+from skaal.backends.tokens import Redis
+
+app = App("session-cache")
+
+
+class SessionRecord(BaseModel):
+    id: str
+    user_id: str
+
+
+@app.storage
+class Sessions(Store[SessionRecord, Redis]):
+    default_ttl = "30m"
+
+
+client = await Sessions.native()  # redis.asyncio.Redis
+```
 
 ## How it works
 
-1. **Declare** classes (`Store[T]`, `BlobStore`, `Topic[T]`, `Table`) and functions (`@app.expose`, `@app.schedule`, `@app.job`).
-2. **Infer** an environment-independent `Blueprint` by walking the `App` graph.
-3. **Bind** the blueprint against an environment (`local`, `aws`, `gcp`) using a fixed defaults table.
-4. **Generate** Pulumi programs, Dockerfiles, and handler entrypoints from the bound plan.
+1. **Declare** resources with `@app.storage` and functions with `@app.expose()`, `@app.schedule(...)`, or `@app.job(...)`.
+2. **Infer** an environment-independent application plan by walking the `App` graph.
+3. **Bind** that plan against an environment (`local`, `aws`, `gcp`) using Skaal's backend registry and defaults.
+4. **Generate** Pulumi programs, Dockerfiles, and handler entrypoints from the bound result.
 5. **Deploy** via Pulumi. The `skaal.lock` file pins each binding so the next plan is empty unless code changed.
 
 For full HTTP routing, mount any ASGI app (FastAPI, Starlette, Litestar) — Skaal deploys it; the framework you already know owns the routes:
@@ -109,7 +131,7 @@ pip install "skaal[deploy,gcp,runtime]" # GCP
 
 ## Status
 
-**Alpha (`0.4.0a0`).** The framework is functional end-to-end on the `local` target and against AWS via Pulumi. The public surface (`App`, `Module`, `Store[T, B]`, `BlobStore[B]`, `Topic[T, B]`, `Table[B]`, `@app.expose`, `@app.schedule`, `@app.job`) is the supported surface going forward — see [`notes/redesign-status.md`](notes/redesign-status.md) for the live progress tracker against [ADR 028](notes/design/028-code-first-infra-redesign.md).
+**Alpha (`0.4.0a0`).** The framework is functional end-to-end on the `local` target and against AWS via Pulumi. The current supported surface is the redesign-era API shown above: `App`, `Module`, `Store[T, B]`, `BlobStore[B]`, `Topic[T, B]`, `Table[B]`, `@app.storage`, `@app.expose()`, `@app.schedule(...)`, and `@app.job(...)`. See [`notes/redesign-status.md`](notes/redesign-status.md) for the live progress tracker against [ADR 028](notes/design/028-code-first-infra-redesign.md).
 
 Roadmap and design decisions: [ADR index](notes/design/).
 

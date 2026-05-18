@@ -9,6 +9,7 @@ from skaal.api import SourceMatch, resolve_trace
 from skaal.binding.model import Plan
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+from skaal.cli._params import Argument, Option
 
 app = typer.Typer(
     help="Resolve a resource id or log line back to the declaring source location.",
@@ -19,17 +20,17 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def trace(
-    needle: str = typer.Argument(
+    needle: str = Argument(
         ...,
         help="A resource id or any log line containing that resource id.",
     ),
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "local",
         "--env",
         "-e",

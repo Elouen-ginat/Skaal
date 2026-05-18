@@ -12,12 +12,51 @@ from __future__ import annotations
 from typing import Any, Protocol, TypeAlias
 
 import aiosqlite
-from fsspec.spec import AbstractFileSystem
 from redis.asyncio.client import Redis as RedisClient
 
 SqliteNativeClient: TypeAlias = aiosqlite.Connection
-RedisNativeClient: TypeAlias = RedisClient
-BlobFilesystem: TypeAlias = AbstractFileSystem
+RedisNativeClient: TypeAlias = RedisClient[Any]
+
+
+class BlobHandleProtocol(Protocol):
+    def __enter__(self) -> BlobHandleProtocol: ...
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None: ...
+
+    def read(self) -> bytes | str: ...
+
+    def write(self, data: bytes) -> int: ...
+
+
+class BlobFilesystem(Protocol):
+    def makedirs(self, path: str, exist_ok: bool = False) -> None: ...
+
+    def exists(self, path: str, **kwargs: Any) -> bool: ...
+
+    def open(self, path: str, mode: str = "rb", **kwargs: Any) -> BlobHandleProtocol: ...
+
+    def info(self, path: str, **kwargs: Any) -> dict[str, Any]: ...
+
+    def rm(self, path: str, recursive: bool = False, maxdepth: Any | None = None) -> None: ...
+
+    def find(
+        self,
+        path: str,
+        maxdepth: Any | None = None,
+        withdirs: bool = False,
+        detail: bool = False,
+        **kwargs: Any,
+    ) -> list[str]: ...
+
+    def cat_file(
+        self,
+        path: str,
+        start: Any | None = None,
+        end: Any | None = None,
+        **kwargs: Any,
+    ) -> bytes | str: ...
+
+    def close(self) -> None: ...
 
 
 class AsyncpgConnectionProtocol(Protocol):
@@ -52,6 +91,10 @@ class DynamoDbClientProtocol(Protocol):
     def query(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def scan(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def describe_table(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def update_table(self, **kwargs: Any) -> dict[str, Any]: ...
 
 
 class FirestoreClientProtocol(Protocol):

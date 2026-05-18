@@ -8,6 +8,7 @@ from rich.console import Console
 from skaal.api import Location
 from skaal.api import locate as api_where
 from skaal.cli._errors import cli_error_boundary
+from skaal.cli._params import Argument, Option
 
 app = typer.Typer(
     help="Resolve a deployed resource id to its cloud-console URL.",
@@ -18,17 +19,17 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def where(
-    resource_id: str = typer.Argument(
+    resource_id: str = Argument(
         ...,
         help="Bound resource id to locate, e.g. `examples.todo_api:Comments`.",
     ),
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "prod",
         "--env",
         "-e",

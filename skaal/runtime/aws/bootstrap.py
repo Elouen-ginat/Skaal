@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Awaitable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from skaal.app import App
 from skaal.errors import RuntimeWiringError, SecretMissingError
@@ -15,7 +15,22 @@ from skaal.runtime.aws.backends import aws_region
 from skaal.runtime.aws.target import AWS_RUNTIME_TARGET_NAME
 from skaal.runtime.models import RuntimeBindingManifest, RuntimeResourceBinding
 from skaal.secrets import SecretRegistry
-from skaal.types.secret import ResolvedSecret, SecretProvider, SecretSpec
+from skaal.types.secret import ResolvedSecret, SecretProvider, SecretResolver, SecretSpec
+
+
+class AwsSecretsManagerClient(Protocol):
+    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]: ...
+
+
+if TYPE_CHECKING:
+
+    def _secretsmanager_client(region: str | None) -> AwsSecretsManagerClient: ...
+else:
+
+    def _secretsmanager_client(region: str | None) -> AwsSecretsManagerClient:
+        import boto3
+
+        return cast(AwsSecretsManagerClient, boto3.client("secretsmanager", region_name=region))
 
 
 def wire_app_from_environment(
@@ -70,13 +85,14 @@ def wire_declared_secrets(app: App, env: Mapping[str, str]) -> None:
     if not refs:
         return
 
+    resolvers: dict[SecretProvider, SecretResolver] = {
+        "env": cast(SecretResolver, EnvMappingResolver("env", env)),
+        "pulumi-config": cast(SecretResolver, EnvMappingResolver("pulumi-config", env)),
+        "aws-secrets-manager": cast(SecretResolver, AwsRuntimeSecretResolver(env)),
+    }
     registry = SecretRegistry(
         {name: ref.to_spec() for name, ref in refs.items()},
-        resolvers={
-            "env": EnvMappingResolver("env", env),
-            "pulumi-config": EnvMappingResolver("pulumi-config", env),
-            "aws-secrets-manager": AwsRuntimeSecretResolver(env),
-        },
+        resolvers=resolvers,
     )
     run_blocking(registry.warmup(), context="warm declared secrets")
     app._set_secret_registry(registry)
@@ -91,7 +107,9 @@ class EnvMappingResolver:
         raw = self._env.get(spec.env)
         if raw is None and spec.source != spec.env:
             raw = self._env.get(spec.source)
-        return ResolvedSecret(name=spec.name, value=raw, provider=self.provider)
+        return ResolvedSecret(
+            name=spec.name, value=raw, provider=cast(SecretProvider, self.provider)
+        )
 
     async def close(self) -> None:
         return None
@@ -110,17 +128,18 @@ class AwsRuntimeSecretResolver:
             return ResolvedSecret(name=spec.name, value=None, provider=self.provider)
 
         try:
-            import boto3
+            client = _secretsmanager_client(self._region)
         except ImportError as exc:
             raise SecretMissingError(
                 spec.name,
                 self.provider,
                 detail="boto3 is required for AWS cold-start secret wiring",
             ) from exc
-
-        client = boto3.client("secretsmanager", region_name=self._region)
         try:
-            response = await asyncio.to_thread(client.get_secret_value, SecretId=secret_id)
+            response = cast(
+                dict[str, Any],
+                await asyncio.to_thread(client.get_secret_value, SecretId=secret_id),
+            )
         except Exception as exc:
             raise SecretMissingError(
                 spec.name,
@@ -128,10 +147,15 @@ class AwsRuntimeSecretResolver:
                 detail=f"GetSecretValue failed: {exc}",
             ) from exc
 
-        value = response.get("SecretString")
-        if value is None and "SecretBinary" in response:
-            value = response["SecretBinary"].decode("utf-8")
-        return ResolvedSecret(name=spec.name, value=value, provider=self.provider)
+        value = cast(str | None, response.get("SecretString"))
+        secret_binary = response.get("SecretBinary")
+        if value is None and isinstance(secret_binary, bytes):
+            value = secret_binary.decode("utf-8")
+        return ResolvedSecret(
+            name=spec.name,
+            value=value,
+            provider=cast(SecretProvider, self.provider),
+        )
 
     async def close(self) -> None:
         return None

@@ -4,11 +4,26 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import quote_plus
 
 from skaal.errors import RuntimeWiringError
 from skaal.runtime._registry import RuntimeBackendFactoryContext
+
+
+class AwsSecretsManagerClient(Protocol):
+    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]: ...
+
+
+if TYPE_CHECKING:
+
+    def _secretsmanager_client(region: str | None) -> AwsSecretsManagerClient: ...
+else:
+
+    def _secretsmanager_client(region: str | None) -> AwsSecretsManagerClient:
+        import boto3
+
+        return cast(AwsSecretsManagerClient, boto3.client("secretsmanager", region_name=region))
 
 
 def build_dynamodb_store(context: RuntimeBackendFactoryContext) -> Any:
@@ -86,36 +101,34 @@ def aws_region(env: Mapping[str, str]) -> str | None:
 
 def load_secret_payload(secret_arn: str, *, region: str | None) -> dict[str, Any]:
     try:
-        import boto3
+        client = _secretsmanager_client(region)
     except ImportError as exc:
         raise RuntimeWiringError(
             "Postgres runtime wiring requires boto3 in the Lambda image."
         ) from exc
-
-    client = boto3.client("secretsmanager", region_name=region)
     try:
-        response = client.get_secret_value(SecretId=secret_arn)
+        response = cast(dict[str, Any], client.get_secret_value(SecretId=secret_arn))
     except Exception as exc:
         raise RuntimeWiringError(
             f"Failed to read Secrets Manager secret {secret_arn!r}: {exc}"
         ) from exc
 
-    raw = response.get("SecretString")
+    raw = cast(str | None, response.get("SecretString"))
     if not isinstance(raw, str):
         raise RuntimeWiringError(
             f"Secrets Manager secret {secret_arn!r} did not return a SecretString payload."
         )
     try:
-        payload = json.loads(raw)
+        payload_obj = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeWiringError(
             f"Secrets Manager secret {secret_arn!r} did not contain valid JSON: {exc}"
         ) from exc
-    if not isinstance(payload, dict):
+    if not isinstance(payload_obj, dict):
         raise RuntimeWiringError(
             f"Secrets Manager secret {secret_arn!r} must decode to a JSON object."
         )
-    return payload
+    return cast(dict[str, Any], payload_obj)
 
 
 def require_secret_field(payload: dict[str, Any], key: str, resource_id: str) -> str:

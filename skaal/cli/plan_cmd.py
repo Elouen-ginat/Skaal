@@ -18,6 +18,7 @@ from skaal.api import PlanDiff, diff_plan, render_plan_diff_markdown
 from skaal.binding import LockFile
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_plan
+from skaal.cli._params import Argument, Option
 
 
 class PlanOutputFormat(StrEnum):
@@ -36,19 +37,19 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
-    target: str = typer.Argument(
+    target: str = Argument(
         ...,
         help=(
             "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
         ),
     ),
-    env_name: str = typer.Option(
+    env_name: str = Option(
         "local",
         "--env",
         "-e",
         help="Environment name from `skaal.toml` (defaults to `local`).",
     ),
-    output_format: PlanOutputFormat = typer.Option(
+    output_format: PlanOutputFormat = Option(
         PlanOutputFormat.TABLE,
         "--format",
         help="Output format: `table` or `github-markdown`.",

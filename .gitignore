@@ -53,3 +53,4 @@ uv.lock
 .pulumi-passphrase
 .lambda-invoke.json
 .lambda-payload.json
+skaal.lock
