@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
+from skaal.settings import get_settings, load_settings
+
 if TYPE_CHECKING:
     from skaal.app import App
     from skaal.binding.model import Environment, Plan
@@ -101,22 +103,68 @@ class LoadedPlan:
 
 def load_app_spec(target: str) -> AppSpec:
     """Parse ``target`` once and return the typed `AppSpec`."""
-    return AppSpec.parse(target)
+    return resolve_app_spec(target)
 
 
-def load_app(target: str | AppSpec) -> Any:
+def resolve_app_target(target: str | None) -> str:
+    """Return an explicit or configured `module:attribute` app target."""
+    if target is not None:
+        return target
+    configured = get_settings().app
+    if configured is not None:
+        return configured
+    raise typer.BadParameter(
+        "Missing app target. Pass `module:attribute` explicitly or set "
+        "`[tool.skaal].app` / `SKAAL_APP`."
+    )
+
+
+def resolve_app_spec(target: str | AppSpec | None) -> AppSpec:
+    """Resolve an explicit or configured app target into `AppSpec`."""
+    if isinstance(target, AppSpec):
+        return target
+    raw = resolve_app_target(target)
+    return AppSpec.parse(raw)
+
+
+def resolve_env_name(
+    env_name: str | None,
+    *,
+    toml_path: Path | None = None,
+    fallback: str,
+) -> str:
+    """Resolve an environment name from CLI input, config, or a fallback."""
+    if env_name is not None:
+        return env_name
+    settings = load_settings(toml_path=toml_path or get_settings().toml)
+    return settings.default_environment or fallback
+
+
+def resolve_toml_path(path: Path | None = None) -> Path:
+    """Return the explicit or configured `skaal.toml` path."""
+    return path or get_settings().toml
+
+
+def resolve_lock_path(path: Path | None = None) -> Path:
+    """Return the explicit or configured `skaal.lock` path."""
+    return path or get_settings().lock
+
+
+def resolve_build_out_dir(out_dir: Path | None, env_name: str) -> Path:
+    """Return the explicit or configured build output directory for `env_name`."""
+    return out_dir or get_settings().out / env_name
+
+
+def load_app(target: str | AppSpec | None) -> Any:
     """Resolve a ``module:attribute`` reference to a live `App` instance.
 
     Accepts either a raw reference string or an already-parsed `AppSpec`
     so verb code that has the typed form does not pay the parse twice.
     """
-    if isinstance(target, AppSpec):
-        spec = target
-    else:
-        try:
-            spec = AppSpec.parse(target)
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
+    try:
+        spec = resolve_app_spec(target)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     try:
         module = importlib.import_module(spec.module)
     except ImportError as exc:
@@ -131,21 +179,29 @@ def load_app(target: str | AppSpec) -> Any:
 
 def load_bound_plan(
     skaal_app: App,
-    env_name: str,
+    env_name: str | None,
     *,
-    toml_path: Path = Path("skaal.toml"),
-    lock_path: Path = Path("skaal.lock"),
+    toml_path: Path | None = None,
+    lock_path: Path | None = None,
+    fallback_env: str = "local",
 ) -> Plan:
     """Walk ``blueprint → Environment.load → LockFile.load → plan`` for an app."""
-    return load_plan(skaal_app, env_name, toml_path=toml_path, lock_path=lock_path).bound
+    return load_plan(
+        skaal_app,
+        env_name,
+        toml_path=toml_path,
+        lock_path=lock_path,
+        fallback_env=fallback_env,
+    ).bound
 
 
 def load_plan(
     skaal_app: App,
-    env_name: str,
+    env_name: str | None,
     *,
-    toml_path: Path = Path("skaal.toml"),
-    lock_path: Path = Path("skaal.lock"),
+    toml_path: Path | None = None,
+    lock_path: Path | None = None,
+    fallback_env: str = "local",
 ) -> LoadedPlan:
     """Walk ``blueprint → Environment.load → LockFile.load → plan`` once.
 
@@ -156,6 +212,9 @@ def load_plan(
     """
     from skaal.binding import Environment, LockFile
 
-    env = Environment.load(env_name, path=toml_path)
-    lock = LockFile.load(lock_path)
+    resolved_toml = resolve_toml_path(toml_path)
+    resolved_lock = resolve_lock_path(lock_path)
+    resolved_env = resolve_env_name(env_name, toml_path=resolved_toml, fallback=fallback_env)
+    env = Environment.load(resolved_env, path=resolved_toml)
+    lock = LockFile.load(resolved_lock)
     return LoadedPlan(bound=skaal_app.plan(env, lock=lock), env=env)

@@ -28,7 +28,13 @@ from rich.console import Console
 from skaal.binding._probe import detect_docker_daemon
 from skaal.binding.model import Environment, LockEntry, LockFile, Plan, Target
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.cli._load import (
+    load_app,
+    load_plan,
+    resolve_app_spec,
+    resolve_build_out_dir,
+    resolve_lock_path,
+)
 from skaal.cli._params import Argument, Option
 from skaal.cli._pulumi import apply_pulumi_defaults
 from skaal.deploy import (
@@ -51,23 +57,30 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def deploy(
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "prod",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml`.",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `prod`."
+        ),
     ),
     out_dir: Path | None = Option(
         None,
         "--out",
         "-o",
-        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
+        help=(
+            "Destination directory for rendered artefacts. Defaults to "
+            "`[tool.skaal].out/<env>` or `./.skaal/build/<env>`."
+        ),
     ),
     preview: bool = Option(
         False,
@@ -80,10 +93,10 @@ def deploy(
         "-y",
         help="Skip the interactive confirmation prompt and apply immediately.",
     ),
-    lock_path: Path = Option(
-        Path("skaal.lock"),
+    lock_path: Path | None = Option(
+        None,
         "--lock",
-        help="Path to `skaal.lock` (created on first deploy).",
+        help="Path to `skaal.lock` (defaults to `[tool.skaal].lock` or `skaal.lock`).",
     ),
     dev: bool = Option(
         False,
@@ -95,16 +108,26 @@ def deploy(
         ),
     ),
 ) -> None:
-    try:
-        app_spec = AppSpec.parse(target)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    app_spec = resolve_app_spec(target)
     skaal_app = load_app(app_spec)
-    loaded = load_plan(skaal_app, env_name, lock_path=lock_path)
+    resolved_lock_path = resolve_lock_path(lock_path)
+    loaded = load_plan(
+        skaal_app,
+        env_name,
+        lock_path=resolved_lock_path,
+        fallback_env="prod",
+    )
+    resolved_out_dir = resolve_build_out_dir(out_dir, loaded.env.name)
 
-    written = build_artefacts(loaded.bound, loaded.env, app_spec, out_dir=out_dir, dev=dev)
+    written = build_artefacts(
+        loaded.bound,
+        loaded.env,
+        app_spec,
+        out_dir=resolved_out_dir,
+        dev=dev,
+    )
     console = Console()
-    console.print(f"Rendered artefacts for [cyan]{env_name}[/cyan] → {written}")
+    console.print(f"Rendered artefacts for [cyan]{loaded.env.name}[/cyan] → {written}")
 
     program = pulumi_program_for(loaded.bound, loaded.env, written)
     _run_pulumi(
@@ -116,7 +139,7 @@ def deploy(
         console=console,
     )
 
-    _write_lock_pins(loaded.bound, loaded.env, lock_path=lock_path)
+    _write_lock_pins(loaded.bound, loaded.env, lock_path=resolved_lock_path)
     console.print(f"[green]✓[/green] {'preview' if preview else 'deploy'} complete.")
 
 

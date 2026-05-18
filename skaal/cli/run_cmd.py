@@ -15,6 +15,7 @@ import typer
 from skaal.cli._errors import cli_error_boundary
 from skaal.cli._load import load_app, load_bound_plan
 from skaal.cli._params import Argument, Option
+from skaal.settings import get_settings
 
 app = typer.Typer(
     help="Run a Skaal app locally.",
@@ -26,32 +27,39 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def run(
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "local",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml` (defaults to `local`).",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `local`."
+        ),
     ),
-    host: str = Option("127.0.0.1", "--host", help="Bind host."),
-    port: int = Option(8000, "--port", "-p", help="Bind port."),
+    host: str | None = Option(None, "--host", help="Bind host."),
+    port: int | None = Option(None, "--port", "-p", help="Bind port."),
 ) -> None:
     skaal_app = load_app(target)
-    bound = load_bound_plan(skaal_app, env_name)
+    settings = get_settings()
+    bound = load_bound_plan(skaal_app, env_name, fallback_env="local")
+    resolved_host = host or settings.run.host
+    resolved_port = port if port is not None else settings.run.port
     log.info(
         "Serving app %r (env=%s, fingerprint=%s) on %s:%d",
         skaal_app.name,
-        env_name,
+        bound.environment,
         bound.bound_fingerprint,
-        host,
-        port,
+        resolved_host,
+        resolved_port,
     )
 
     from skaal.runtime import LocalRuntime
 
-    LocalRuntime.from_bound_plan(bound, skaal_app).serve(host=host, port=port)
+    LocalRuntime.from_bound_plan(bound, skaal_app).serve(host=resolved_host, port=resolved_port)

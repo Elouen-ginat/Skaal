@@ -39,7 +39,8 @@ def doctor(
         "-e",
         help=(
             "Environment from `skaal.toml` to focus on. When omitted, falls back "
-            "to ``[tool.skaal].env`` / ``SKAAL_ENV``; if still unset, every "
+            "to ``[tool.skaal].default_environment`` / ``SKAAL_DEFAULT_ENVIRONMENT``; "
+            "if still unset, every "
             "environment defined in `skaal.toml` is reported."
         ),
     ),
