@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from skaal.binding.model import BackendConfig, Environment, EnvOverride, Target
@@ -81,6 +81,21 @@ def _set_nested(target: dict[str, Any], path: list[str], value: Any) -> None:
     for segment in path[:-1]:
         current = cast(dict[str, Any], current.setdefault(segment, {}))
     current[path[-1]] = value
+
+
+def _merge_settings_data(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge two settings mappings with ``override`` winning."""
+    merged = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merge_settings_data(
+                cast(dict[str, Any], current),
+                cast(dict[str, Any], value),
+            )
+            continue
+        merged[key] = value
+    return merged
 
 
 def _string_key_mapping(raw: Any) -> dict[str, Any]:
@@ -307,8 +322,11 @@ class PyprojectTomlSource(_StaticMappingSource):
 class SkaalTomlSource(_StaticMappingSource):
     """pydantic-settings source that reads the compatibility `skaal.toml` file."""
 
-    def __init__(self, settings_cls: type[BaseSettings]) -> None:
-        super().__init__(settings_cls, _normalize_skaal_toml_config(load_skaal_toml_section()))
+    def __init__(self, settings_cls: type[BaseSettings], *, path: Path | None = None) -> None:
+        super().__init__(
+            settings_cls,
+            _normalize_skaal_toml_config(load_skaal_toml_section(path)),
+        )
 
 
 # ── Logging sub-model ─────────────────────────────────────────────────────────
@@ -522,6 +540,40 @@ def get_settings() -> SkaalSettings:
     return SkaalSettings()
 
 
+def load_settings(*, toml_path: Path | None = None) -> SkaalSettings:
+    """Load `SkaalSettings`, optionally overriding the `skaal.toml` path.
+
+    The cached `get_settings()` remains the fast path for the default discovery
+    flow. An explicit `toml_path` composes the same sources manually so callers
+    can swap only the TOML file while preserving env, dotenv, and pyproject
+    precedence.
+    """
+    if toml_path is None:
+        return get_settings()
+
+    settings_cls: type[BaseSettings] = SkaalSettings
+    merged: dict[str, Any] = {}
+    for source in (
+        SkaalTomlSource(settings_cls, path=toml_path),
+        PyprojectTomlSource(settings_cls),
+        DotenvSource(settings_cls),
+        EnvVarSource(settings_cls),
+    ):
+        merged = _merge_settings_data(merged, source())
+    return SkaalSettings.model_construct(
+        defaults=DefaultsSettings.model_validate(merged.get("defaults", {})),
+        paths=PathSettings.model_validate(merged.get("paths", {})),
+        run=RunSettings.model_validate(merged.get("run", {})),
+        logging=LoggingSettings.model_validate(merged.get("logging", {})),
+        backend_defaults=TypeAdapter(dict[str, BackendConfig]).validate_python(
+            merged.get("backend_defaults", {})
+        ),
+        environments=TypeAdapter(dict[str, EnvironmentSettings]).validate_python(
+            merged.get("environments", {})
+        ),
+    )
+
+
 def reset_settings_cache() -> None:
     """Drop the cached `SkaalSettings` instance (use in tests after env edits)."""
     get_settings.cache_clear()
@@ -541,6 +593,7 @@ __all__ = [
     "find_pyproject",
     "find_skaal_toml",
     "get_settings",
+    "load_settings",
     "load_skaal_section",
     "load_skaal_toml_section",
     "reset_settings_cache",

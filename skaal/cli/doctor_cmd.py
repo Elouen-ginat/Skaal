@@ -54,7 +54,8 @@ def doctor(
         _print_environment(console, env)
         return
 
-    envs = load_environments()
+    config = load_environments()
+    envs = config.list_environments()
     if not envs:
         return
     for env in envs.values():
