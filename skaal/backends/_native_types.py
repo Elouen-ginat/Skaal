@@ -9,13 +9,16 @@ callers toward today.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 import aiosqlite
 from redis.asyncio.client import Redis as RedisClient
 
 SqliteNativeClient: TypeAlias = aiosqlite.Connection
-RedisNativeClient: TypeAlias = RedisClient[Any]
+if TYPE_CHECKING:
+    RedisNativeClient: TypeAlias = RedisClient[Any]
+else:
+    RedisNativeClient = RedisClient
 
 
 class BlobHandleProtocol(Protocol):

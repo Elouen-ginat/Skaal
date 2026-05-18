@@ -6,9 +6,9 @@ import inspect
 
 from skaal import FunctionRef
 from skaal.inference.model import (
-    InferredResource,
+    BlueprintResource,
+    Overrides,
     ResourceKind,
-    ResourceOverrides,
     SourceLocation,
 )
 
@@ -17,9 +17,9 @@ async def _example(x: int, y: str = "ok") -> str:
     return f"{x}-{y}"
 
 
-def _build_ref(*, overrides: ResourceOverrides | None = None) -> FunctionRef[..., str]:
-    overrides = overrides or ResourceOverrides()
-    inferred = InferredResource(
+def _build_ref(*, overrides: Overrides | None = None) -> FunctionRef[..., str]:
+    overrides = overrides or Overrides()
+    inferred = BlueprintResource(
         id="m:_example",
         kind=ResourceKind.FUNCTION,
         source=SourceLocation.from_object(_example),
@@ -51,12 +51,12 @@ def test_function_ref_signature_proxy() -> None:
 
 
 def test_function_ref_carries_id_and_overrides() -> None:
-    ref = _build_ref(overrides=ResourceOverrides(backend="redis"))
+    ref = _build_ref(overrides=Overrides(backend="redis"))
     assert ref.id == "m:_example"
     assert ref.overrides.backend == "redis"
 
 
 def test_function_ref_exposes_inferred_resource() -> None:
-    ref = _build_ref(overrides=ResourceOverrides(backend="redis"))
+    ref = _build_ref(overrides=Overrides(backend="redis"))
     assert ref.__skaal_inferred__.kind == ResourceKind.FUNCTION
     assert ref.__skaal_inferred__.overrides.backend == "redis"
