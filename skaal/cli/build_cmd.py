@@ -18,7 +18,7 @@ import typer
 from rich.console import Console
 
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._load import AppSpec, load_app, load_plan
+from skaal.cli._load import load_app, load_plan, resolve_app_spec, resolve_build_out_dir
 from skaal.cli._params import Argument, Option
 from skaal.deploy import build_artefacts
 
@@ -32,23 +32,30 @@ log = logging.getLogger("skaal.cli")
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def build(
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "local",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml`.",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `local`."
+        ),
     ),
     out_dir: Path | None = Option(
         None,
         "--out",
         "-o",
-        help=("Destination directory for rendered artefacts. Defaults to `./.skaal/build/<env>`."),
+        help=(
+            "Destination directory for rendered artefacts. Defaults to "
+            "`[tool.skaal].out/<env>` or `./.skaal/build/<env>`."
+        ),
     ),
     python_version: str = Option(
         "3.11",
@@ -65,18 +72,16 @@ def build(
         ),
     ),
 ) -> None:
-    try:
-        app_spec = AppSpec.parse(target)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    app_spec = resolve_app_spec(target)
     skaal_app = load_app(app_spec)
-    loaded = load_plan(skaal_app, env_name)
+    loaded = load_plan(skaal_app, env_name, fallback_env="local")
+    resolved_out_dir = resolve_build_out_dir(out_dir, loaded.env.name)
 
     written = build_artefacts(
         loaded.bound,
         loaded.env,
         app_spec,
-        out_dir=out_dir,
+        out_dir=resolved_out_dir,
         python_version=python_version,
         dev=dev,
     )
@@ -84,5 +89,5 @@ def build(
     artefact_count = sum(1 for r in loaded.bound.resources if not r.external)
     Console().print(
         f"Built [bold]{artefact_count}[/bold] resource artefact(s) for "
-        f"[cyan]{env_name}[/cyan] → {written}"
+        f"[cyan]{loaded.env.name}[/cyan] → {written}"
     )

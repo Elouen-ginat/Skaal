@@ -95,6 +95,19 @@ def test_gcp_target_stack_config_wires_project_and_region() -> None:
     assert config == {"gcp:project": "acme-prod", "gcp:region": "us-central1"}
 
 
+def test_gcp_target_stack_config_falls_back_to_env_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from skaal.binding.model import Environment
+
+    env = Environment(name="prod", target=Target.GCP, region="us-central1")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-from-env")
+
+    config = TARGET.stack_config(env)
+
+    assert config == {"gcp:project": "acme-from-env", "gcp:region": "us-central1"}
+
+
 def test_gcp_target_lookup_returns_callable_or_none() -> None:
     for backend in TARGET.supported_backends():
         assert callable(TARGET.lookup_synth(backend))

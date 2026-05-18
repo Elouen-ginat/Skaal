@@ -414,10 +414,31 @@ def test_deploy_returns_lock_update_without_pulumi(
     assert calls == [(True, True)]
 
 
+def test_destroy_uses_pulumi_without_mutating_lock(
+    fixture_app: tuple[str, App], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, _ = fixture_app
+
+    calls: list[bool] = []
+
+    def fake_destroy_pulumi(**kwargs: Any) -> None:
+        calls.append(bool(kwargs["yes"]))
+
+    monkeypatch.setattr("skaal.api._commands._destroy_pulumi", fake_destroy_pulumi)
+
+    result = api.destroy(target, env_name="prod", yes=True)
+
+    assert result.stack_name == "api-fixture-prod"
+    assert result.build.bound.app == "api-fixture"
+    assert calls == [True]
+
+
 def test_doctor_reports_local_environment() -> None:
     report = api.doctor()
 
     assert report.python_version
+    assert report.aws_auth_source
+    assert report.gcp_auth_source
     assert report.skaal_version
 
 

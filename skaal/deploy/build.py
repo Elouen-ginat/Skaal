@@ -90,9 +90,10 @@ def build_artefacts(
         out_dir: Destination directory. Defaults to
             ``./.skaal/build/<env.name>``.
         requirements: Extra ``[project].dependencies`` rendered into
-            ``pyproject.toml``. Defaults to ``("skaal[runtime,aws]",)`` —
-            every transitive third-party dep flows through skaal's
-            optional-dependency table in ``pyproject.toml``.
+            ``pyproject.toml``. Defaults to a Skaal extra set derived
+            from the target resource kinds — for example,
+            ``("skaal[runtime,aws]",)`` for plain Lambda functions and
+            ``("skaal[runtime,aws,fastapi]",)`` for mounted ASGI apps.
         python_version: Python minor version embedded in the Dockerfile
             base image and the rendered ``requires-python`` marker.
 
@@ -125,10 +126,12 @@ def build_artefacts(
         )
 
     resolved_requirements: tuple[str, ...] = (
-        tuple(requirements) if requirements is not None else _default_requirements(env.target)
+        tuple(requirements)
+        if requirements is not None
+        else _default_requirements(env.target, target_resources)
     )
     if dev:
-        resolved_requirements = _rewrite_requirements_for_dev(resolved_requirements)
+        resolved_requirements = _rewrite_requirements_for_dev(resolved_requirements, env.target)
 
     runtime_bindings = RuntimeBindingManifest.from_bound_plan(bound, env)
     runtime_bindings_json = runtime_bindings.to_json()
@@ -273,20 +276,34 @@ def _copy_skaal_source(repo_root: Path, dest: Path) -> None:
             shutil.copy2(candidate, dest / sibling)
 
 
-def _rewrite_requirements_for_dev(requirements: tuple[str, ...]) -> tuple[str, ...]:
+_DEV_SKAAL_SRC_PATHS: dict[Target, str] = {
+    # AWS Lambda containers run from ``/var/task``.
+    Target.AWS: "/var/task/_skaal_src",
+    # GCP Cloud Run images use ``WORKDIR /app`` (see the GCP Dockerfile).
+    Target.GCP: "/app/_skaal_src",
+    Target.LOCAL: "/app/_skaal_src",
+}
+
+
+def _rewrite_requirements_for_dev(requirements: tuple[str, ...], target: Target) -> tuple[str, ...]:
     """Repoint any `skaal[...]` requirement at the in-image `_skaal_src/` path.
 
     Without this rewrite, `uv pip install -r pyproject.toml` resolves
-    `skaal[runtime,aws]` from PyPI — which only has the published `0.3.x`
-    line and pulls in deleted dependencies (`z3-solver` etc.). The dev
-    build copies the local checkout to `_skaal_src/` inside the image; the
-    PEP 508 direct reference below installs from that path instead.
+    `skaal[runtime,...]` from PyPI — which during the 0.4.0-alpha only has the
+    published `0.3.x` line and pulls in deleted dependencies (`z3-solver`
+    etc.). The dev build copies the local checkout to `_skaal_src/` inside
+    the image; the PEP 508 direct reference below installs from that path
+    instead.
+
+    The target argument picks the right in-image path: AWS Lambda runs from
+    ``/var/task`` while Cloud Run images use ``/app``.
     """
+    src_path = _DEV_SKAAL_SRC_PATHS.get(target, "/app/_skaal_src")
     rewritten: list[str] = []
     for spec in requirements:
         stripped = spec.strip()
         if stripped == "skaal" or stripped.startswith(("skaal[", "skaal ")):
-            rewritten.append(f"{stripped} @ file:///var/task/_skaal_src")
+            rewritten.append(f"{stripped} @ file://{src_path}")
         else:
             rewritten.append(stripped)
     return tuple(rewritten)
@@ -316,7 +333,9 @@ def _slug_for(resource: PlannedResource) -> str:
     return resource_slug(resource)
 
 
-def _default_requirements(target: Target) -> tuple[str, ...]:
+def _default_requirements(
+    target: Target, resources: Iterable[PlannedResource] = ()
+) -> tuple[str, ...]:
     """Default `[project].dependencies` for the rendered `pyproject.toml`.
 
     Returns only `skaal[...]` extras — every transitive third-party
@@ -325,9 +344,22 @@ def _default_requirements(target: Target) -> tuple[str, ...]:
     optional-dependency table in ``pyproject.toml``. Pinning bare
     package names here would split the dependency source-of-truth.
     """
-    if target is Target.GCP:
-        return ("skaal[runtime,gcp]",)
-    return ("skaal[runtime,aws]",)
+    extras = ["runtime", target.value]
+    has_asgi = any(resource.inferred.kind is ResourceKind.ASGI_SERVICE for resource in resources)
+    if has_asgi:
+        extras.append("fastapi")
+    # GCP Cloud Run containers run `uvicorn` directly per the generated
+    # Dockerfile ``CMD``; the ``serve`` extra pulls it in. AWS Lambda
+    # ASGI uses Mangum (already in the ``aws`` extra) so it doesn't need
+    # this. Schedules and jobs also need a runtime entrypoint that
+    # depends on uvicorn for the local emulator parity.
+    if target is Target.GCP and any(
+        resource.inferred.kind
+        in {ResourceKind.ASGI_SERVICE, ResourceKind.FUNCTION, ResourceKind.SCHEDULE}
+        for resource in resources
+    ):
+        extras.append("serve")
+    return (f"skaal[{','.join(extras)}]",)
 
 
 def _template_root(target: Target) -> Path:

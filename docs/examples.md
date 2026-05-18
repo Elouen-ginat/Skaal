@@ -46,6 +46,7 @@ The repository examples are the fastest way to see the framework in real applica
 
 - Start with Hello World if you are learning the model.
 - Start with `counter.py` if you want a single file and the generated invoke endpoint.
+- Start with `counter_api.py` if you want the smallest mounted HTTP app that still deploys cleanly to AWS or GCP.
 - Start with Todo API if you want a realistic mounted HTTP service.
 - Start with FastAPI Streaming or File Upload API if your workload depends on streaming or multipart behavior.
 - Start with Session Cache if you want to see a type-pinned backend.

@@ -291,8 +291,7 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
             {key: value for peer in ctx.peers.values() for key, value in peer.env_vars.items()}
         )
         runtime_wire = os.environ.get("SKAAL_RUNTIME_WIRE")
-        if runtime_wire is not None:
-            merged["SKAAL_RUNTIME_WIRE"] = runtime_wire
+        merged["SKAAL_RUNTIME_WIRE"] = "1" if runtime_wire is None else runtime_wire
         if extra:
             merged.update(extra)
         return merged

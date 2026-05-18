@@ -87,11 +87,17 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
         pre = self._pre_scaffold(ctx)
         scaffold = self._build_scaffold(ctx, extra_env=pre.env_vars)
         event_resources = self._event_source(ctx, scaffold, pre)
+        outputs = (
+            {"public_url": scaffold.service.uri}
+            if ctx.resource.inferred.kind is ResourceKind.ASGI_SERVICE
+            else {}
+        )
         return SynthResult(
             resource_id=ctx.resource_id,
             primary=scaffold.service,
             extras=(*pre.resources, *scaffold.as_extras(), *event_resources),
             env_vars=self._env_vars(ctx, scaffold, pre),
+            outputs=outputs,
         )
 
     def _build_scaffold(
@@ -112,13 +118,38 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             service_account=service_account,
             extra_env=extra_env,
         )
+        invoker_bindings = self._build_invoker_bindings(ctx, service)
         return CloudRunScaffold(
             service=service,
             service_account=service_account,
             image=image,
             repository=repository,
-            iam_bindings=iam_bindings,
+            iam_bindings=(*iam_bindings, *invoker_bindings),
         )
+
+    def _build_invoker_bindings(
+        self,
+        ctx: SynthContext[GcpConfig],
+        service: gcp.cloudrunv2.Service,
+    ) -> tuple[Any, ...]:
+        """Grant the Cloud Run service's public-invocation policy.
+
+        ASGI services mounted by user code are public by default
+        (``allUsers`` ``roles/run.invoker``) so the printed ``public_url``
+        works without manual IAM steps. Other Cloud Run-shaped resources
+        (function HTTP endpoints, Cloud-Tasks workers) stay private and
+        rely on their dedicated callers granting access.
+        """
+        if ctx.resource.inferred.kind is not ResourceKind.ASGI_SERVICE:
+            return ()
+        binding = gcp.cloudrunv2.ServiceIamMember(
+            f"{ctx.pulumi_name}-public",
+            location=service.location,
+            name=service.name,
+            role="roles/run.invoker",
+            member="allUsers",
+        )
+        return (binding,)
 
     # -- Overridable knobs ----------------------------------------------------
 
@@ -181,7 +212,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
     ) -> gcp.artifactregistry.Repository:
         return gcp.artifactregistry.Repository(
             f"{ctx.pulumi_name}-repo",
-            location=cfg.artifact_registry.location,
+            location=_artifact_registry_location(ctx, cfg),
             repository_id=_repository_id(ctx.pulumi_name),
             format=cfg.artifact_registry.format,
             labels=ctx.tags,
@@ -195,7 +226,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
     ) -> docker.Image:
         image_tag = _artifact_tag_for_dir(ctx.build_dir / ctx.resource_slug)
         image_name = pulumi.Output.concat(
-            cfg.artifact_registry.location,
+            _artifact_registry_location(ctx, cfg),
             "-docker.pkg.dev/",
             repository.project,
             "/",
@@ -270,6 +301,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             ctx.pulumi_name,
             location=ctx.env.region or "us-central1",
             ingress=self._ingress(ctx),
+            deletion_protection=False,
             template=gcp.cloudrunv2.ServiceTemplateArgs(
                 service_account=service_account.email,
                 timeout=f"{self._timeout_s(ctx)}s",
@@ -314,17 +346,28 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             "SKAAL_ENV": ctx.env.name,
             "SKAAL_RESOURCE_ID": ctx.resource_id,
             "SKAAL_FINGERPRINT": ctx.bound.bound_fingerprint,
-            "PORT": "8080",
+            # ``PORT`` is reserved by Cloud Run — the platform injects it
+            # automatically and rejects user-set values. Container code
+            # should read ``$PORT`` from the runtime, not from this map.
         }
         merged.update(
             {key: value for peer in ctx.peers.values() for key, value in peer.env_vars.items()}
         )
         runtime_wire = os.environ.get("SKAAL_RUNTIME_WIRE")
-        if runtime_wire is not None:
-            merged["SKAAL_RUNTIME_WIRE"] = runtime_wire
+        merged["SKAAL_RUNTIME_WIRE"] = "1" if runtime_wire is None else runtime_wire
         if extra:
             merged.update(extra)
         return merged
+
+
+def _artifact_registry_location(ctx: SynthContext[GcpConfig], cfg: GcpConfig) -> str:
+    """Return the Artifact Registry location for one synth context.
+
+    Prefers the active environment's region so the image lives next to the
+    Cloud Run service (fast pulls, no cross-region egress). Falls back to
+    ``GcpConfig.artifact_registry.location`` when ``env.region`` is unset.
+    """
+    return ctx.env.region or cfg.artifact_registry.location
 
 
 def _artifact_tag_for_dir(resource_dir: Path) -> str:

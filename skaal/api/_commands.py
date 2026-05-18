@@ -12,9 +12,17 @@ from typing import TYPE_CHECKING, Never, TypeAlias
 from rich.console import Console
 
 from skaal.app import App
+from skaal.binding._probe import (
+    detect_aws_auth,
+    detect_gcp_auth,
+    resolve_aws_region,
+    resolve_gcp_project,
+)
+from skaal.binding.environment import load_environment
 from skaal.binding.model import Environment, LockFile
 from skaal.cli._load import AppSpec, load_app, load_bound_plan, load_plan
 from skaal.cli.deploy_cmd import _run_pulumi, _write_lock_pins
+from skaal.cli.destroy_cmd import _destroy_pulumi
 from skaal.deploy import BuildManifest, build_artefacts, pulumi_program_for
 from skaal.stubs import StubManifest, discover_app, emit_stubs
 
@@ -46,12 +54,28 @@ class DeployResult:
 
 
 @dataclass(frozen=True)
+class DestroyResult:
+    """Result of `skaal.api.destroy`."""
+
+    build: BuildResult
+    stack_name: str
+
+
+@dataclass(frozen=True)
 class DoctorReport:
     """Environment report returned by `skaal.api.doctor`."""
 
     python_version: str
     pulumi_path: str | None
+    docker_path: str | None
+    aws_auth_source: str
+    aws_region: str | None
+    gcp_auth_source: str
+    gcp_project: str | None
     skaal_version: str
+    env_name: str | None = None
+    target: str | None = None
+    region: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,24 +100,48 @@ def init() -> Never:
     )
 
 
-def doctor() -> DoctorReport:
+def doctor(
+    *,
+    env_name: str | None = None,
+    toml_path: Path | None = None,
+) -> DoctorReport:
     """Return the local Skaal toolchain status.
 
+    Args:
+        env_name: Optional environment from `skaal.toml`. When provided, the
+            report's `target`, `region`, and `gcp_project` reflect that env.
+        toml_path: Override the `skaal.toml` lookup path. Defaults to walking
+            upward from the current directory.
+
     Returns:
-        The Python version, Pulumi location, and installed Skaal version.
+        The Python version, Pulumi location, and installed Skaal version,
+        plus the resolved environment fields when `env_name` is given.
 
     Raises:
         RuntimeError: If the Skaal package cannot be imported.
+        SkaalConfigError: If `env_name` is provided but missing from `skaal.toml`.
     """
     try:
         skaal_version = version("skaal")
     except PackageNotFoundError as exc:  # pragma: no cover
         raise RuntimeError("Skaal package metadata is not available.") from exc
 
+    env: Environment | None = None
+    if env_name is not None:
+        env = load_environment(env_name, path=toml_path)
+
     return DoctorReport(
         python_version=sys.version.split()[0],
         pulumi_path=shutil.which("pulumi"),
+        docker_path=shutil.which("docker"),
+        aws_auth_source=detect_aws_auth(),
+        aws_region=resolve_aws_region(env),
+        gcp_auth_source=detect_gcp_auth(),
+        gcp_project=resolve_gcp_project(env),
         skaal_version=skaal_version,
+        env_name=env.name if env is not None else None,
+        target=env.target.value if env is not None else None,
+        region=env.region if env is not None else None,
     )
 
 
@@ -185,6 +233,48 @@ def deploy(
         preview=preview,
         lock_updated=updated_lock.entries != existing_lock.entries,
         lock=updated_lock,
+    )
+
+
+def destroy(
+    target: App | str,
+    *,
+    env_name: str = "prod",
+    toml_path: Path = Path("skaal.toml"),
+    lock_path: Path = Path("skaal.lock"),
+    out_dir: Path | None = None,
+    yes: bool = False,
+) -> DestroyResult:
+    """Render artefacts, destroy the Pulumi stack, and remove the stack record.
+
+    Args:
+        target: `module:attribute` reference or live `App` instance.
+        env_name: Environment name from `skaal.toml`.
+        toml_path: Settings file path.
+        lock_path: Lock file path used during binding.
+        out_dir: Optional destination directory for rendered artefacts.
+        yes: When true, skip the interactive confirmation prompt.
+
+    Returns:
+        The build result plus the destroyed stack name.
+    """
+    build_result = build(
+        target,
+        env_name=env_name,
+        toml_path=toml_path,
+        lock_path=lock_path,
+        out_dir=out_dir,
+    )
+    _destroy_pulumi(
+        bound=build_result.bound,
+        env=build_result.env,
+        program=pulumi_program_for(build_result.bound, build_result.env, build_result.build_dir),
+        yes=yes,
+        console=Console(),
+    )
+    return DestroyResult(
+        build=build_result,
+        stack_name=f"{build_result.bound.app}-{build_result.env.name}",
     )
 
 

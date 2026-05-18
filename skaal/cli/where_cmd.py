@@ -8,6 +8,7 @@ from rich.console import Console
 from skaal.api import Location
 from skaal.api import locate as api_where
 from skaal.cli._errors import cli_error_boundary
+from skaal.cli._load import resolve_app_target, resolve_env_name
 from skaal.cli._params import Argument, Option
 
 app = typer.Typer(
@@ -23,20 +24,28 @@ def where(
         ...,
         help="Bound resource id to locate, e.g. `examples.todo_api:Comments`.",
     ),
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "prod",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml`.",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `prod`."
+        ),
     ),
 ) -> None:
-    hit = api_where(resource_id, target, env_name=env_name)
+    hit = api_where(
+        resource_id,
+        resolve_app_target(target),
+        env_name=resolve_env_name(env_name, fallback="prod"),
+    )
     _render(hit)
 
 

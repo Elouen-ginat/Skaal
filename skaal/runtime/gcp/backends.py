@@ -35,14 +35,23 @@ else:
 
 
 def build_firestore_store(context: RuntimeBackendFactoryContext) -> Any:
+    """Build a `FirestoreBackend` from the GCP synth's emitted env vars.
+
+    Skaal provisions one Firestore *database* per `Store` (named via the
+    resource's deployment slug). Inside that database the store's records
+    live in one fixed *collection* derived from the resource's bare name
+    (e.g. ``examples.counter_api:Counts`` → ``Counts``). That keeps the
+    client wiring symmetric with DynamoDB's "one resource → one table".
+    """
     from skaal.backends.implementations.data import FirestoreBackend
 
     binding = require_binding(context)
     env = require_env(context)
-    [collection_key] = binding.connection.env_var_keys
-    collection = require_env_var(env, collection_key, binding.resource_id)
+    [database_key] = binding.connection.env_var_keys
+    database = require_env_var(env, database_key, binding.resource_id)
+    collection = binding.resource_id.rsplit(":", 1)[-1] or binding.resource_id
     project = env.get("GOOGLE_CLOUD_PROJECT") or env.get("GCP_PROJECT")
-    return FirestoreBackend(collection=collection, project=project)
+    return FirestoreBackend(collection=collection, project=project, database=database)
 
 
 def build_gcs_blob(context: RuntimeBackendFactoryContext) -> Any:

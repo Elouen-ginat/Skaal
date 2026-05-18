@@ -9,12 +9,23 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
+from skaal import App, Store
+from skaal.binding.model import BackendConfig, Environment, LockFile, Target
+from skaal.cli.deploy_cmd import (
+    _gcp_required_services,
+    _gcp_service_state,
+    _preflight_gcp_target,
+    _print_stack_outputs,
+)
 from skaal.cli.main import app as cli_app
+from skaal.errors import SkaalDeployError
 
 runner = CliRunner()
 
@@ -86,3 +97,110 @@ def test_deploy_rejects_local_env(fixture_app: str) -> None:
     """`skaal deploy --env local` fails before reaching Pulumi."""
     result = runner.invoke(cli_app, ["deploy", fixture_app, "--env", "local", "--yes"])
     assert result.exit_code != 0
+
+
+def test_print_stack_outputs_renders_values() -> None:
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=False, color_system=None)
+
+    _print_stack_outputs(
+        {
+            "public_url": type("OutputValue", (), {"value": "https://example.execute-api.aws"})(),
+            "empty": type("OutputValue", (), {"value": None})(),
+        },
+        console,
+    )
+
+    rendered = buffer.getvalue()
+    assert "Stack outputs:" in rendered
+    assert "public_url = https://example.execute-api.aws" in rendered
+
+
+def test_preflight_gcp_requires_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = App("deploy-fixture")
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(name="prod", target=Target.GCP, region="us-central1")
+    bound = app.plan(env, lock=LockFile())
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GCP_PROJECT", raising=False)
+
+    with pytest.raises(SkaalDeployError, match="project id"):
+        _preflight_gcp_target(bound, env)
+
+
+def test_preflight_gcp_requires_enabled_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = App("deploy-fixture")
+
+    @app.storage
+    class Sessions(Store[int]):
+        pass
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(
+        name="prod",
+        target=Target.GCP,
+        region="us-central1",
+        backends={"gcp": BackendConfig(project="acme-prod")},
+    )
+    bound = app.plan(env, lock=LockFile())
+
+    monkeypatch.setattr("skaal.cli.deploy_cmd._resolve_gcp_access_token", lambda: "token")
+    monkeypatch.setattr(
+        "skaal.cli.deploy_cmd._gcp_service_state",
+        lambda project, service, token: (
+            "DISABLED" if service == "firestore.googleapis.com" else "ENABLED"
+        ),
+    )
+
+    with pytest.raises(SkaalDeployError, match=r"firestore\.googleapis\.com"):
+        _preflight_gcp_target(bound, env)
+
+
+def test_gcp_required_services_include_cloud_run_and_firestore() -> None:
+    app = App("deploy-fixture")
+
+    @app.storage
+    class Sessions(Store[int]):
+        pass
+
+    @app.expose()
+    async def greet(name: str) -> dict[str, str]:
+        return {"hello": name}
+
+    env = Environment(
+        name="prod",
+        target=Target.GCP,
+        region="us-central1",
+        backends={"gcp": BackendConfig(project="acme-prod")},
+    )
+    bound = app.plan(env, lock=LockFile())
+
+    services = set(_gcp_required_services(bound))
+    expected_services = {
+        "serviceusage.googleapis.com",
+        "compute.googleapis.com",
+        "run.googleapis.com",
+        "artifactregistry.googleapis.com",
+        "iam.googleapis.com",
+        "firestore.googleapis.com",
+    }
+    assert services == expected_services
+
+
+def test_gcp_service_state_rejects_unknown_service_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_urlopen(*args: object, **kwargs: object) -> None:
+        raise AssertionError("urlopen should not be called for unknown services")
+
+    monkeypatch.setattr("skaal.cli.deploy_cmd.urlopen", fail_urlopen)
+
+    with pytest.raises(SkaalDeployError, match="Unsupported GCP API identifier"):
+        _gcp_service_state("acme-prod", "run.googleapis.com/../../evil", "token")

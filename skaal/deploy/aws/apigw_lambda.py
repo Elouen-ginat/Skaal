@@ -15,7 +15,7 @@ import pulumi
 import pulumi_aws as aws
 
 from skaal.backends.tokens import ApigwLambda
-from skaal.deploy._protocol import SynthContext, SynthSpec, WherePreference, WhereSpec
+from skaal.deploy._protocol import SynthContext, SynthResult, SynthSpec, WherePreference, WhereSpec
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._lambda import LambdaScaffold, LambdaSynth, PreScaffold
 from skaal.deploy.aws._where import (
@@ -106,6 +106,17 @@ class ApigwLambdaSynth(LambdaSynth):
             source_arn=pulumi.Output.concat(api.execution_arn, "/*/*"),
         )
         return (api, integration, route, stage, permission)
+
+    def synthesize(self, ctx: SynthContext[AwsConfig]) -> SynthResult:
+        result = super().synthesize(ctx)
+        stage = next(extra for extra in result.extras if extra.__class__.__name__ == "Stage")
+        return SynthResult(
+            resource_id=result.resource_id,
+            primary=result.primary,
+            extras=result.extras,
+            env_vars=result.env_vars,
+            outputs={"public_url": stage.invoke_url},
+        )
 
 
 __all__ = ["ApigwLambdaSynth"]

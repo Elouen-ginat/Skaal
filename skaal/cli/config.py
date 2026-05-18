@@ -1,23 +1,26 @@
 """Back-compat re-export of :mod:`skaal.settings`.
 
-``SkaalSettings`` and its helpers used to live here but are now defined at
-``skaal.settings`` so they can be shared between the CLI and the
-:mod:`skaal.api` Python API.  This module re-exports them for any code still
-importing from ``skaal.cli.config``.
+The settings live at :mod:`skaal.settings` so the CLI and the
+:mod:`skaal.api` Python API share one source of truth. This module
+re-exports them for any code still importing from ``skaal.cli.config``.
 """
 
 from __future__ import annotations
 
 from skaal.settings import (
+    LoggingSettings,
     PyprojectTomlSource,
     SkaalSettings,
     find_pyproject,
+    get_settings,
     load_skaal_section,
 )
 
 __all__ = [
+    "LoggingSettings",
     "PyprojectTomlSource",
     "SkaalSettings",
     "find_pyproject",
+    "get_settings",
     "load_skaal_section",
 ]

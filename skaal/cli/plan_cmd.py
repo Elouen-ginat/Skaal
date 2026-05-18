@@ -8,7 +8,6 @@ and `where` / `trace` land in follow-ups.
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -17,7 +16,7 @@ from rich.table import Table
 from skaal.api import PlanDiff, diff_plan, render_plan_diff_markdown
 from skaal.binding import LockFile
 from skaal.cli._errors import cli_error_boundary
-from skaal.cli._load import load_app, load_plan
+from skaal.cli._load import load_app, load_plan, resolve_lock_path
 from skaal.cli._params import Argument, Option
 
 
@@ -37,17 +36,21 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def plan(
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "local",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml` (defaults to `local`).",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `local`."
+        ),
     ),
     output_format: PlanOutputFormat = Option(
         PlanOutputFormat.TABLE,
@@ -56,8 +59,8 @@ def plan(
     ),
 ) -> None:
     skaal_app = load_app(target)
-    loaded_plan = load_plan(skaal_app, env_name)
-    lock = LockFile.load(Path("skaal.lock"))
+    loaded_plan = load_plan(skaal_app, env_name, fallback_env="local")
+    lock = LockFile.load(resolve_lock_path())
     diff = diff_plan(loaded_plan.bound, lock)
     if output_format is PlanOutputFormat.GITHUB_MARKDOWN:
         typer.echo(render_plan_diff_markdown(diff))

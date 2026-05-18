@@ -23,17 +23,21 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 @cli_error_boundary
 def map(
-    target: str = Argument(
-        ...,
+    target: str | None = Argument(
+        None,
         help=(
-            "Dotted module:attribute pointing at an `App` instance, e.g. `examples.todo_api:app`."
+            "Dotted module:attribute pointing at an `App` instance. When omitted, "
+            "falls back to `[tool.skaal].app` / `SKAAL_APP`."
         ),
     ),
-    env_name: str = Option(
-        "local",
+    env_name: str | None = Option(
+        None,
         "--env",
         "-e",
-        help="Environment name from `skaal.toml` (defaults to `local`).",
+        help=(
+            "Environment name from `skaal.toml`. When omitted, falls back to "
+            "`[tool.skaal].default_environment` / `SKAAL_DEFAULT_ENVIRONMENT`, then `local`."
+        ),
     ),
     out_path: Path = Option(
         Path(".skaal/map.json"),
@@ -43,7 +47,7 @@ def map(
     ),
 ) -> None:
     skaal_app = load_app(target)
-    loaded_plan = load_plan(skaal_app, env_name)
+    loaded_plan = load_plan(skaal_app, env_name, fallback_env="local")
     resource_map = ResourceMap.for_bound_plan(loaded_plan.bound)
     _write(resource_map, out_path)
     _render(resource_map, out_path)

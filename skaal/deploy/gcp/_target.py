@@ -15,6 +15,7 @@ from skaal.binding.model import Target
 from skaal.deploy._base_target import BaseDeployTarget
 from skaal.deploy._protocol import TargetConfig
 from skaal.deploy.gcp._config import GcpConfig
+from skaal.deploy.gcp._project import resolve_gcp_project
 
 if TYPE_CHECKING:
     from skaal.binding.model import Environment
@@ -34,9 +35,9 @@ class GcpTarget(BaseDeployTarget):
     def stack_config(self, env: Environment) -> Mapping[str, str]:
         """Wire `gcp:project` / `gcp:region` into the Pulumi stack config."""
         config: dict[str, str] = {}
-        gcp_backend = env.backends.get("gcp")
-        if gcp_backend is not None and gcp_backend.project:
-            config["gcp:project"] = gcp_backend.project
+        project = resolve_gcp_project(env)
+        if project:
+            config["gcp:project"] = project
         if env.region:
             config["gcp:region"] = env.region
         return config

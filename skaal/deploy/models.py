@@ -78,8 +78,29 @@ class SkaalTags(BaseModel):
             fingerprint=fingerprint,
         )
 
-    def as_mapping(self) -> dict[str, str]:
-        """Return the prefixed ``skaal:*`` mapping for Pulumi `tags=`."""
+    def as_mapping(self, target: Target | None = None) -> dict[str, str]:
+        """Return the prefixed ``skaal:*`` mapping for Pulumi `tags=`.
+
+        Args:
+            target: When ``Target.GCP``, returns a GCP-label-safe shape:
+                keys use ``skaal_*`` separators (GCP rejects ``:`` in
+                keys) and values are lowercased to ``[a-z0-9_-]`` (GCP
+                rejects uppercase and most punctuation in label values).
+                Any other value (including ``None``) returns the
+                AWS-shape used historically.
+        """
+        if target is Target.GCP:
+            return {
+                "skaal_app": _gcp_label_value(self.app),
+                "skaal_resource_id": _gcp_label_value(self.resource_id),
+                "skaal_source": _gcp_label_value(self.source),
+                "skaal_source_line": _gcp_label_value(self.source_line),
+                "skaal_kind": _gcp_label_value(self.kind.value),
+                "skaal_env": _gcp_label_value(self.env),
+                "skaal_target": _gcp_label_value(self.target.value),
+                "skaal_backend": _gcp_label_value(self.backend),
+                "skaal_fingerprint": _gcp_label_value(self.fingerprint),
+            }
         return {
             "skaal:app": _sanitize_tag_value(self.app),
             "skaal:resource_id": _sanitize_tag_value(self.resource_id),
@@ -99,6 +120,16 @@ def _sanitize_tag_value(value: str) -> str:
         char if (char.isalnum() or char.isspace() or char in "_.:/=+-@") else "_" for char in value
     )
     return sanitized[:256]
+
+
+_GCP_LABEL_VALID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-_")
+
+
+def _gcp_label_value(value: str) -> str:
+    """Return a GCP-label-safe value: lowercased, ``[a-z0-9_-]``, max 63 chars."""
+    lowered = value.lower()
+    sanitized = "".join(c if c in _GCP_LABEL_VALID_CHARS else "_" for c in lowered)
+    return sanitized[:63]
 
 
 class BuildContext(BaseModel):

@@ -73,6 +73,8 @@ def _build(app: App, bound: Any, env: Environment, tmp_path: Path) -> Path:
 
 
 def test_synth_stack_function_emits_cloud_run() -> None:
+    import asyncio
+
     app = App("svc")
 
     @app.expose()
@@ -91,6 +93,35 @@ def test_synth_stack_function_emits_cloud_run() -> None:
     [(rid, result)] = list(results.items())
     assert "greet" in rid
     assert result.primary.__class__.__name__ == "Service"
+    assert (
+        asyncio.get_event_loop().run_until_complete(result.primary.deletion_protection.future())
+        is False
+    )
+
+
+def test_synth_stack_asgi_service_exports_public_url() -> None:
+    fastapi = pytest.importorskip("fastapi")
+
+    app = App("svc")
+    api = fastapi.FastAPI()
+
+    @api.get("/")
+    async def home() -> dict[str, str]:
+        return {"ok": "yes"}
+
+    app.mount("/", api)
+
+    env = _gcp_env()
+    bound = app.plan(env, lock=LockFile())
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        build_dir = _build(app, bound, env, Path(tmp))
+        results = synthesize_stack(bound, env, build_dir)
+
+    asgi_results = [r for r in results.values() if "public_url" in r.outputs]
+    assert len(asgi_results) == 1
+    assert asgi_results[0].outputs["public_url"]
 
 
 def test_synth_stack_firestore_for_store() -> None:

@@ -22,11 +22,14 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
 from skaal.inference.model import BlueprintResource, Edge
+
+if TYPE_CHECKING:
+    from skaal.settings import SkaalSettings
 
 
 class Target(StrEnum):
@@ -84,8 +87,8 @@ class Environment(BaseModel):
         return load_environment(name, path=path)
 
     @classmethod
-    def load_all(cls, *, path: Path | None = None) -> dict[str, Environment]:
-        """Load every environment from `skaal.toml`."""
+    def load_all(cls, *, path: Path | None = None) -> SkaalSettings:
+        """Load the structured Skaal settings model for environment resolution."""
         from skaal.binding.environment import load_environments
 
         return load_environments(path=path)

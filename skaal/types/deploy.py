@@ -31,13 +31,6 @@ ConfigOverrides: TypeAlias = dict[str, str]
 StackOutputs: TypeAlias = dict[str, str]
 
 
-class StackProfile(TypedDict, total=False):
-    env: dict[str, str]
-    invokers: list[str]
-    labels: dict[str, str]
-    enable_mesh: bool
-
-
 class DeployMeta(TypedDict, total=False):
     target: Required[TargetName]
     source_module: Required[str]

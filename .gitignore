@@ -24,6 +24,7 @@ plan.skaal.lock
 *.plan.lock
 artifacts/
 site/
+.skaal/
 
 # Tools
 .ruff_cache/

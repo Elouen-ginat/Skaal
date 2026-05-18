@@ -2,17 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
+from skaal.settings import LogFormat, LoggingSettings, get_settings, reset_settings_cache
 
-from skaal.settings import load_skaal_section
-
-LogFormat = Literal["text", "json"]
-
-_DEFAULT_FORMAT: LogFormat = "text"
 _LEVEL_NAMES = {
     "CRITICAL": logging.CRITICAL,
     "ERROR": logging.ERROR,
@@ -21,12 +15,6 @@ _LEVEL_NAMES = {
     "DEBUG": logging.DEBUG,
 }
 _RESERVED_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__)
-
-
-class LoggingSettings(BaseModel):
-    level: str | None = None
-    format: LogFormat = _DEFAULT_FORMAT
-    loggers: dict[str, str] = Field(default_factory=dict)
 
 
 class TextLogFormatter(logging.Formatter):
@@ -67,38 +55,20 @@ def _parse_level(value: str | None) -> int | None:
     return _LEVEL_NAMES.get(normalized)
 
 
-def _load_logging_settings() -> LoggingSettings:
-    raw = load_skaal_section().get("logging", {})
-    if not isinstance(raw, dict):
-        return LoggingSettings()
-    try:
-        return LoggingSettings.model_validate(raw)
-    except ValidationError:
-        return LoggingSettings()
+def _resolve_format(override: LogFormat | None, logging_cfg: LoggingSettings) -> LogFormat:
+    if override is not None:
+        return override
+    return logging_cfg.format
 
 
-def _resolve_format(fmt: LogFormat | None, settings: LoggingSettings) -> LogFormat:
-    if fmt is not None:
-        return fmt
-    env_value = os.getenv("SKAAL_LOG_FORMAT")
-    if env_value is not None:
-        normalized = env_value.strip().lower()
-        if normalized in {"text", "json"}:
-            return cast(LogFormat, normalized)
-    return settings.format
-
-
-def _resolve_root_level(verbose: int, quiet: bool, settings: LoggingSettings) -> int:
+def _resolve_root_level(verbose: int, quiet: bool, logging_cfg: LoggingSettings) -> int:
     if quiet:
         return logging.ERROR
     if verbose >= 2:
         return logging.DEBUG
     if verbose == 1:
         return logging.INFO
-    env_level = _parse_level(os.getenv("SKAAL_LOG_LEVEL"))
-    if env_level is not None:
-        return env_level
-    config_level = _parse_level(settings.level)
+    config_level = _parse_level(logging_cfg.level)
     if config_level is not None:
         return config_level
     return logging.WARNING
@@ -123,9 +93,13 @@ def _build_handler(fmt: LogFormat) -> logging.Handler:
 
 
 def configure_cli_logging(*, verbose: int, quiet: bool, fmt: LogFormat | None) -> None:
-    settings = _load_logging_settings()
-    resolved_format = _resolve_format(fmt, settings)
-    root_level = _resolve_root_level(verbose, quiet, settings)
+    # Re-read settings on every CLI entry so env-var changes between
+    # invocations (notably in tests) take effect.
+    reset_settings_cache()
+    logging_cfg = get_settings().resolved_logging
+
+    resolved_format = _resolve_format(fmt, logging_cfg)
+    root_level = _resolve_root_level(verbose, quiet, logging_cfg)
     child_level = _default_child_level(root_level)
 
     skaal_logger = logging.getLogger("skaal")
@@ -139,7 +113,15 @@ def configure_cli_logging(*, verbose: int, quiet: bool, fmt: LogFormat | None) -
     logging.getLogger("skaal.cli").setLevel(child_level)
     logging.getLogger("skaal.deploy").setLevel(child_level)
 
-    for logger_name, level_name in settings.loggers.items():
+    for logger_name, level_name in logging_cfg.loggers.items():
         level = _parse_level(level_name)
         if level is not None:
             logging.getLogger(logger_name).setLevel(level)
+
+
+__all__ = [
+    "JsonLogFormatter",
+    "LogFormat",
+    "TextLogFormatter",
+    "configure_cli_logging",
+]

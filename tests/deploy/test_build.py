@@ -185,6 +185,24 @@ def test_build_artefacts_renders_app_target_into_bootstrap(tmp_path: Path) -> No
     assert "examples.todo_api:app" in bootstrap
 
 
+def test_build_artefacts_renders_mangum_backed_asgi_handler(tmp_path: Path) -> None:
+    pytest.importorskip("starlette")
+    from starlette.applications import Starlette
+
+    app = App("svc")
+    app.mount("/", Starlette())
+
+    bound, env = _bound_for(app)
+    out = build_artefacts(bound, env, _spec_for(app), out_dir=tmp_path)
+    resource_dir = next(p for p in out.iterdir() if p.is_dir())
+    handler = (resource_dir / "handler.py").read_text(encoding="utf-8")
+    pyproject = (resource_dir / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "from mangum import Mangum" in handler
+    assert '_ASGI_HANDLER = Mangum(_resolve_asgi_app(), lifespan="off")' in handler
+    assert '"skaal[runtime,aws,fastapi]"' in pyproject
+
+
 def test_build_artefacts_uses_default_out_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -49,7 +49,7 @@ def fixture_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     (pkg_dir / "__init__.py").write_text("")
     (pkg_dir / "app.py").write_text(_FIXTURE)
     (tmp_path / "skaal.toml").write_text(_SKAAL_TOML)
-    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.syspath_prepend(str(tmp_path))  # pyright: ignore[reportUnknownMemberType]
     monkeypatch.chdir(tmp_path)
     sys.modules.pop("build_fixture_pkg", None)
     sys.modules.pop("build_fixture_pkg.app", None)
@@ -80,3 +80,22 @@ def test_build_respects_custom_out_dir(fixture_app: str, tmp_path: Path) -> None
     result = runner.invoke(cli_app, ["build", fixture_app, "--env", "prod", "--out", str(custom)])
     assert result.exit_code == 0, result.output
     assert (custom / "manifest.json").exists()
+
+
+def test_build_uses_pyproject_app_env_and_out_dir(fixture_app: str, tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        textwrap.dedent(
+            f"""
+            [tool.skaal]
+            app = "{fixture_app}"
+            default_environment = "prod"
+            out = "artifacts"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(cli_app, ["build"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "artifacts" / "prod" / "manifest.json").exists()
