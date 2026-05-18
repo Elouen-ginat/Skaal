@@ -156,9 +156,11 @@ class SecretRegistry:
                     spec.provider,
                     detail=f"env={spec.env!r}, source={spec.source!r}",
                 )
+            # Intentionally do not log the secret name: even logical names like
+            # "DB_PASSWORD" or "STRIPE_API_KEY" leak the existence of specific
+            # credentials and are flagged by CodeQL's clear-text-logging rule.
             _LOG.info(
-                "secret %s resolved (provider=%s, value=%s)",
-                name,
+                "secret resolved (provider=%s, value=%s)",
                 spec.provider,
                 "present" if resolved.value else "missing",
             )

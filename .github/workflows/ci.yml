@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Restrict the default GITHUB_TOKEN to read-only access on repo contents.
+# Every job here only checks out code and uploads artifacts (which uses the
+# run-scoped artifact API, not repo permissions).
+permissions:
+  contents: read
+
 # Cancel superseded runs on the same branch/PR.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
