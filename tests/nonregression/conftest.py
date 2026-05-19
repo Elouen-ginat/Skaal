@@ -382,60 +382,86 @@ def deployed_stack(
 
     app_name = _resolve_app_name(project_dir, app_spec)
 
-    started = time.monotonic()
-    deploy = _run(
-        ["skaal", "deploy", "--yes", "--env", env_name, app_spec],
-        cwd=project_dir,
-        check=True,
-        timeout=deploy_budget_seconds,
-    )
-    elapsed = time.monotonic() - started
-
-    handle = DeployedStack(
-        project_dir=project_dir,
-        env_name=env_name,
-        target=target,
-        app_spec=app_spec,
-        app_name=app_name,
-        deploy_stdout=deploy.stdout,
-        deploy_stderr=deploy.stderr,
-    )
-    assert elapsed < deploy_budget_seconds, (
-        f"`skaal deploy --env {env_name}` ({target}) took {elapsed:.1f}s "
-        f"— over the {deploy_budget_seconds}s budget."
-    )
-
-    destroy_error: BaseException | None = None
+    body_exc: BaseException | None = None
     try:
+        started = time.monotonic()
+        deploy = _run(
+            ["skaal", "deploy", "--yes", "--env", env_name, app_spec],
+            cwd=project_dir,
+            check=True,
+            timeout=deploy_budget_seconds,
+        )
+        elapsed = time.monotonic() - started
+
+        handle = DeployedStack(
+            project_dir=project_dir,
+            env_name=env_name,
+            target=target,
+            app_spec=app_spec,
+            app_name=app_name,
+            deploy_stdout=deploy.stdout,
+            deploy_stderr=deploy.stderr,
+        )
+        assert elapsed < deploy_budget_seconds, (
+            f"`skaal deploy --env {env_name}` ({target}) took {elapsed:.1f}s "
+            f"— over the {deploy_budget_seconds}s budget."
+        )
+
         yield handle
+    except BaseException as exc:
+        body_exc = exc
+        raise
     finally:
-        try:
-            _destroy(project_dir, env_name, app_spec)
-        except Exception as exc:
-            destroy_error = exc
+        # `pulumi up` may have partially created resources even when it
+        # ultimately failed, and those resources are referenced by the local
+        # stack state. Always attempt destroy — skip only when no stack
+        # workdir was ever produced (e.g. the deploy aborted before Pulumi
+        # was invoked at all).
+        destroy_error: BaseException | None = None
+        if _stack_workdir(project_dir, env_name).exists():
+            try:
+                _destroy(project_dir, env_name, app_spec)
+            except Exception as exc:
+                destroy_error = exc
 
-        if destroy_error is not None:
-            pytest.fail(
-                f"Teardown failed for {target!r}/{env_name!r} — manual cleanup "
-                f"likely required to avoid orphaned cloud resources: {destroy_error}",
-                pytrace=False,
-            )
-
-        if leak_check:
-            report = _leak_check(
-                target=target,
-                app_name=app_name,
-                env_name=env_name,
-                region=aws_region,
-                project=gcp_project,
-                project_dir=project_dir,
-            )
-            if not report.is_clean:
+        if body_exc is not None:
+            # The original deploy/body error will propagate via `raise`.
+            # Attach the teardown outcome so a maintainer reading the
+            # failure knows whether they still need to clean up manually.
+            if destroy_error is not None:
+                body_exc.add_note(
+                    "Best-effort teardown after the failure above also raised: "
+                    f"{destroy_error}. Cloud resources may be orphaned — verify "
+                    "and clean up manually."
+                )
+            else:
+                body_exc.add_note(
+                    "Best-effort teardown after the failure above completed — "
+                    "no orphaned resources expected."
+                )
+        else:
+            if destroy_error is not None:
                 pytest.fail(
-                    f"Leak check failed after destroying {target!r}/{env_name!r}:\n"
-                    f"{report.format()}",
+                    f"Teardown failed for {target!r}/{env_name!r} — manual cleanup "
+                    f"likely required to avoid orphaned cloud resources: {destroy_error}",
                     pytrace=False,
                 )
+
+            if leak_check:
+                report = _leak_check(
+                    target=target,
+                    app_name=app_name,
+                    env_name=env_name,
+                    region=aws_region,
+                    project=gcp_project,
+                    project_dir=project_dir,
+                )
+                if not report.is_clean:
+                    pytest.fail(
+                        f"Leak check failed after destroying {target!r}/{env_name!r}:\n"
+                        f"{report.format()}",
+                        pytrace=False,
+                    )
 
 
 def find_endpoint_url(deploy_stdout: str, marker: str) -> str:
