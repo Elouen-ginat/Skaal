@@ -81,17 +81,29 @@ aws iam update-assume-role-policy \
 
 ### 3. Attach the permissions policy
 
-The role needs the permissions required by the AWS non-regression deploy path:
+The repo ships a ready-to-attach least-privilege policy at
+[`notes/nonregression-aws-policy.json`](nonregression-aws-policy.json). It
+covers everything the AWS deploy path provisions for `examples/todo_api`
+and `examples/nonregression_kitchen_sink` — Lambda, API Gateway v2,
+DynamoDB, RDS, S3, ECR, IAM (`CreateRole` / `PassRole` scoped to
+`role/skaal-*`), EventBridge, EventBridge Scheduler, SQS, Secrets Manager,
+CloudWatch Logs, and the read-only `tag:GetResources` for the deep leak
+sweep.
 
-- Lambda
-- IAM pass-role
-- API Gateway
-- DynamoDB
-- CloudWatch Logs
-- ECR
-- tagging
+Attach it as an inline policy on the role:
 
-Do not attach `AdministratorAccess`.
+```bash
+aws iam put-role-policy \
+  --role-name skaal-nonregression-gha \
+  --policy-name skaal-nonregression \
+  --policy-document file://notes/nonregression-aws-policy.json
+```
+
+The `iam:CreateRole` / `iam:PassRole` statements are scoped to
+`arn:aws:iam::*:role/skaal-*` so this role can only create / hand off
+roles that follow Skaal's naming convention. Do not attach
+`AdministratorAccess` — the throwaway stack should not be able to delete
+your other AWS resources if the test goes wrong.
 
 ### 4. Copy the role ARN into GitHub
 
