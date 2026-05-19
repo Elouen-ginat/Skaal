@@ -22,9 +22,32 @@ from __future__ import annotations
 from skaal.deploy._registry import register_target
 from skaal.deploy.aws._config import AwsConfig
 from skaal.deploy.aws._target import AwsTarget
+from skaal.deploy.aws.apigw_lambda import ApigwLambdaSynth
+from skaal.deploy.aws.dynamodb import DynamoDBSynth
+from skaal.deploy.aws.eventbridge import EventBridgeLambdaSynth
+from skaal.deploy.aws.lambda_fn import PlainLambdaSynth
+from skaal.deploy.aws.postgres import PostgresSynth
+from skaal.deploy.aws.redis import RedisSynth
+from skaal.deploy.aws.s3 import S3Synth
+from skaal.deploy.aws.secrets import SecretsManagerSynth
+from skaal.deploy.aws.sqs import SqsChannelSynth
+from skaal.deploy.aws.sqs_worker import SqsWorkerSynth
+
+_SYNTHS = (
+    ApigwLambdaSynth,
+    DynamoDBSynth,
+    EventBridgeLambdaSynth,
+    PlainLambdaSynth,
+    PostgresSynth,
+    RedisSynth,
+    S3Synth,
+    SecretsManagerSynth,
+    SqsChannelSynth,
+    SqsWorkerSynth,
+)
 
 
-TARGET = AwsTarget()
+TARGET = AwsTarget.from_classes(_SYNTHS)
 register_target(TARGET)
 
 

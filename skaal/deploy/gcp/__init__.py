@@ -18,9 +18,30 @@ from __future__ import annotations
 from skaal.deploy._registry import register_target
 from skaal.deploy.gcp._config import GcpConfig
 from skaal.deploy.gcp._target import GcpTarget
+from skaal.deploy.gcp.bigquery import BigQuerySynth
+from skaal.deploy.gcp.cloud_run_fn import CloudRunFunctionSynth
+from skaal.deploy.gcp.cloud_scheduler import CloudSchedulerSynth
+from skaal.deploy.gcp.cloud_tasks import CloudTasksWorkerSynth
+from skaal.deploy.gcp.firestore import FirestoreSynth
+from skaal.deploy.gcp.gcs import GcsSynth
+from skaal.deploy.gcp.postgres import CloudSqlPostgresSynth
+from skaal.deploy.gcp.pubsub import PubsubChannelSynth
+from skaal.deploy.gcp.secrets import SecretManagerSynth
+
+_SYNTHS = (
+    BigQuerySynth,
+    CloudRunFunctionSynth,
+    CloudSchedulerSynth,
+    CloudTasksWorkerSynth,
+    FirestoreSynth,
+    GcsSynth,
+    CloudSqlPostgresSynth,
+    PubsubChannelSynth,
+    SecretManagerSynth,
+)
 
 
-TARGET = GcpTarget()
+TARGET = GcpTarget.from_classes(_SYNTHS)
 register_target(TARGET)
 
 
