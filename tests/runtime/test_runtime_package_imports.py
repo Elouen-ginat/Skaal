@@ -20,8 +20,7 @@ def test_skaal_import_does_not_eagerly_import_redis_asyncio() -> None:
     names_to_reset = [
         name
         for name in list(sys.modules)
-        if name in {"skaal", "redis", "pulumi"}
-        or name.startswith(("skaal.", "redis.", "pulumi."))
+        if name in {"skaal", "redis", "pulumi"} or name.startswith(("skaal.", "redis.", "pulumi."))
     ]
     original_modules = {name: sys.modules[name] for name in names_to_reset}
 
