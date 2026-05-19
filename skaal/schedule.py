@@ -197,10 +197,40 @@ class Cron(BaseModel):
     def as_aws_expression(self) -> str:
         """Return the AWS EventBridge 6-field cron representation.
 
+        AWS EventBridge cron differs from standard 5-field cron in two ways:
+
+        - It has a sixth `year` field, which we always emit as `*`.
+        - Exactly one of `day-of-month` and `day-of-week` must be `?`.
+          The service rejects expressions where both fields are wildcards
+          (`*`) and expressions where both carry explicit values.
+
+        Standard cron's "every day" (`*` in both fields) is preserved by
+        rewriting `day-of-week` to `?`. An explicit value paired with a
+        wildcard translates the wildcard side to `?`. Explicit values in
+        *both* fields — standard cron's "Nth of the month OR listed
+        weekday" union — has no direct AWS equivalent and raises.
+
         Returns:
             EventBridge cron expression with the year wildcard appended.
+
+        Raises:
+            ValueError: If both `day-of-month` and `day-of-week` carry
+                explicit values; AWS cannot represent that meaning.
         """
         min_, hr, dom, mon, dow = self.expression.split()
+        if dom != "*" and dow != "*":
+            raise ValueError(
+                f"Cron expression {self.expression!r} sets both day-of-month "
+                "and day-of-week to explicit values. AWS EventBridge requires "
+                "exactly one of those fields to be `?`. Use a single day field, "
+                "or split the schedule across two `@app.schedule` callables."
+            )
+        if dom == "*" and dow == "*":
+            dow = "?"
+        elif dom == "*":
+            dom = "?"
+        elif dow == "*":
+            dow = "?"
         return f"cron({min_} {hr} {dom} {mon} {dow} *)"
 
 
