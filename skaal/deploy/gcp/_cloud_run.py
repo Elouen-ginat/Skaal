@@ -48,13 +48,15 @@ class CloudRunScaffold:
     """The Pulumi resources every Cloud Run-shaped synth produces."""
 
     service: gcp.cloudrunv2.Service
-    service_account: gcp.serviceaccount.Account
+    service_account: gcp.serviceaccount.Account | None
     image: docker.Image
     repository: gcp.artifactregistry.Repository
     iam_bindings: tuple[Any, ...] = ()
 
     def as_extras(self) -> tuple[Any, ...]:
         """Return the non-primary scaffolding resources as a tuple."""
+        if self.service_account is None:
+            return (self.image, self.repository, *self.iam_bindings)
         return (self.service_account, self.image, self.repository, *self.iam_bindings)
 
 
@@ -109,8 +111,14 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
         cfg = ctx.config
         repository = self._build_repository(ctx, cfg)
         image = self._build_image(ctx, cfg, repository)
-        service_account = self._build_service_account(ctx, cfg)
-        iam_bindings = self._build_iam_bindings(ctx, cfg, service_account)
+        service_account = (
+            self._build_service_account(ctx, cfg) if cfg.iam.provision_service_account else None
+        )
+        iam_bindings = (
+            self._build_iam_bindings(ctx, cfg, service_account)
+            if service_account is not None
+            else ()
+        )
         service = self._build_service(
             ctx,
             cfg,
@@ -118,7 +126,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             service_account=service_account,
             extra_env=extra_env,
         )
-        invoker_bindings = self._build_invoker_bindings(ctx, service)
+        invoker_bindings = self._build_invoker_bindings(ctx, cfg, service)
         return CloudRunScaffold(
             service=service,
             service_account=service_account,
@@ -130,17 +138,19 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
     def _build_invoker_bindings(
         self,
         ctx: SynthContext[GcpConfig],
+        cfg: GcpConfig,
         service: gcp.cloudrunv2.Service,
     ) -> tuple[Any, ...]:
         """Grant the Cloud Run service's public-invocation policy.
 
-        ASGI services mounted by user code are public by default
-        (``allUsers`` ``roles/run.invoker``) so the printed ``public_url``
-        works without manual IAM steps. Other Cloud Run-shaped resources
-        (function HTTP endpoints, Cloud-Tasks workers) stay private and
-        rely on their dedicated callers granting access.
+        When Skaal is not managing a dedicated runtime service account, it
+        also avoids per-service invoker identities and falls back to public
+        endpoints so deploys can succeed under lower-privilege project roles.
         """
-        if ctx.resource.inferred.kind is not ResourceKind.ASGI_SERVICE:
+        if (
+            cfg.iam.provision_service_account
+            and ctx.resource.inferred.kind is not ResourceKind.ASGI_SERVICE
+        ):
             return ()
         binding = gcp.cloudrunv2.ServiceIamMember(
             f"{ctx.pulumi_name}-public",
@@ -289,7 +299,7 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
         cfg: GcpConfig,
         *,
         image: docker.Image,
-        service_account: gcp.serviceaccount.Account,
+        service_account: gcp.serviceaccount.Account | None,
         extra_env: Mapping[str, Any] | None,
     ) -> gcp.cloudrunv2.Service:
         env = self._merge_env_vars(ctx, extra_env)
@@ -297,31 +307,33 @@ class CloudRunSynth(SynthModule[GcpConfig], ABC):
             gcp.cloudrunv2.ServiceTemplateContainerEnvArgs(name=key, value=value)
             for key, value in env.items()
         ]
+        template_kwargs: dict[str, Any] = {
+            "timeout": f"{self._timeout_s(ctx)}s",
+            "scaling": gcp.cloudrunv2.ServiceTemplateScalingArgs(
+                min_instance_count=self._min_instances(ctx),
+                max_instance_count=self._max_instances(ctx),
+            ),
+            "containers": [
+                gcp.cloudrunv2.ServiceTemplateContainerArgs(
+                    image=image.image_name,
+                    envs=env_list,
+                    ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
+                        container_port=self._port(ctx),
+                    ),
+                    resources=gcp.cloudrunv2.ServiceTemplateContainerResourcesArgs(
+                        limits={"cpu": self._cpu(ctx), "memory": self._memory(ctx)},
+                    ),
+                )
+            ],
+        }
+        if service_account is not None:
+            template_kwargs["service_account"] = service_account.email
         return gcp.cloudrunv2.Service(
             ctx.pulumi_name,
             location=ctx.env.region or "us-central1",
             ingress=self._ingress(ctx),
             deletion_protection=False,
-            template=gcp.cloudrunv2.ServiceTemplateArgs(
-                service_account=service_account.email,
-                timeout=f"{self._timeout_s(ctx)}s",
-                scaling=gcp.cloudrunv2.ServiceTemplateScalingArgs(
-                    min_instance_count=self._min_instances(ctx),
-                    max_instance_count=self._max_instances(ctx),
-                ),
-                containers=[
-                    gcp.cloudrunv2.ServiceTemplateContainerArgs(
-                        image=image.image_name,
-                        envs=env_list,
-                        ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
-                            container_port=self._port(ctx),
-                        ),
-                        resources=gcp.cloudrunv2.ServiceTemplateContainerResourcesArgs(
-                            limits={"cpu": self._cpu(ctx), "memory": self._memory(ctx)},
-                        ),
-                    )
-                ],
-            ),
+            template=gcp.cloudrunv2.ServiceTemplateArgs(**template_kwargs),
             labels=ctx.tags,
         )
 

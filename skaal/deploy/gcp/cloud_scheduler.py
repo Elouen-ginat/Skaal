@@ -67,17 +67,19 @@ class CloudSchedulerSynth(CloudRunSynth):
         target_uri = pulumi.Output.concat(
             scaffold.service.uri, f"/_skaal/schedule/{ctx.resource_slug}"
         )
+        http_target_kwargs: dict[str, Any] = {
+            "uri": target_uri,
+            "http_method": cfg.http_method,
+        }
+        if scaffold.service_account is not None:
+            http_target_kwargs["oidc_token"] = gcp.cloudscheduler.JobHttpTargetOidcTokenArgs(
+                service_account_email=scaffold.service_account.email,
+            )
         job = gcp.cloudscheduler.Job(
             f"{ctx.pulumi_name}-job",
             schedule=schedule,
             time_zone=cfg.time_zone,
-            http_target=gcp.cloudscheduler.JobHttpTargetArgs(
-                uri=target_uri,
-                http_method=cfg.http_method,
-                oidc_token=gcp.cloudscheduler.JobHttpTargetOidcTokenArgs(
-                    service_account_email=scaffold.service_account.email,
-                ),
-            ),
+            http_target=gcp.cloudscheduler.JobHttpTargetArgs(**http_target_kwargs),
         )
         return (job,)
 

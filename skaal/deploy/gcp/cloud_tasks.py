@@ -95,6 +95,8 @@ class CloudTasksWorkerSynth(CloudRunSynth):
         scaffold: CloudRunScaffold,
         pre: PreScaffold,
     ) -> tuple[Any, ...]:
+        if scaffold.service_account is None:
+            return ()
         # Allow the Cloud Tasks service agent to invoke the worker.
         invoker_binding = gcp.cloudrunv2.ServiceIamMember(
             f"{ctx.pulumi_name}-invoker",
