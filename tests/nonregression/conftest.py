@@ -432,12 +432,120 @@ def find_endpoint_url(deploy_stdout: str, marker: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class RunningApp:
+    """Handle for a locally-served Skaal app under `skaal run`."""
+
+    project_dir: Path
+    host: str
+    port: int
+
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
+def _wait_for_port(host: str, port: int, *, timeout: float = 30.0) -> None:
+    import socket
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1.0):
+                return
+        except OSError:
+            time.sleep(0.5)
+    raise AssertionError(f"Port {port} on {host!r} never opened within {timeout:.1f}s")
+
+
+@contextmanager
+def running_app(
+    tmp_path: Path,
+    example: str,
+    skaal_toml: str,
+    *,
+    env_name: str = "local",
+    app_spec: str = "app.app:app",
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    boot_timeout_seconds: float = 60.0,
+) -> Iterator[RunningApp]:
+    """Spawn `skaal run` in the background, wait for the port, yield, then stop.
+
+    The `local` target does not provision infrastructure — `skaal build` /
+    `skaal deploy` only support `aws` and `gcp`. For non-regression coverage
+    of the local execution path we run the app under uvicorn (which is what
+    `skaal run` does) and probe its HTTP surface, then terminate the process.
+    No infra teardown or leak check is needed: nothing exists outside the
+    runner.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    project_dir = tmp_path / f"{example}_local"
+    project_dir.mkdir()
+    _copy_example(repo_root, example, project_dir, skaal_toml)
+
+    env = os.environ.copy()
+    existing_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{project_dir}{os.pathsep}{existing_path}" if existing_path else str(project_dir)
+    )
+
+    cmd = [
+        "skaal",
+        "run",
+        "--env",
+        env_name,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        app_spec,
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        cwd=project_dir,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    try:
+        try:
+            _wait_for_port(host, port, timeout=boot_timeout_seconds)
+        except AssertionError:
+            # Server never came up — surface what it printed so the failure
+            # message is actionable rather than just "port never opened".
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+            raise AssertionError(
+                f"`skaal run` never bound to {host}:{port} within "
+                f"{boot_timeout_seconds:.1f}s.\n"
+                f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+            ) from None
+
+        yield RunningApp(project_dir=project_dir, host=host, port=port)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+
+
 __all__: list[str] = [
     "DeployedStack",
     "LeakReport",
+    "RunningApp",
     "deployed_stack",
     "find_endpoint_url",
     "requires_aws",
     "requires_gcp",
     "requires_local",
+    "running_app",
 ]
