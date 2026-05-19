@@ -17,15 +17,25 @@ def test_runtime_models_import_does_not_eagerly_import_local_runtime() -> None:
 
 
 def test_skaal_import_does_not_eagerly_import_redis_asyncio() -> None:
-    for name in list(sys.modules):
-        if name == "skaal" or name.startswith("skaal."):
-            sys.modules.pop(name, None)
-        if name == "redis" or name.startswith("redis."):
-            sys.modules.pop(name, None)
-        if name == "pulumi" or name.startswith("pulumi."):
+    names_to_reset = [
+        name
+        for name in list(sys.modules)
+        if name in {"skaal", "redis", "pulumi"}
+        or name.startswith(("skaal.", "redis.", "pulumi."))
+    ]
+    original_modules = {name: sys.modules[name] for name in names_to_reset}
+
+    try:
+        for name in names_to_reset:
             sys.modules.pop(name, None)
 
-    importlib.import_module("skaal")
+        importlib.import_module("skaal")
 
-    assert "redis.asyncio.client" not in sys.modules
-    assert "pulumi" not in sys.modules
+        assert "redis.asyncio.client" not in sys.modules
+        assert "pulumi" not in sys.modules
+    finally:
+        for name in list(sys.modules):
+            if name in original_modules:
+                sys.modules.pop(name, None)
+
+        sys.modules.update(original_modules)
