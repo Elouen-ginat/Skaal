@@ -97,6 +97,39 @@ def test_synth_stack_function_emits_cloud_run() -> None:
         asyncio.get_event_loop().run_until_complete(result.primary.deletion_protection.future())
         is False
     )
+    extra_class_names = [resource.__class__.__name__ for resource in result.extras]
+    assert "Account" not in extra_class_names
+    assert "ServiceIamMember" in extra_class_names
+
+
+def test_synth_stack_schedule_uses_public_invocation_without_managed_identity() -> None:
+    import asyncio
+    import tempfile
+
+    from skaal.schedule import Every
+
+    app = App("svc")
+
+    @app.schedule(trigger=Every(interval="5m"))
+    async def heartbeat() -> None:
+        return None
+
+    env = _gcp_env()
+    bound = app.plan(env, lock=LockFile())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        build_dir = _build(app, bound, env, Path(tmp))
+        results = synthesize_stack(bound, env, build_dir)
+
+    [(rid, result)] = list(results.items())
+    assert "heartbeat" in rid
+    extra_class_names = [resource.__class__.__name__ for resource in result.extras]
+    assert "Account" not in extra_class_names
+    assert "Job" in extra_class_names
+    job = next(resource for resource in result.extras if resource.__class__.__name__ == "Job")
+    http_target = asyncio.get_event_loop().run_until_complete(job.http_target.future())
+    assert http_target is not None
+    assert http_target.oidc_token is None
 
 
 def test_synth_stack_asgi_service_exports_public_url() -> None:
@@ -223,3 +256,38 @@ def test_synth_stack_bigquery_for_pinned_table() -> None:
         results = synthesize_stack(bound, env, build_dir)
     dataset_results = [r for r in results.values() if r.primary.__class__.__name__ == "Dataset"]
     assert dataset_results, "BigQuery dataset resource not emitted"
+
+
+def test_synth_stack_relational_postgres_pins_enterprise_edition() -> None:
+    import asyncio
+
+    from sqlmodel import Field
+
+    from skaal import Table
+    from skaal.backends.tokens import Postgres
+
+    app = App("svc")
+
+    @app.storage(kind="relational")
+    class Comments(Table[Postgres], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    @app.expose()
+    async def stub() -> None:
+        return None
+
+    env = _gcp_env()
+    bound = app.plan(env, lock=LockFile())
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        build_dir = _build(app, bound, env, Path(tmp))
+        results = synthesize_stack(bound, env, build_dir)
+
+    relational_id = next(r for r in results if "Comments" in r)
+    settings = results[relational_id].primary.settings
+    assert settings is not None
+    loop = asyncio.get_event_loop()
+    assert loop.run_until_complete(settings.edition.future()) == "ENTERPRISE"
+    assert loop.run_until_complete(settings.tier.future()) == "db-f1-micro"

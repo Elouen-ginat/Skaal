@@ -39,6 +39,7 @@ class IamConfig(TargetConfig):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    provision_service_account: bool = False
     service_account_display_name: str = "Skaal Cloud Run service account"
     # Roles attached to every Skaal service account. Override per-deploy via
     # `skaal.toml` when stricter scoping is required.
@@ -152,6 +153,7 @@ class PostgresConfig(TargetConfig):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     database_version: str = "POSTGRES_16"
+    edition: Literal["ENTERPRISE", "ENTERPRISE_PLUS"] = "ENTERPRISE"
     tier: str = "db-f1-micro"
     db_name: str = "skaal"
     username: str = "skaal"

@@ -18,7 +18,6 @@ import pytest
 from tests.nonregression.conftest import (
     deployed_stack,
     find_endpoint_url,
-    requires_gcp,
 )
 
 GCP_PROJECT_ENV = "SKAAL_NONREGRESSION_GCP_PROJECT"
@@ -40,7 +39,6 @@ def _skaal_toml(project: str, region: str) -> str:
 
 def test_kitchen_sink_gcp_deploy(tmp_path: Path) -> None:
     """Deploy the kitchen-sink app to GCP, hit the API, destroy, leak-check."""
-    requires_gcp()
     pytest.importorskip("pulumi", reason="`pulumi` automation API required.")
     pytest.importorskip("pulumi_gcp", reason="`pulumi_gcp` required for GCP resources.")
 

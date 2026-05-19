@@ -72,7 +72,10 @@ class CloudSqlPostgresSynth(SynthModule[GcpConfig]):
             database_version=cfg.database_version,
             region=ctx.env.region or "us-central1",
             deletion_protection=cfg.deletion_protection,
-            settings=gcp.sql.DatabaseInstanceSettingsArgs(tier=cfg.tier),
+            settings=gcp.sql.DatabaseInstanceSettingsArgs(
+                edition=cfg.edition,
+                tier=cfg.tier,
+            ),
         )
         database = gcp.sql.Database(
             f"{ctx.pulumi_name}-db",
