@@ -181,6 +181,35 @@ If the workflow uses local state, skip this.
 
 The `local` non-regression job needs no cloud credentials.
 
+## Troubleshooting
+
+### `Could not assume role with OIDC: Request ARN is invalid`
+
+`AWS_NONREGRESSION_ROLE_ARN` is set to a value that is not a valid IAM role
+ARN. Re-read it with:
+
+```bash
+aws iam get-role --role-name skaal-nonregression-gha --query 'Role.Arn' --output text
+```
+
+The output must start with `arn:aws:iam::` followed by a 12-digit account
+id, `:role/`, and the role name. Copy that exact string into the secret —
+any trailing whitespace, newline, or accidental quoting fails the regex
+that `aws-actions/configure-aws-credentials` runs.
+
+### `skaal deploy ... returned non-zero exit status 1` with no detail
+
+The `_run` helper in `tests/nonregression/conftest.py` attaches the
+captured stdout/stderr as a PEP 678 note. If you don't see it in the pytest
+failure section, you are on a pytest older than 7.4 — upgrade or re-run
+with `-rA` to force notes to render.
+
+### Interactive confirmation prompt aborts the deploy
+
+`skaal deploy` defaults to prompting for confirmation. The non-regression
+suite passes `--yes`; if you reproduce the workflow's deploy step manually
+you must do the same, or run inside a TTY.
+
 ## Optional local repro
 
 ```bash
