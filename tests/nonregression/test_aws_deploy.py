@@ -60,7 +60,9 @@ def test_todo_api_aws_deploy(tmp_path: Path) -> None:
                     "description": "from CI",
                 },
             )
-            assert created.status_code == 201, created.text
+            assert created.status_code == 201, (
+                f"POST {base_url}/todos returned {created.status_code}: {created.text}"
+            )
 
             listed = client.get("/todos")
             assert listed.status_code == 200, listed.text

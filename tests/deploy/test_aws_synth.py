@@ -197,8 +197,16 @@ def test_synth_stack_emits_apigw_for_asgi_mount(tmp_path: Path) -> None:
     results = synthesize_stack(bound, env, build_dir)
     [(_, result)] = results.items()
     extra_class_names = {r.__class__.__name__ for r in result.extras}
+    # All five APIGW+Lambda resources must be present. In particular the
+    # `Route` must materialise alongside the `Stage` — the synth wires
+    # the Stage to `depends_on=[route, integration, permission]` so that
+    # `auto_deploy=True` finishes its initial deployment before Pulumi
+    # reports the Stage ready and `invoke_url` is consumed downstream.
     assert "Api" in extra_class_names
+    assert "Integration" in extra_class_names
+    assert "Route" in extra_class_names
     assert "Stage" in extra_class_names
+    assert "Permission" in extra_class_names
     assert "public_url" in result.outputs
 
 

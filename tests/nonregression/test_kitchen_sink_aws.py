@@ -53,16 +53,22 @@ def test_kitchen_sink_aws_deploy(tmp_path: Path) -> None:
 
         with httpx.Client(base_url=base_url, timeout=30.0) as client:
             healthz = client.get("/healthz")
-            assert healthz.status_code == 200, healthz.text
+            assert healthz.status_code == 200, (
+                f"GET {base_url}/healthz returned {healthz.status_code}: {healthz.text}"
+            )
 
             created = client.post(
                 "/users",
                 json={"id": "nonregression-aws-sink", "name": "kitchen sink"},
             )
-            assert created.status_code == 201, created.text
+            assert created.status_code == 201, (
+                f"POST {base_url}/users returned {created.status_code}: {created.text}"
+            )
 
             listed = client.get("/users")
-            assert listed.status_code == 200, listed.text
+            assert listed.status_code == 200, (
+                f"GET {base_url}/users returned {listed.status_code}: {listed.text}"
+            )
             ids = {u["id"] for u in listed.json().get("users", [])}
             assert "nonregression-aws-sink" in ids, (
                 f"nonregression-aws-sink missing from /users response: {listed.json()}"

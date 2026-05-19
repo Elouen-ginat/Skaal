@@ -18,6 +18,7 @@ of leaving orphaned cloud resources to discover via the AWS / GCP bill.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -464,15 +465,24 @@ def deployed_stack(
                     )
 
 
+_URL_TERMINATOR_RE = re.compile(r"[\s\"',<>]")
+
+
 def find_endpoint_url(deploy_stdout: str, marker: str) -> str:
-    """Scan deploy output for the first URL line containing `marker`."""
+    """Scan deploy output for the first URL line containing `marker`.
+
+    Stops the URL at any whitespace, quote, comma, or angle-bracket so a
+    captured URL never picks up trailing markup (Rich ANSI resets, log
+    suffixes, etc.). Strips a trailing slash too — when the test joins
+    paths via `httpx.Client(base_url=...).post("/foo")`, httpx adds the
+    leading slash itself, and a trailing one would produce `//foo`.
+    """
     for line in deploy_stdout.splitlines():
         if marker in line and "https://" in line:
             start = line.find("https://")
-            end = line.find('"', start)
-            if end == -1:
-                end = None
-            return line[start:end].strip().rstrip(",")
+            terminator = _URL_TERMINATOR_RE.search(line, start)
+            end = terminator.start() if terminator else len(line)
+            return line[start:end].rstrip("/")
     raise AssertionError(
         f"Could not find a URL containing {marker!r} in `skaal deploy` output. "
         f"Captured stdout:\n{deploy_stdout}"

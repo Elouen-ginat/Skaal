@@ -91,19 +91,26 @@ class ApigwLambdaSynth(LambdaSynth):
             route_key=cfg.catch_all_route,
             target=pulumi.Output.concat("integrations/", integration.id),
         )
-        stage = aws.apigatewayv2.Stage(
-            f"{ctx.pulumi_name}-stage",
-            api_id=api.id,
-            name=cfg.stage_name,
-            auto_deploy=cfg.auto_deploy,
-            tags=ctx.tags,
-        )
         permission = aws.lambda_.Permission(
             f"{ctx.pulumi_name}-perm",
             action="lambda:InvokeFunction",
             function=scaffold.function.name,
             principal="apigateway.amazonaws.com",
             source_arn=pulumi.Output.concat(api.execution_arn, "/*/*"),
+        )
+        # The Stage must depend on the Route (and the integration/permission
+        # it transitively wires) — otherwise `auto_deploy=True` returns
+        # `invoke_url` as soon as the stage exists, while AWS is still
+        # propagating the route's first deployment. Callers that read the
+        # URL immediately (the non-regression HTTP test) land in that
+        # window and get HTTPv2's default `{"message":"Not Found"}` 404.
+        stage = aws.apigatewayv2.Stage(
+            f"{ctx.pulumi_name}-stage",
+            api_id=api.id,
+            name=cfg.stage_name,
+            auto_deploy=cfg.auto_deploy,
+            tags=ctx.tags,
+            opts=pulumi.ResourceOptions(depends_on=[route, integration, permission]),
         )
         return (api, integration, route, stage, permission)
 
