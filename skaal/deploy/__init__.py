@@ -25,6 +25,9 @@ target instance returned by `get_target(env.target)`.
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
+
 from skaal.cli._load import AppSpec
 from skaal.deploy._base_target import BaseDeployTarget
 from skaal.deploy._protocol import (
@@ -44,21 +47,23 @@ from skaal.deploy._registry import (
     register_target,
     registered_targets,
 )
-from skaal.deploy.build import build_artefacts
-from skaal.deploy.models import (
-    BuildContext,
-    BuildManifest,
-    BuildPyProject,
-    ManifestResourceEntry,
-    SkaalTags,
-)
-from skaal.deploy.program import (
-    PulumiProgram,
-    pulumi_program_for,
-    synthesize_stack,
-)
-from skaal.deploy.tags import tags_for
-from skaal.plugins import Plugin, PluginRegistry, load_plugins
+
+if TYPE_CHECKING:
+    from skaal.deploy.build import build_artefacts
+    from skaal.deploy.models import (
+        BuildContext,
+        BuildManifest,
+        BuildPyProject,
+        ManifestResourceEntry,
+        SkaalTags,
+    )
+    from skaal.deploy.program import (
+        PulumiProgram,
+        pulumi_program_for,
+        synthesize_stack,
+    )
+    from skaal.deploy.tags import tags_for
+    from skaal.plugins import Plugin, PluginRegistry, load_plugins
 
 __all__ = [
     "AppSpec",
@@ -90,3 +95,32 @@ __all__ = [
     "synthesize_stack",
     "tags_for",
 ]
+
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "BuildContext": ("skaal.deploy.models", "BuildContext"),
+    "BuildManifest": ("skaal.deploy.models", "BuildManifest"),
+    "BuildPyProject": ("skaal.deploy.models", "BuildPyProject"),
+    "ManifestResourceEntry": ("skaal.deploy.models", "ManifestResourceEntry"),
+    "Plugin": ("skaal.plugins", "Plugin"),
+    "PluginRegistry": ("skaal.plugins", "PluginRegistry"),
+    "PulumiProgram": ("skaal.deploy.program", "PulumiProgram"),
+    "SkaalTags": ("skaal.deploy.models", "SkaalTags"),
+    "build_artefacts": ("skaal.deploy.build", "build_artefacts"),
+    "load_plugins": ("skaal.plugins", "load_plugins"),
+    "pulumi_program_for": ("skaal.deploy.program", "pulumi_program_for"),
+    "synthesize_stack": ("skaal.deploy.program", "synthesize_stack"),
+    "tags_for": ("skaal.deploy.tags", "tags_for"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_name, attr_name = target
+    module = import_module(module_name)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value

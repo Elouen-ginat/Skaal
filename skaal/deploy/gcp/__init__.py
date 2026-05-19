@@ -15,49 +15,69 @@ directly from `SynthModule[GcpConfig]`.
 
 from __future__ import annotations
 
-from skaal.deploy._protocol import SynthModule
+from collections.abc import Mapping
+from importlib import import_module
+from threading import Lock
+from typing import TYPE_CHECKING
+
 from skaal.deploy._registry import register_target
 from skaal.deploy.gcp._config import GcpConfig
 from skaal.deploy.gcp._target import GcpTarget
 
+if TYPE_CHECKING:
+    from skaal.deploy._protocol import ConsoleUrlResolver, SynthFn
+    from skaal.inference.model import ResourceKind
 
-def _load_synths() -> tuple[type[SynthModule[GcpConfig]], ...]:
-    """Load GCP synths when optional Pulumi dependencies are available.
-
-    Importing `skaal.deploy.gcp` should stay safe for read-only code paths
-    like `skaal where`, which only need target identity and static metadata.
-    When the Pulumi SDKs are missing we register an empty target here;
-    build/deploy flows will still fail later when they need those extras.
-    """
-    try:
-        from skaal.deploy.gcp.bigquery import BigQuerySynth
-        from skaal.deploy.gcp.cloud_run_fn import CloudRunFunctionSynth
-        from skaal.deploy.gcp.cloud_scheduler import CloudSchedulerSynth
-        from skaal.deploy.gcp.cloud_tasks import CloudTasksWorkerSynth
-        from skaal.deploy.gcp.firestore import FirestoreSynth
-        from skaal.deploy.gcp.gcs import GcsSynth
-        from skaal.deploy.gcp.postgres import CloudSqlPostgresSynth
-        from skaal.deploy.gcp.pubsub import PubsubChannelSynth
-        from skaal.deploy.gcp.secrets import SecretManagerSynth
-    except ModuleNotFoundError as exc:
-        if exc.name not in {"pulumi", "pulumi_gcp", "pulumi_docker"}:
-            raise
-        return ()
-
-    return (
-        FirestoreSynth,
-        GcsSynth,
-        PubsubChannelSynth,
-        SecretManagerSynth,
-        CloudSqlPostgresSynth,
-        BigQuerySynth,
-        CloudRunFunctionSynth,
-        CloudSchedulerSynth,
-        CloudTasksWorkerSynth,
-    )
+_SYNTH_PATHS: tuple[tuple[str, str], ...] = (
+    ("skaal.deploy.gcp.bigquery", "BigQuerySynth"),
+    ("skaal.deploy.gcp.cloud_run_fn", "CloudRunFunctionSynth"),
+    ("skaal.deploy.gcp.cloud_scheduler", "CloudSchedulerSynth"),
+    ("skaal.deploy.gcp.cloud_tasks", "CloudTasksWorkerSynth"),
+    ("skaal.deploy.gcp.firestore", "FirestoreSynth"),
+    ("skaal.deploy.gcp.gcs", "GcsSynth"),
+    ("skaal.deploy.gcp.postgres", "CloudSqlPostgresSynth"),
+    ("skaal.deploy.gcp.pubsub", "PubsubChannelSynth"),
+    ("skaal.deploy.gcp.secrets", "SecretManagerSynth"),
+)
 
 
-TARGET = GcpTarget.from_classes(_load_synths())
+class _LazyGcpTarget(GcpTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self._builtins_loaded = False
+        self._builtins_lock = Lock()
+
+    def lookup_synth(self, backend_name: str) -> SynthFn | None:
+        self._ensure_builtin_synths()
+        return super().lookup_synth(backend_name)
+
+    def supported_backends(self) -> frozenset[str]:
+        self._ensure_builtin_synths()
+        return super().supported_backends()
+
+    def where_console_url_resolvers(self) -> Mapping[str, ConsoleUrlResolver]:
+        self._ensure_builtin_synths()
+        return super().where_console_url_resolvers()
+
+    def where_resource_type_preferences(self) -> Mapping[ResourceKind, tuple[str, ...]]:
+        self._ensure_builtin_synths()
+        return super().where_resource_type_preferences()
+
+    def _ensure_builtin_synths(self) -> None:
+        if self._builtins_loaded:
+            return
+
+        with self._builtins_lock:
+            if self._builtins_loaded:
+                return
+            for module_name, attr_name in _SYNTH_PATHS:
+                module = import_module(module_name)
+                synth_cls = getattr(module, attr_name)
+                self.register_synth(synth_cls())
+            self._builtins_loaded = True
+
+
+TARGET = _LazyGcpTarget()
 register_target(TARGET)
 
 

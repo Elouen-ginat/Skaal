@@ -2,31 +2,34 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from skaal.app import App
 from skaal.binding import LockFile
 from skaal.cli._load import load_app, load_plan
 
-from ._commands import (
-    BuildResult,
-    DeployResult,
-    DestroyResult,
-    DoctorReport,
-    StubResult,
-    build,
-    deploy,
-    destroy,
-    doctor,
-    init,
-    run,
-    stubs,
-)
 from ._plan import PlanChange, PlanDiff, diff_bound_plans, diff_plan, render_plan_diff_markdown
 from ._resource_map import ResourceMap, ResourceMapEntry
 from ._trace import SourceMatch, resolve_trace
-from ._where import Location, resolve_where
+
+if TYPE_CHECKING:
+    from ._commands import (
+        BuildResult,
+        DeployResult,
+        DestroyResult,
+        DoctorReport,
+        StubResult,
+        build,
+        deploy,
+        destroy,
+        doctor,
+        init,
+        run,
+        stubs,
+    )
+    from ._where import Location
 
 AppRef: TypeAlias = App | str
 
@@ -59,6 +62,38 @@ __all__ = [
     "run",
     "stubs",
 ]
+
+
+_COMMAND_EXPORTS = {
+    "BuildResult",
+    "DeployResult",
+    "DestroyResult",
+    "DoctorReport",
+    "StubResult",
+    "build",
+    "deploy",
+    "destroy",
+    "doctor",
+    "init",
+    "run",
+    "stubs",
+}
+
+_WHERE_EXPORTS = {"Location"}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _COMMAND_EXPORTS:
+        module_name = "skaal.api._commands"
+    elif name in _WHERE_EXPORTS:
+        module_name = "skaal.api._where"
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(module_name)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
 
 
 def plan(
@@ -170,6 +205,8 @@ def locate(
     Returns:
         The resolved deployed-resource location.
     """
+    from ._where import resolve_where
+
     loaded = load_plan(
         _resolve_app_ref(target),
         env_name,

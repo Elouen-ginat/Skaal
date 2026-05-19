@@ -14,10 +14,12 @@ from starlette.types import ASGIApp
 
 from skaal.binding.model import Plan, PlannedResource
 from skaal.errors import RuntimeResourceUnresolved
+from skaal.inference.model import BlueprintResource
 from skaal.runtime.local.dispatch import dispatch_for
 
 if TYPE_CHECKING:
     from skaal.app import App
+    from skaal.module import Module
 
 
 StartupHook = Callable[[], Awaitable[None]]
@@ -70,6 +72,21 @@ def _uvicorn() -> _UvicornModule:
     import importlib
 
     return cast(_UvicornModule, importlib.import_module("uvicorn"))
+
+
+def _iter_registered_objects(module: Module) -> list[object]:
+    module._autodiscover_declarations()
+    out: list[object] = []
+    out.extend(module._storage.values())
+    out.extend(module._functions.values())
+    out.extend(module._jobs.values())
+    out.extend(module._channels.values())
+    out.extend(module._schedules.values())
+
+    for submodule in module._submodules.values():
+        out.extend(_iter_registered_objects(submodule))
+
+    return out
 
 
 @dataclass(frozen=True)
@@ -191,25 +208,15 @@ class LocalRuntime:
         _uvicorn().run(asgi, host=host, port=port, log_level="info")
 
     def _resolve(self, resource: PlannedResource) -> Any:
-        self.app._autodiscover_declarations()
-        bare: str = resource.inferred.source.bare_name
-
-        registries: tuple[dict[str, Any], ...] = (
-            self.app._storage,
-            self.app._functions,
-            self.app._channels,
-            self.app._jobs,
-            self.app._schedules,
-        )
-        for registry in registries:
-            obj: Any = registry.get(bare)
-            if obj is not None:
-                return obj
-
         if resource.inferred.kind.value == "asgi_service":
             return self.app
         if resource.inferred.kind.value == "secret":
             return None
+
+        for obj in _iter_registered_objects(self.app):
+            inferred = getattr(obj, "__skaal_inferred__", None)
+            if isinstance(inferred, BlueprintResource) and inferred.id == resource.inferred.id:
+                return obj
 
         raise RuntimeResourceUnresolved(resource.inferred.id)
 

@@ -12,13 +12,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 import aiosqlite
-from redis.asyncio.client import Redis as RedisClient
+
+if TYPE_CHECKING:
+    from redis.asyncio.client import Redis as RedisClient
 
 SqliteNativeClient: TypeAlias = aiosqlite.Connection
 if TYPE_CHECKING:
     RedisNativeClient: TypeAlias = RedisClient[Any]
 else:
-    RedisNativeClient = RedisClient
+    RedisNativeClient = object
 
 
 class BlobHandleProtocol(Protocol):

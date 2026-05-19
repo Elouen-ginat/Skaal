@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skaal.backends.tokens import ALL_TOKENS, Redis, Sqlite
+from skaal.backends.tokens import ALL_TOKENS, Apscheduler, Asyncio, Redis, Sqlite
 from skaal.binding.model import Target
 from skaal.binding.registry import (
     REGISTRY,
@@ -56,11 +56,15 @@ def test_lookup_token_finds_by_class_identity() -> None:
 def test_default_entry_for_returns_registry_defaults() -> None:
     sqlite = default_entry_for(ResourceKind.STORE, Target.LOCAL)
     postgres = default_entry_for(ResourceKind.RELATIONAL, Target.AWS)
+    local_job = default_entry_for(ResourceKind.JOB, Target.LOCAL)
+    local_schedule = default_entry_for(ResourceKind.SCHEDULE, Target.LOCAL)
 
     assert sqlite.token is Sqlite
     assert sqlite.is_default_for(ResourceKind.STORE, Target.LOCAL)
     assert postgres.token.name == "postgres"
     assert postgres.is_default_for(ResourceKind.RELATIONAL, Target.AWS)
+    assert local_job.token is Asyncio
+    assert local_schedule.token is Apscheduler
 
 
 def test_default_roles_stay_consistent_with_backend_traits() -> None:

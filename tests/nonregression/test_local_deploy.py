@@ -39,8 +39,8 @@ def test_hello_world_local_run(tmp_path: Path) -> None:
         with httpx.Client(base_url=app.base_url, timeout=15.0) as client:
             bumped = client.post("/increment", json={"name": "nonregression", "by": 3})
             assert bumped.status_code == 200, bumped.text
-            assert bumped.json() == {"name": "nonregression", "value": 3}
+            assert bumped.json() == {"result": {"name": "nonregression", "value": 3}}
 
             counts = client.post("/get_count", json={"name": "nonregression"})
             assert counts.status_code == 200, counts.text
-            assert counts.json()["value"] == 3
+            assert counts.json() == {"result": {"name": "nonregression", "value": 3}}
