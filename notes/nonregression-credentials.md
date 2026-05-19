@@ -189,10 +189,52 @@ SKAAL_NONREGRESSION_AWS=1 uv run pytest tests/nonregression/test_aws_deploy.py
 SKAAL_NONREGRESSION_GCP=1 SKAAL_NONREGRESSION_GCP_PROJECT=my-sandbox uv run pytest tests/nonregression/test_gcp_deploy.py
 ```
 
+## Leak detection
+
+Every test wraps its stack in `deployed_stack(...)` from
+`tests/nonregression/conftest.py`. After teardown, the helper runs a
+two-tier leak sweep before the test is allowed to pass:
+
+1. **Pulumi-state sweep (always on).** Reads the stack state after destroy
+   and lists every resource still tracked beyond the stack root. A clean
+   destroy leaves only `pulumi:pulumi:Stack`; anything else is a leak.
+   Runs unconditionally — no cloud SDK needed because the state file is
+   local to the runner.
+2. **Provider-side tag sweep (opt-in).** When
+   `SKAAL_NONREGRESSION_DEEP_LEAK_CHECK=1` is set:
+   - AWS: calls `resourcegroupstaggingapi:GetResources` filtering on
+     `skaal:app` + `skaal:env`, expects zero matches.
+   - GCP: calls Cloud Asset Inventory `searchAllResources` filtering on
+     `labels.skaal_app` + `labels.skaal_env`, expects zero matches.
+
+The CI workflow exports `SKAAL_NONREGRESSION_DEEP_LEAK_CHECK=1` on the
+`aws` and `gcp` jobs. The local job does not — it relies on the
+Pulumi-state sweep alone.
+
+### Extra IAM permissions required for the deep sweep
+
+Add these to the role bound to the workflow's OIDC principal:
+
+- AWS: `tag:GetResources` on `*`.
+- GCP: `cloudasset.assets.searchAllResources` on the project (granted by
+  `roles/cloudasset.viewer`).
+
+These are read-only and scoped to the project / account that hosts the
+throwaway stack. They are needed at every run, not just on failure.
+
 ## Cleanup if a run leaks infrastructure
+
+The Pulumi-state sweep prints the URNs it found stuck. Use them to drive
+manual cleanup:
 
 ```bash
 pulumi -C .skaal/build/<env> stack select <env>
 pulumi -C .skaal/build/<env> destroy --yes
 pulumi -C .skaal/build/<env> stack rm <env> --yes
 ```
+
+If the deep sweep flags resources that the Pulumi state does not, the
+state file and reality have drifted. Open the leak report, find each
+ARN / resource name, and delete it directly through the provider console
+or CLI. File a bug — Skaal's destroy path should never miss a resource
+it tagged.

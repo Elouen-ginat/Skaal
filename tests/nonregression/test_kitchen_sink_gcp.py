@@ -1,8 +1,9 @@
-"""Non-regression: deploy `todo_api` against GCP, exercise the API, destroy.
+"""Non-regression: deploy the kitchen-sink app to GCP.
 
-Uses Cloud Run + Firestore (the default GCP slots in the binding defaults
-table). The GCP project is selected from the `SKAAL_NONREGRESSION_GCP_PROJECT`
-environment variable so this test does not bake a project id into the repo.
+Exercises every public decorator (KV + blob + relational storage, channel,
+function with full resilience policies, job, two schedule kinds, sub-module
+composition) on top of the GCP deploy path: Cloud Run + Firestore +
+Cloud SQL + GCS + Cloud Scheduler + Pub/Sub.
 """
 
 from __future__ import annotations
@@ -37,8 +38,8 @@ def _skaal_toml(project: str, region: str) -> str:
     ).lstrip()
 
 
-def test_todo_api_gcp_deploy(tmp_path: Path) -> None:
-    """Provision `examples/todo_api` against GCP Cloud Run, then tear down."""
+def test_kitchen_sink_gcp_deploy(tmp_path: Path) -> None:
+    """Deploy the kitchen-sink app to GCP, hit the API, destroy, leak-check."""
     requires_gcp()
     pytest.importorskip("pulumi", reason="`pulumi` automation API required.")
     pytest.importorskip("pulumi_gcp", reason="`pulumi_gcp` required for GCP resources.")
@@ -53,30 +54,29 @@ def test_todo_api_gcp_deploy(tmp_path: Path) -> None:
 
     with deployed_stack(
         tmp_path,
-        example="todo_api",
+        example="nonregression_kitchen_sink",
         skaal_toml=_skaal_toml(project, region),
         env_name="prod",
         app_spec="app.app:app",
         target="gcp",
-        deploy_budget_seconds=600,
+        deploy_budget_seconds=900,
         gcp_project=project,
     ) as stack:
         base_url = find_endpoint_url(stack.deploy_stdout, marker="run.app")
 
         with httpx.Client(base_url=base_url, timeout=30.0) as client:
+            healthz = client.get("/healthz")
+            assert healthz.status_code == 200, healthz.text
+
             created = client.post(
-                "/todos",
-                json={
-                    "id": "nonregression-gcp",
-                    "title": "nonregression",
-                    "description": "from CI",
-                },
+                "/users",
+                json={"id": "nonregression-gcp-sink", "name": "kitchen sink"},
             )
             assert created.status_code == 201, created.text
 
-            listed = client.get("/todos")
+            listed = client.get("/users")
             assert listed.status_code == 200, listed.text
-            ids = [t["id"] for t in listed.json().get("todos", [])]
-            assert "nonregression-gcp" in ids, (
-                f"nonregression-gcp missing from /todos response: {listed.json()}"
+            ids = {u["id"] for u in listed.json().get("users", [])}
+            assert "nonregression-gcp-sink" in ids, (
+                f"nonregression-gcp-sink missing from /users response: {listed.json()}"
             )

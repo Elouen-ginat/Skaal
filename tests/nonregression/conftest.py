@@ -9,9 +9,10 @@ just one target when iterating locally:
 - `SKAAL_NONREGRESSION_GCP=1`   (requires `GOOGLE_APPLICATION_CREDENTIALS`)
 
 Every test is responsible for tearing down the infrastructure it created.
-The `deploy_and_teardown` fixture wraps the lifecycle so teardown still
-runs when the body of the test raises — and surfaces a clear failure if
-destroy itself fails (a dangling stack is worse than a failing test).
+The `deployed_stack` context manager wraps the lifecycle so teardown still
+runs when the body of the test raises — and after teardown it runs a
+leak-detection sweep so a partially-failed destroy fails the test instead
+of leaving orphaned cloud resources to discover via the AWS / GCP bill.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import subprocess
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,7 @@ UMBRELLA_GATE = "SKAAL_RUN_NONREGRESSION"
 LOCAL_GATE = "SKAAL_NONREGRESSION_LOCAL"
 AWS_GATE = "SKAAL_NONREGRESSION_AWS"
 GCP_GATE = "SKAAL_NONREGRESSION_GCP"
+DEEP_LEAK_GATE = "SKAAL_NONREGRESSION_DEEP_LEAK_CHECK"
 
 AWS_CRED_HINTS = ("AWS_ACCESS_KEY_ID", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE")
 GCP_CRED_HINT = "GOOGLE_APPLICATION_CREDENTIALS"
@@ -75,8 +77,35 @@ class DeployedStack:
     env_name: str
     target: str
     app_spec: str
+    app_name: str
     deploy_stdout: str
     deploy_stderr: str
+
+
+@dataclass
+class LeakReport:
+    """Result of the post-destroy leak sweep."""
+
+    pulumi_resources: list[str] = field(default_factory=list)
+    cloud_resources: list[str] = field(default_factory=list)
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.pulumi_resources and not self.cloud_resources
+
+    def format(self) -> str:
+        chunks: list[str] = []
+        if self.pulumi_resources:
+            chunks.append(
+                "Pulumi state still tracks resources after destroy:\n  - "
+                + "\n  - ".join(self.pulumi_resources)
+            )
+        if self.cloud_resources:
+            chunks.append(
+                "Cloud provider still reports tagged resources:\n  - "
+                + "\n  - ".join(self.cloud_resources)
+            )
+        return "\n".join(chunks) or "no leaks detected"
 
 
 def _run(
@@ -107,12 +136,37 @@ def _copy_example(repo_root: Path, example: str, dest: Path, skaal_toml: str) ->
     (dest / "skaal.toml").write_text(skaal_toml, encoding="utf-8")
 
 
-def _destroy(project_dir: Path, env_name: str, app_spec: str) -> None:
-    """Tear down the stack. Best-effort, but surface failures loudly.
+def _stack_workdir(project_dir: Path, env_name: str) -> Path:
+    return project_dir / ".skaal" / "build" / env_name
 
-    Tries `skaal destroy --yes` first (the supported verb). Falls back to the
-    Pulumi automation API if the CLI is unavailable.
-    """
+
+def _resolve_app_name(project_dir: Path, app_spec: str) -> str:
+    """Best-effort: derive the `App` name for tag-based leak detection."""
+    # `app_spec` is `module:attr`. We expect the user's example module to
+    # define `app = App("<name>")` at top-level; recover it via a short
+    # subprocess so the parent test process does not import the example.
+    module, _, attr = app_spec.partition(":")
+    code = (
+        "import sys, importlib;"
+        f"sys.path.insert(0, {str(project_dir)!r});"
+        f"m = importlib.import_module({module!r});"
+        f"print(getattr(m, {attr!r}).name)"
+    )
+    proc = subprocess.run(
+        ["python", "-c", code],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def _destroy(project_dir: Path, env_name: str, app_spec: str) -> None:
+    """Tear down the stack. Tries `skaal destroy --yes` first, then Pulumi."""
     try:
         _run(
             ["skaal", "destroy", "--yes", "--env", env_name, app_spec],
@@ -131,10 +185,126 @@ def _destroy(project_dir: Path, env_name: str, app_spec: str) -> None:
 
         stack = auto.create_or_select_stack(
             stack_name=env_name,
-            work_dir=str(project_dir / ".skaal" / "build" / env_name),
+            work_dir=str(_stack_workdir(project_dir, env_name)),
         )
         stack.destroy(on_output=lambda _msg: None)
         stack.workspace.remove_stack(env_name)
+
+
+def _pulumi_resources_after_destroy(project_dir: Path, env_name: str) -> list[str]:
+    """Return URNs Pulumi still tracks after destroy.
+
+    A clean destroy leaves the stack root (`pulumi:pulumi:Stack`) and nothing
+    else. Anything beyond that is a leak — the destroy claimed success but
+    state still references infrastructure that may exist in the cloud.
+    """
+    try:
+        from pulumi import automation as auto
+    except ImportError:  # pragma: no cover
+        return []
+
+    work_dir = _stack_workdir(project_dir, env_name)
+    if not work_dir.exists():
+        # The destroy fallback already removed the stack from state.
+        return []
+    try:
+        stack = auto.select_stack(
+            stack_name=env_name,
+            work_dir=str(work_dir),
+            program=lambda: None,
+        )
+    except auto.CommandError:
+        return []
+
+    deployment = stack.export_stack()
+    resources = deployment.deployment.get("resources", []) if deployment.deployment else []
+    leaks: list[str] = []
+    for res in resources:
+        urn = str(res.get("urn", ""))
+        res_type = str(res.get("type", ""))
+        if res_type == "pulumi:pulumi:Stack":
+            continue
+        if res.get("delete") or res.get("pendingReplacement"):
+            # Resource is marked for deletion but the destroy failed midway.
+            leaks.append(f"{res_type} {urn} (marked for delete)")
+            continue
+        leaks.append(f"{res_type} {urn}")
+    return leaks
+
+
+def _aws_tagged_resources(app_name: str, env_name: str, region: str) -> list[str]:
+    """Query AWS Resource Groups Tagging API for resources Skaal owns.
+
+    Only runs when `boto3` is importable and `SKAAL_NONREGRESSION_DEEP_LEAK_CHECK=1`.
+    The filter uses `skaal:app` + `skaal:env`, which every `skaal.deploy.tags`
+    helper writes onto every Pulumi resource.
+    """
+    if not _gate_enabled(DEEP_LEAK_GATE):
+        return []
+    try:
+        import boto3  # type: ignore[import-untyped]
+    except ImportError:
+        return []
+
+    client = boto3.client("resourcegroupstaggingapi", region_name=region)
+    paginator = client.get_paginator("get_resources")
+    arns: list[str] = []
+    for page in paginator.paginate(
+        TagFilters=[
+            {"Key": "skaal:app", "Values": [app_name]},
+            {"Key": "skaal:env", "Values": [env_name]},
+        ],
+        ResourcesPerPage=100,
+    ):
+        for mapping in page.get("ResourceTagMappingList", []):
+            arn = mapping.get("ResourceARN")
+            if arn:
+                arns.append(arn)
+    return arns
+
+
+def _gcp_labeled_resources(app_name: str, env_name: str, project: str) -> list[str]:
+    """Query the Cloud Asset Inventory for resources Skaal labeled.
+
+    Only runs when `google-cloud-asset` is importable and the deep gate is
+    set. Skaal tags map to GCP labels with `_` substituted for `:` because
+    GCP labels disallow `:`.
+    """
+    if not _gate_enabled(DEEP_LEAK_GATE):
+        return []
+    try:
+        from google.cloud import asset_v1  # type: ignore[import-untyped]
+    except ImportError:
+        return []
+
+    client = asset_v1.AssetServiceClient()
+    scope = f"projects/{project}"
+    query = f'labels.skaal_app="{app_name}" AND labels.skaal_env="{env_name}"'
+    names: list[str] = []
+    for resource in client.search_all_resources(scope=scope, query=query):
+        names.append(resource.name)
+    return names
+
+
+def _leak_check(
+    *,
+    target: str,
+    app_name: str,
+    env_name: str,
+    region: str | None,
+    project: str | None,
+    project_dir: Path,
+) -> LeakReport:
+    report = LeakReport()
+    report.pulumi_resources = _pulumi_resources_after_destroy(project_dir, env_name)
+
+    if not app_name:
+        return report
+    if target == "aws" and region:
+        report.cloud_resources = _aws_tagged_resources(app_name, env_name, region)
+    elif target == "gcp" and project:
+        report.cloud_resources = _gcp_labeled_resources(app_name, env_name, project)
+    return report
 
 
 @contextmanager
@@ -147,16 +317,27 @@ def deployed_stack(
     app_spec: str = "app.app:app",
     target: str,
     deploy_budget_seconds: int = DEPLOY_BUDGET_SECONDS,
+    leak_check: bool = True,
+    aws_region: str | None = None,
+    gcp_project: str | None = None,
 ) -> Iterator[DeployedStack]:
-    """Provision `example` into a tempdir, yield the handle, then destroy.
+    """Provision `example`, yield the handle, destroy, and leak-check.
 
-    The destroy step runs even when the body raises. If destroy itself fails,
-    the original test failure is preserved and the destroy failure is chained.
+    `aws_region` / `gcp_project` are only used by the deep-leak scan (gated
+    by `SKAAL_NONREGRESSION_DEEP_LEAK_CHECK=1`). The Pulumi-state leak check
+    runs unconditionally — it has no dependency on cloud SDKs because the
+    state file is local to the runner.
+
+    If destroy itself fails, or the leak sweep finds dangling resources,
+    the test fails with `pytrace=False` and the full leak report so the
+    maintainer immediately sees what to clean up.
     """
     repo_root = Path(__file__).resolve().parents[2]
     project_dir = tmp_path / f"{example}_{target}"
     project_dir.mkdir()
     _copy_example(repo_root, example, project_dir, skaal_toml)
+
+    app_name = _resolve_app_name(project_dir, app_spec)
 
     started = time.monotonic()
     deploy = _run(
@@ -172,6 +353,7 @@ def deployed_stack(
         env_name=env_name,
         target=target,
         app_spec=app_spec,
+        app_name=app_name,
         deploy_stdout=deploy.stdout,
         deploy_stderr=deploy.stderr,
     )
@@ -180,17 +362,37 @@ def deployed_stack(
         f"— over the {deploy_budget_seconds}s budget."
     )
 
+    destroy_error: BaseException | None = None
     try:
         yield handle
     finally:
         try:
             _destroy(project_dir, env_name, app_spec)
-        except Exception as destroy_exc:
+        except Exception as exc:
+            destroy_error = exc
+
+        if destroy_error is not None:
             pytest.fail(
                 f"Teardown failed for {target!r}/{env_name!r} — manual cleanup "
-                f"likely required to avoid orphaned cloud resources: {destroy_exc}",
+                f"likely required to avoid orphaned cloud resources: {destroy_error}",
                 pytrace=False,
             )
+
+        if leak_check:
+            report = _leak_check(
+                target=target,
+                app_name=app_name,
+                env_name=env_name,
+                region=aws_region,
+                project=gcp_project,
+                project_dir=project_dir,
+            )
+            if not report.is_clean:
+                pytest.fail(
+                    f"Leak check failed after destroying {target!r}/{env_name!r}:\n"
+                    f"{report.format()}",
+                    pytrace=False,
+                )
 
 
 def find_endpoint_url(deploy_stdout: str, marker: str) -> str:
@@ -210,6 +412,7 @@ def find_endpoint_url(deploy_stdout: str, marker: str) -> str:
 
 __all__: list[str] = [
     "DeployedStack",
+    "LeakReport",
     "deployed_stack",
     "find_endpoint_url",
     "requires_aws",

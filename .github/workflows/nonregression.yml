@@ -63,7 +63,11 @@ jobs:
         run: uv sync --group dev --extra runtime --extra deploy --extra fastapi
 
       - name: Run local non-regression
-        run: uv run pytest tests/nonregression/test_local_deploy.py -q -s
+        run: >-
+          uv run pytest
+          tests/nonregression/test_local_deploy.py
+          tests/nonregression/test_kitchen_sink_local.py
+          -q -s
 
   aws:
     name: AWS target
@@ -75,6 +79,7 @@ jobs:
     env:
       SKAAL_RUN_NONREGRESSION: "1"
       SKAAL_NONREGRESSION_AWS: "1"
+      SKAAL_NONREGRESSION_DEEP_LEAK_CHECK: "1"
       AWS_REGION: ${{ vars.SKAAL_NONREGRESSION_AWS_REGION || 'us-east-1' }}
     steps:
       - uses: actions/checkout@v6
@@ -110,7 +115,11 @@ jobs:
       - name: Run AWS non-regression
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-        run: uv run pytest tests/nonregression/test_aws_deploy.py -q -s
+        run: >-
+          uv run pytest
+          tests/nonregression/test_aws_deploy.py
+          tests/nonregression/test_kitchen_sink_aws.py
+          -q -s
 
   gcp:
     name: GCP target
@@ -122,6 +131,7 @@ jobs:
     env:
       SKAAL_RUN_NONREGRESSION: "1"
       SKAAL_NONREGRESSION_GCP: "1"
+      SKAAL_NONREGRESSION_DEEP_LEAK_CHECK: "1"
       SKAAL_NONREGRESSION_GCP_PROJECT: ${{ vars.SKAAL_NONREGRESSION_GCP_PROJECT }}
       SKAAL_NONREGRESSION_GCP_REGION: ${{ vars.SKAAL_NONREGRESSION_GCP_REGION || 'us-central1' }}
     steps:
@@ -162,7 +172,11 @@ jobs:
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.gcp-auth.outputs.credentials_file_path }}
-        run: uv run pytest tests/nonregression/test_gcp_deploy.py -q -s
+        run: >-
+          uv run pytest
+          tests/nonregression/test_gcp_deploy.py
+          tests/nonregression/test_kitchen_sink_gcp.py
+          -q -s
 
   # A single aggregating job so branch-protection only has one required check
   # to gate `main` on, and the matrix can grow without editing settings.

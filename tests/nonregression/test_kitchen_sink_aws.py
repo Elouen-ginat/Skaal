@@ -1,9 +1,9 @@
-"""Non-regression: deploy `todo_api` against AWS, exercise the API, destroy.
+"""Non-regression: deploy the kitchen-sink app to AWS.
 
-This mirrors `tests/smoke/test_todo_api_aws.py` but is driven by the
-non-regression gate (`SKAAL_NONREGRESSION_AWS` / `SKAAL_RUN_NONREGRESSION`)
-and uses the shared `deployed_stack` lifecycle so the destroy step is
-guaranteed to run even when an assertion fails mid-test.
+Exercises every public decorator (KV + blob + relational storage, channel,
+function with full resilience policies, job, two schedule kinds, sub-module
+composition) on top of the AWS deploy path: Lambda + API Gateway + DynamoDB
++ RDS + S3 + EventBridge + SQS.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ region = "{region}"
 """.lstrip()
 
 
-def test_todo_api_aws_deploy(tmp_path: Path) -> None:
-    """Provision `examples/todo_api` against AWS Lambda + DynamoDB, then tear down."""
+def test_kitchen_sink_aws_deploy(tmp_path: Path) -> None:
+    """Deploy the kitchen-sink app to AWS, hit the API, destroy, leak-check."""
     requires_aws()
     pytest.importorskip("pulumi", reason="`pulumi` automation API required.")
     pytest.importorskip("pulumi_aws", reason="`pulumi_aws` required for AWS resources.")
@@ -41,30 +41,29 @@ def test_todo_api_aws_deploy(tmp_path: Path) -> None:
     region = os.environ.get(AWS_REGION_ENV, DEFAULT_AWS_REGION)
     with deployed_stack(
         tmp_path,
-        example="todo_api",
+        example="nonregression_kitchen_sink",
         skaal_toml=_skaal_toml(region),
         env_name="prod",
         app_spec="app.app:app",
         target="aws",
-        deploy_budget_seconds=600,
+        deploy_budget_seconds=900,
         aws_region=region,
     ) as stack:
         base_url = find_endpoint_url(stack.deploy_stdout, marker="execute-api")
 
         with httpx.Client(base_url=base_url, timeout=30.0) as client:
+            healthz = client.get("/healthz")
+            assert healthz.status_code == 200, healthz.text
+
             created = client.post(
-                "/todos",
-                json={
-                    "id": "nonregression-aws",
-                    "title": "nonregression",
-                    "description": "from CI",
-                },
+                "/users",
+                json={"id": "nonregression-aws-sink", "name": "kitchen sink"},
             )
             assert created.status_code == 201, created.text
 
-            listed = client.get("/todos")
+            listed = client.get("/users")
             assert listed.status_code == 200, listed.text
-            ids = [t["id"] for t in listed.json().get("todos", [])]
-            assert "nonregression-aws" in ids, (
-                f"nonregression-aws missing from /todos response: {listed.json()}"
+            ids = {u["id"] for u in listed.json().get("users", [])}
+            assert "nonregression-aws-sink" in ids, (
+                f"nonregression-aws-sink missing from /users response: {listed.json()}"
             )
