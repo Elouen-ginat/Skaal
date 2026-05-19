@@ -16,6 +16,7 @@ import pytest
 pulumi = pytest.importorskip("pulumi")
 pytest.importorskip("pulumi_aws")
 pytest.importorskip("pulumi_docker")
+pytest.importorskip("pulumi_random")
 
 # Importing `skaal.deploy.aws` is what registers the AWS target so
 # `synthesize_stack` can dispatch through the registry. This is normally
@@ -104,6 +105,8 @@ def test_synth_stack_function_emits_lambda(tmp_path: Path) -> None:
     [(rid, result)] = results.items()
     assert "greet" in rid
     assert result.primary.__class__.__name__ == "Function"
+    extra_class_names = {resource.__class__.__name__ for resource in result.extras}
+    assert "LogGroup" not in extra_class_names
 
 
 def test_synth_stack_store_emits_dynamodb_then_lambda(tmp_path: Path) -> None:
@@ -217,6 +220,39 @@ def test_synth_stack_channel_emits_sqs(tmp_path: Path) -> None:
     results = synthesize_stack(bound, env, build_dir)
     channel_id = next(r for r in results if "Events" in r)
     assert results[channel_id].primary.__class__.__name__ == "Queue"
+
+
+def test_synth_stack_relational_emits_rds_secret_bundle(tmp_path: Path) -> None:
+    from sqlmodel import Field
+
+    from skaal import Table
+    from skaal.backends.tokens import Postgres
+
+    app = App("svc")
+
+    @app.storage(kind="relational")
+    class Comments(Table[Postgres], table=True):
+        id: int | None = Field(default=None, primary_key=True)
+        body: str
+
+    @app.expose()
+    async def list_comments() -> dict[str, str]:
+        return {"status": "ok"}
+
+    env = _aws_env()
+    bound = _bound(app, env)
+    build_dir = _build(app, bound, env, tmp_path)
+
+    results = synthesize_stack(bound, env, build_dir)
+    relational_id = next(r for r in results if "Comments" in r)
+    result = results[relational_id]
+
+    assert result.primary.__class__.__name__ == "Instance"
+    extra_class_names = {resource.__class__.__name__ for resource in result.extras}
+    assert "RandomPassword" in extra_class_names
+    assert "Secret" in extra_class_names
+    assert "SecretVersion" in extra_class_names
+    assert any(key.endswith("_SECRET_ARN") for key in result.env_vars)
 
 
 def test_synth_stack_job_emits_sqs_worker(tmp_path: Path) -> None:

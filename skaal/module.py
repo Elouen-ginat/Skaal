@@ -107,6 +107,14 @@ def _attach_inferred(target: Any, inferred: BlueprintResource) -> None:
         target.__skaal_inferred__ = inferred
 
 
+def _attach_owner(target: Any, owner: Module) -> None:
+    """Record which `Module` registered ``target`` for autodiscovery."""
+    import contextlib
+
+    with contextlib.suppress(AttributeError, TypeError):
+        target.__skaal_owner__ = owner
+
+
 def _inferred_kind(obj: Any) -> ResourceKind | None:
     """Return the `ResourceKind` recorded on ``obj`` by `_attach_inferred`."""
     inferred = getattr(obj, "__skaal_inferred__", None)
@@ -160,6 +168,9 @@ class Module:
                 continue
             if inferred.source.module != module_name:
                 continue
+            owner = getattr(obj, "__skaal_owner__", None)
+            if owner is not None and owner is not self:
+                continue
             if inferred.kind in {
                 ResourceKind.STORE,
                 ResourceKind.BLOB,
@@ -172,6 +183,7 @@ class Module:
                     continue
                 instance = obj()
                 _attach_inferred(instance, inferred)
+                _attach_owner(instance, self)
                 self._channels[obj.__name__] = instance
 
     # ── Registration decorators ────────────────────────────────────────────
@@ -209,6 +221,7 @@ class Module:
 
         def decorator(cls: C) -> C:
             annotated = outer(cls)
+            _attach_owner(annotated, self)
             self._storage[cls.__name__] = annotated
             return annotated
 
@@ -235,6 +248,7 @@ class Module:
 
         def decorator(cls: C) -> C:
             annotated = outer(cls)
+            _attach_owner(annotated, self)
             self._storage[cls.__name__] = annotated
             return annotated
 
@@ -291,6 +305,7 @@ class Module:
 
         def decorator(fn: F) -> F:
             ref = outer(fn)
+            _attach_owner(ref, self)
             if secrets:
                 for ref_obj in secrets:
                     self.secret(ref_obj)
@@ -341,6 +356,7 @@ class Module:
                 ),
             )
             _attach_inferred(fn, inferred)
+            _attach_owner(fn, self)
             self._jobs[fn.__name__] = fn
             return fn
 
@@ -394,6 +410,8 @@ class Module:
             )
             _attach_inferred(cls, inferred)
             _attach_inferred(instance, inferred)
+            _attach_owner(cls, self)
+            _attach_owner(instance, self)
             self._channels[cls.__name__] = instance
             return cls
 
@@ -491,6 +509,7 @@ class Module:
                 ),
             )
             _attach_inferred(fn, inferred)
+            _attach_owner(fn, self)
             self._schedules[fn.__name__] = fn
             # `emit_to` is accepted but not yet honoured by the new
             # local-runtime SCHEDULE adapter; it will be wired in alongside

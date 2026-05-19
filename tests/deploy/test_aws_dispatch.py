@@ -16,6 +16,7 @@ import pytest
 
 pytest.importorskip("pulumi_aws")
 pytest.importorskip("pulumi_docker")
+pytest.importorskip("pulumi_random")
 
 from skaal.binding.model import Target
 from skaal.binding.registry import REGISTRY
@@ -43,7 +44,12 @@ def test_aws_target_covers_every_aws_backend() -> None:
 
 def test_aws_target_required_extras_match_sdks() -> None:
     """The target advertises the right importable modules."""
-    assert TARGET.required_extras() == ("pulumi", "pulumi_aws", "pulumi_docker")
+    assert TARGET.required_extras() == (
+        "pulumi",
+        "pulumi_aws",
+        "pulumi_docker",
+        "pulumi_random",
+    )
 
 
 def test_aws_target_default_config_is_typed() -> None:

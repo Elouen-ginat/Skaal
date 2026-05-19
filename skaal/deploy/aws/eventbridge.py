@@ -87,7 +87,7 @@ class EventBridgeLambdaSynth(LambdaSynth):
     @staticmethod
     def _schedule_expression(trigger: Cron | Every | None, *, fallback: str) -> str:
         if isinstance(trigger, Cron):
-            return f"cron({trigger.expression})"
+            return trigger.as_aws_expression()
         if isinstance(trigger, Every):
             return trigger.as_rate_expression()
         return fallback

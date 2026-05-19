@@ -85,6 +85,7 @@ class LambdaConfig(TargetConfig):
 
     timeout_s: int = 30
     memory_mb: int = 512
+    manage_log_group: bool = False
     log_retention_days: int = 14
     # Compute-kind-specific overrides; the synth picks the one matching its kind.
     asgi_timeout_s: int = 29
@@ -135,7 +136,7 @@ class PostgresConfig(TargetConfig):
     username: str = "skaal"
     publicly_accessible: bool = False
     skip_final_snapshot: bool = True
-    manage_master_user_password: bool = True
+    manage_master_user_password: bool = False
     env_var_prefix: str = "SKAAL_DB_"
 
 
