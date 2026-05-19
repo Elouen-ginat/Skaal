@@ -117,6 +117,12 @@ def _run(
     timeout: float = DEPLOY_BUDGET_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    # `skaal deploy` calls `importlib.import_module(spec.module)` and the
+    # Python console-script entry point does NOT add the cwd to `sys.path`
+    # (only `python script.py` / `python -c` do). Prepend `cwd` to PYTHONPATH
+    # so the user's example package becomes importable.
+    existing_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{cwd}{os.pathsep}{existing_path}" if existing_path else str(cwd)
     if extra_env:
         env.update(extra_env)
     # `check=False` here so we can re-raise with the captured output attached;
