@@ -12,16 +12,14 @@ new resources during this run.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from google.cloud import service_usage_v1
 
 import typer
 from rich.console import Console
@@ -258,7 +256,15 @@ def _preflight_docker() -> None:
 
 
 def _preflight_gcp_target(bound: Plan, env: Environment) -> None:
-    """Fail fast when the active GCP project, ADC, or required APIs are missing."""
+    """Fail fast when the active GCP project or ADC are missing.
+
+    Required APIs that are not yet enabled are enabled automatically via
+    ``serviceusage.services.batchEnable`` when the active credentials carry
+    ``serviceusage.services.enable`` (commonly through
+    ``roles/serviceusage.serviceUsageAdmin``). Credentials without that
+    permission fall back to a clear error pointing the user at the
+    matching ``gcloud services enable`` command.
+    """
     project = resolve_gcp_project(env)
     if not project:
         raise SkaalDeployError(
@@ -266,19 +272,25 @@ def _preflight_gcp_target(bound: Plan, env: Environment) -> None:
             "in `skaal.toml` or export `GOOGLE_CLOUD_PROJECT` / `GCP_PROJECT`."
         )
 
-    token = _resolve_gcp_access_token()
-    missing_services = [
-        service
-        for service in _gcp_required_services(bound)
-        if _gcp_service_state(project, service, token) != "ENABLED"
-    ]
+    client = _gcp_service_usage_client()
+    required = _gcp_required_services(bound)
+    missing_services = _gcp_disabled_services(client, project, required)
     if missing_services:
-        services = " ".join(missing_services)
-        raise SkaalDeployError(
-            f"GCP project {project!r} is missing required APIs for this deploy. "
-            f"Enable them with:\n\n"
-            f"  gcloud services enable {services} --project={project}\n"
+        console = Console()
+        console.print(
+            f"[dim]Enabling missing GCP APIs on {project}: {', '.join(missing_services)}…[/dim]"
         )
+        enabled = _gcp_batch_enable_services(client, project, missing_services)
+        if not enabled:
+            services = " ".join(missing_services)
+            raise SkaalDeployError(
+                f"GCP project {project!r} is missing required APIs for this deploy and "
+                "the active credentials lack `serviceusage.services.enable`. Grant "
+                "`roles/serviceusage.serviceUsageAdmin` on the deploy identity and "
+                "retry, or enable the APIs manually with:\n\n"
+                f"  gcloud services enable {services} --project={project}\n"
+            )
+        console.print(f"[green]✓[/green] enabled {len(missing_services)} GCP API(s).")
 
     _ensure_docker_artifact_registry_auth(env)
 
@@ -323,51 +335,31 @@ def _ensure_docker_artifact_registry_auth(env: Environment) -> None:
         ) from exc
 
 
-def _resolve_gcp_access_token() -> str:
-    """Return an OAuth token suitable for Service Usage API checks."""
-    explicit_token = os.getenv("GOOGLE_OAUTH_ACCESS_TOKEN")
-    if explicit_token:
-        return explicit_token
+def _gcp_service_usage_client() -> service_usage_v1.ServiceUsageClient:
+    """Return a configured Service Usage client.
 
+    Authentication uses Application Default Credentials (`gcloud auth
+    application-default login`, `GOOGLE_APPLICATION_CREDENTIALS`, or the
+    runtime-mounted credentials inside a GCE / Cloud Run / Workload-Identity
+    environment). The client handles token refresh and retries internally;
+    Skaal no longer hand-rolls OAuth bearer-token math against
+    `serviceusage.googleapis.com`.
+    """
     try:
-        import google.auth
-        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.cloud import service_usage_v1
     except ImportError as exc:
         raise MissingExtraError(
-            "`skaal deploy` for GCP requires the Google auth SDKs. Install them with "
+            "`skaal deploy` for GCP requires the Google Cloud SDKs. Install them with "
             "`pip install 'skaal[deploy,gcp]'`."
         ) from exc
 
     try:
-        # `google.auth.default` ships partial type stubs; pyright cannot
-        # narrow the returned credentials object so we silence both
-        # unknown-variable and unknown-member warnings here.
-        credentials, _ = google.auth.default(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
+        return service_usage_v1.ServiceUsageClient()
     except Exception as exc:  # pragma: no cover - machine auth state
         raise SkaalDeployError(
             "GCP deploy requires Application Default Credentials. Run "
             "`gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS`."
         ) from exc
-
-    try:
-        credentials.refresh(GoogleAuthRequest())  # pyright: ignore[reportUnknownMemberType]
-    except Exception as exc:  # pragma: no cover - machine auth state
-        raise SkaalDeployError(
-            "GCP credentials were found but could not be refreshed. Re-run "
-            "`gcloud auth application-default login` or fix the configured service account."
-        ) from exc
-
-    token = cast(
-        str | None,
-        credentials.token,  # pyright: ignore[reportUnknownMemberType]
-    )
-    if not token:
-        raise SkaalDeployError(
-            "GCP credentials were found but did not yield an access token for deploy preflight."
-        )
-    return token
 
 
 def _gcp_required_services(bound: Plan) -> tuple[str, ...]:
@@ -413,35 +405,97 @@ def _validated_gcp_service_name(service: str) -> str:
     raise SkaalDeployError(msg)
 
 
-def _gcp_service_state(project: str, service: str, token: str) -> str | None:
-    """Return the current Service Usage state for one API in `project`."""
-    safe_service = _validated_gcp_service_name(service)
-    safe_project = quote(project, safe="")
-    request = Request(
-        f"https://serviceusage.googleapis.com/v1/projects/{safe_project}/services/{quote(safe_service, safe='')}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    try:
-        with urlopen(request, timeout=10) as response:  # nosec B310 — fixed https://serviceusage.googleapis.com URL
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:  # pragma: no cover - network/integration path
-        detail = exc.read().decode("utf-8", errors="replace")
-        if safe_service == "serviceusage.googleapis.com":
-            raise SkaalDeployError(
-                f"GCP project {project!r} must have `serviceusage.googleapis.com` enabled "
-                "before Skaal can verify the required deploy APIs."
-            ) from exc
-        raise SkaalDeployError(
-            f"Could not verify whether GCP API {safe_service!r} is enabled for project {project!r}: "
-            f"HTTP {exc.code}. {detail}"
-        ) from exc
-    except URLError as exc:  # pragma: no cover - network/integration path
-        raise SkaalDeployError(
-            f"Could not reach the GCP Service Usage API while checking project {project!r}."
-        ) from exc
+def _gcp_disabled_services(
+    client: service_usage_v1.ServiceUsageClient,
+    project: str,
+    services: Sequence[str],
+) -> tuple[str, ...]:
+    """Return the subset of `services` that are not yet enabled on `project`.
 
-    state = payload.get("state")
-    return state if isinstance(state, str) else None
+    Raises ``SkaalDeployError`` for any condition other than "this single
+    service is disabled" — in particular when ``serviceusage.googleapis.com``
+    itself is not yet enabled (chicken-and-egg case the caller can't fix
+    automatically) or when the deploy identity cannot read service state.
+    """
+    from google.api_core import exceptions as gax_exceptions
+    from google.cloud.service_usage_v1.types import State
+
+    disabled: list[str] = []
+    for service in services:
+        safe = _validated_gcp_service_name(service)
+        name = f"projects/{project}/services/{safe}"
+        try:
+            # `google-cloud-service-usage`'s pyright stubs report unknown
+            # members for the GAPIC overloads; the runtime call is correct.
+            svc = client.get_service(request={"name": name})  # pyright: ignore[reportUnknownMemberType]
+        except gax_exceptions.PermissionDenied as exc:
+            raise SkaalDeployError(
+                f"Cannot read the state of GCP API {safe!r} on project {project!r}: "
+                "the deploy identity lacks `serviceusage.services.get`. Grant "
+                "`roles/serviceusage.serviceUsageViewer` (or admin) and retry."
+            ) from exc
+        except gax_exceptions.NotFound as exc:
+            if safe == "serviceusage.googleapis.com":
+                raise SkaalDeployError(
+                    f"GCP project {project!r} must have `serviceusage.googleapis.com` enabled "
+                    "before Skaal can verify the required deploy APIs."
+                ) from exc
+            disabled.append(safe)
+            continue
+        except gax_exceptions.GoogleAPICallError as exc:
+            raise SkaalDeployError(
+                f"Could not verify whether GCP API {safe!r} is enabled for project {project!r}: "
+                f"{exc}"
+            ) from exc
+
+        if svc.state != State.ENABLED:
+            disabled.append(safe)
+    return tuple(disabled)
+
+
+def _gcp_batch_enable_services(
+    client: service_usage_v1.ServiceUsageClient,
+    project: str,
+    services: Sequence[str],
+    *,
+    timeout_s: float = 180.0,
+) -> bool:
+    """Enable `services` on `project` via Service Usage `batchEnable`.
+
+    Returns ``True`` when the long-running operation completes successfully,
+    ``False`` when the active credentials lack
+    ``serviceusage.services.enable`` (caller falls back to the manual-enable
+    recipe). Any other API failure raises ``SkaalDeployError``.
+    """
+    if not services:
+        return True
+    safe_services = [_validated_gcp_service_name(s) for s in services]
+
+    from google.api_core import exceptions as gax_exceptions
+
+    try:
+        # `google-cloud-service-usage`'s pyright stubs report unknown members
+        # on both the GAPIC overloads and the returned LRO; the runtime
+        # call shape matches the documented one (`request=` dict, then
+        # `Operation.result(timeout=…)`).
+        operation = client.batch_enable_services(  # pyright: ignore[reportUnknownMemberType]
+            request={
+                "parent": f"projects/{project}",
+                "service_ids": safe_services,
+            }
+        )
+        operation.result(timeout=timeout_s)  # pyright: ignore[reportUnknownMemberType]
+    except gax_exceptions.PermissionDenied:
+        return False
+    except gax_exceptions.DeadlineExceeded as exc:
+        raise SkaalDeployError(
+            f"Timed out after {timeout_s:.0f}s waiting for GCP APIs to enable on project "
+            f"{project!r}. Re-run the deploy, or enable them manually with "
+            f"`gcloud services enable {' '.join(safe_services)} --project={project}`."
+        ) from exc
+    except gax_exceptions.GoogleAPICallError as exc:
+        raise SkaalDeployError(f"Could not enable GCP APIs on project {project!r}: {exc}") from exc
+    return True
 
 
 def _print_stack_outputs(outputs: Mapping[str, Any] | None, console: Console) -> None:
