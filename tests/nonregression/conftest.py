@@ -119,15 +119,31 @@ def _run(
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
-    return subprocess.run(
+    # `check=False` here so we can re-raise with the captured output attached;
+    # the bare `CalledProcessError` `subprocess.run(check=True)` raises hides
+    # stderr inside a private attribute and pytest only prints the exit code.
+    proc = subprocess.run(
         cmd,
         cwd=cwd,
-        check=check,
+        check=False,
         capture_output=True,
         text=True,
         env=env,
         timeout=timeout,
     )
+    if check and proc.returncode != 0:
+        exc = subprocess.CalledProcessError(
+            proc.returncode,
+            cmd,
+            output=proc.stdout,
+            stderr=proc.stderr,
+        )
+        # `CalledProcessError.__str__` only includes the exit code; attach
+        # captured output as a PEP 678 note so pytest renders it in the
+        # failure section without us needing a custom exception type.
+        exc.add_note(f"cwd: {cwd}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}")
+        raise exc
+    return proc
 
 
 def _copy_example(repo_root: Path, example: str, dest: Path, skaal_toml: str) -> None:
@@ -341,7 +357,7 @@ def deployed_stack(
 
     started = time.monotonic()
     deploy = _run(
-        ["skaal", "deploy", "--env", env_name, app_spec],
+        ["skaal", "deploy", "--yes", "--env", env_name, app_spec],
         cwd=project_dir,
         check=True,
         timeout=deploy_budget_seconds,
