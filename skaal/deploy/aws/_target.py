@@ -29,6 +29,7 @@ class AwsTarget(BaseDeployTarget):
         "pulumi",
         "pulumi_aws",
         "pulumi_docker",
+        "pulumi_random",
     )
 
     def stack_config(self, env: Environment) -> Mapping[str, str]:

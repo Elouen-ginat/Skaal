@@ -24,6 +24,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,26 @@ def requires_aws() -> None:
             "AWS credentials not detected. Configure OIDC via "
             "`aws-actions/configure-aws-credentials` or export `AWS_ACCESS_KEY_ID`."
         )
+    if not _aws_credentials_are_usable():
+        pytest.skip(
+            "AWS credentials were detected in the environment but are not currently usable. "
+            "Refresh the session or re-run OIDC credential setup before running AWS non-regression."
+        )
+
+
+@lru_cache(maxsize=1)
+def _aws_credentials_are_usable() -> bool:
+    try:
+        import boto3
+    except ImportError:
+        return False
+
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+    try:
+        boto3.client("sts", region_name=region).get_caller_identity()
+    except Exception:
+        return False
+    return True
 
 
 def requires_gcp() -> None:

@@ -56,13 +56,16 @@ class LambdaScaffold:
 
     function: aws.lambda_.Function
     role: aws.iam.Role
-    log_group: aws.cloudwatch.LogGroup
+    log_group: aws.cloudwatch.LogGroup | None
     image: docker.Image
     repository: aws.ecr.Repository
 
     def as_extras(self) -> tuple[Any, ...]:
         """Return the non-primary scaffolding resources as a tuple."""
-        return (self.role, self.log_group, self.image, self.repository)
+        extras: list[Any] = [self.role, self.image, self.repository]
+        if self.log_group is not None:
+            extras.insert(1, self.log_group)
+        return tuple(extras)
 
 
 @dataclass(frozen=True)
@@ -127,7 +130,9 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
         repository = self._build_repository(ctx, cfg)
         image = self._build_image(ctx, cfg, repository)
         role = self._build_role(ctx, cfg)
-        log_group = self._build_log_group(ctx, cfg)
+        log_group = (
+            self._build_log_group(ctx, cfg) if cfg.lambda_defaults.manage_log_group else None
+        )
         function = self._build_function(
             ctx,
             cfg,
@@ -274,6 +279,8 @@ class LambdaSynth(SynthModule[AwsConfig], ABC):
                 continue
             if resource.inferred.kind in _STORAGE_KINDS and resource.backend in policies:
                 seen.add(resource.backend)
+        if "postgres" in seen and "aws-secrets-manager" in policies:
+            seen.add("aws-secrets-manager")
         return tuple(sorted(seen))
 
     @staticmethod

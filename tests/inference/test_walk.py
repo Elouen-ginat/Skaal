@@ -122,6 +122,27 @@ def test_submodule_resources_are_collected() -> None:
     assert any(r.kind is ResourceKind.STORE and "Inner" in r.id for r in plan.resources)
 
 
+def test_submodule_autodiscovery_does_not_duplicate_root_channel() -> None:
+    analytics = Module("analytics")
+
+    @analytics.storage()
+    class EventLog(Store[dict]):
+        pass
+
+    app = App("outer")
+    app.use(analytics)
+
+    @app.channel()
+    class Notifications(Topic[dict]):  # type: ignore[type-arg]
+        pass
+
+    plan = blueprint(app)
+    channel_ids = [
+        resource.id for resource in plan.resources if resource.kind is ResourceKind.CHANNEL
+    ]
+    assert channel_ids.count(Notifications.__skaal_inferred__.id) == 1
+
+
 def test_path_mount_emits_asgi_service_resource() -> None:
     app = App("demo")
     app.mount("/api", _DummyAsgiApp())
