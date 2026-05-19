@@ -103,6 +103,8 @@ def test_wire_app_from_environment_wires_postgres_relational(
 
     @app.storage(kind="relational")
     class Comments(Table[Postgres], table=True):
+        __tablename__ = "runtime_aws_wiring_comments"
+
         id: int | None = Field(default=None, primary_key=True)
         body: str
 
