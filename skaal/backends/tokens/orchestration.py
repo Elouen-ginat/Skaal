@@ -5,7 +5,7 @@ from skaal.backends._base import Backend
 
 class Apscheduler(Backend[object]):
     name = "apscheduler"
-    kinds = frozenset({"schedule", "job"})
+    kinds = frozenset({"schedule"})
 
 
 class EventBridgeLambda(Backend[object]):

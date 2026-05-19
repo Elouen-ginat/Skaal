@@ -5,7 +5,7 @@ from skaal.backends._base import Backend
 
 class Asyncio(Backend[object]):
     name = "asyncio"
-    kinds = frozenset({"function"})
+    kinds = frozenset({"function", "job"})
 
 
 class Lambda(Backend[object]):

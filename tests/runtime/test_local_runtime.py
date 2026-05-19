@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from skaal import App, Store
+from skaal import App, Module, Store
 from skaal.binding import plan as build_plan
 from skaal.binding.model import Environment, LockFile, Target
 from skaal.errors import RuntimeAdapterMissing
@@ -50,6 +50,25 @@ def test_runtime_registers_function_route(tmp_path: Path) -> None:
     assert "/greet" in paths
 
 
+def test_runtime_resolves_exported_submodule_function() -> None:
+    app = App("svc")
+    analytics = Module("analytics")
+
+    @analytics.expose()
+    async def record_event(name: str) -> dict[str, str]:
+        return {"name": name}
+
+    analytics.export(record_event)
+    app.use(analytics, namespace="analytics")
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = app.plan(env, lock=LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    assert "svc.record_event" in runtime.state.invokables
+    assert "/record_event" in [route.path for route in runtime.routes]
+
+
 def test_runtime_wires_store_with_sqlite(tmp_path: Path) -> None:
     app = App("svc")
 
@@ -63,6 +82,21 @@ def test_runtime_wires_store_with_sqlite(tmp_path: Path) -> None:
     # The store adapter staged a startup hook for backend.connect().
     assert runtime.startup_hooks
     assert runtime.shutdown_hooks
+
+
+def test_runtime_registers_local_job_queue_route() -> None:
+    app = App("svc")
+
+    @app.job()
+    async def reindex(user_id: str) -> None:
+        _ = user_id
+
+    env = Environment(name="local", target=Target.LOCAL)
+    bound = app.plan(env, lock=LockFile())
+    runtime = LocalRuntime.from_bound_plan(bound, app)
+
+    assert "/_jobs/reindex/enqueue" in [route.path for route in runtime.routes]
+    assert "reindex" in runtime.state.job_queues
 
 
 def test_runtime_raises_on_unsupported_backend() -> None:

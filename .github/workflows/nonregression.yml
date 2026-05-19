@@ -60,7 +60,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dev dependencies
-        run: uv sync --group dev --extra runtime --extra deploy --extra fastapi
+        run: uv sync --group dev --extra serve --extra runtime --extra deploy --extra fastapi
 
       - name: Run local non-regression
         run: >-
